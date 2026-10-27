@@ -42,7 +42,7 @@ describe('Review-Server', () => {
 
   it('leitet / auf die Oberfläche um und liefert Job-Dateien', async () => {
     const r = await fetch(`${server.url}/`, { redirect: 'manual' });
-    expect(r.headers.get('location')).toBe('/review/');
+    expect(r.headers.get('location')).toBe('/review/#/review');
     expect((await fetch(`${server.url}/job/story.json`)).status).toBe(200);
     expect((await fetch(`${server.url}/job/../package.json`)).status).toBe(404);
   });

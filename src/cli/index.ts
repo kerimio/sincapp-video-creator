@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseStory } from '../core/schema';
 import { renderStory } from '../render/render';
@@ -17,8 +17,11 @@ import { Library } from '../library/library';
 import { buildStory, findTopic, selectOffers } from '../select/select';
 import type { Extraction } from '../extract/schema';
 import { extractionReport } from '../report';
-import { writeFile } from 'node:fs/promises';
+import { copyFile, writeFile } from 'node:fs/promises';
 import { startReviewServer } from '../review/server';
+import { startAppServer } from '../app/server';
+import { createJob, jobPath, jobsDir, safeName } from '../app/jobs';
+import { prepareStory } from '../app/pipeline';
 
 // .env laden (Node ≥ 20.12)
 if (existsSync(join(ROOT, '.env'))) process.loadEnvFile?.(join(ROOT, '.env'));
@@ -30,22 +33,102 @@ program.name('sincapp-story').description('Prospekt rein, Instagram-Story (MP4) 
 function jobDir(job: string) {
   const direct = resolve(job);
   if (existsSync(join(direct, 'story.json')) || existsSync(join(direct, 'input'))) return direct;
-  const inJobs = join(ROOT, 'jobs', job);
+  const inJobs = join(jobsDir(), job);
   if (existsSync(inJobs)) return inJobs;
   throw new Error(`Job nicht gefunden: ${job}`);
 }
 
-function ensureTemplateBuilt() {
-  if (existsSync(join(ROOT, 'dist/template/index.html'))) return;
-  const r = spawnSync('pnpm', ['build:template'], { cwd: ROOT, stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('Template-Build fehlgeschlagen');
+/** Neueste Änderungszeit der Dateien/Ordner (rekursiv). */
+function newest(dirs: string[]): number {
+  let t = 0;
+  for (const d of dirs) {
+    if (!existsSync(d)) continue;
+    if (!statSync(d).isDirectory()) {
+      t = Math.max(t, statSync(d).mtimeMs);
+      continue;
+    }
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      t = Math.max(t, e.isDirectory() ? newest([f]) : statSync(f).mtimeMs);
+    }
+  }
+  return t;
 }
 
-function ensureReviewBuilt() {
-  if (existsSync(join(ROOT, 'dist/review/index.html'))) return;
-  const r = spawnSync('pnpm', ['build:review'], { cwd: ROOT, stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('Review-Build fehlgeschlagen');
+/** Baut ein Frontend, wenn es fehlt oder älter als seine Quellen ist (z. B. nach einem Update). */
+function ensureBuilt(script: string, out: string, sources: string[]) {
+  const index = join(ROOT, out, 'index.html');
+  if (existsSync(index) && statSync(index).mtimeMs >= newest(sources.map((s) => join(ROOT, s)))) return;
+  const r = spawnSync('pnpm', [script], { cwd: ROOT, stdio: 'inherit' });
+  if (r.status !== 0) throw new Error(`${script} fehlgeschlagen`);
 }
+const ensureTemplateBuilt = () => ensureBuilt('build:template', 'dist/template', ['src/template', 'src/core']);
+const ensureReviewBuilt = () => ensureBuilt('build:review', 'dist/review', ['src/review/ui', 'src/core', 'src/template/fonts.css']);
+
+function openBrowser(url: string) {
+  if (process.platform === 'darwin') spawnSync('open', [url]);
+  else if (process.platform === 'win32') spawnSync('cmd', ['/c', 'start', '', url]);
+}
+
+program
+  .command('app')
+  .description('Web-App starten: Prospekte hochladen, prüfen, Video herunterladen')
+  .option('-p, --port <n>', 'Port', (v) => parseInt(v, 10), 4321)
+  .option('--no-open', 'Browser nicht automatisch öffnen')
+  .action(async (o: { port: number; open: boolean }) => {
+    ensureTemplateBuilt();
+    ensureReviewBuilt();
+    let server;
+    try {
+      server = await startAppServer(o.port);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
+      // läuft schon (z. B. zweimal doppelgeklickt) – einfach die vorhandene App öffnen
+      const url = `http://127.0.0.1:${o.port}/app/`;
+      console.log(`Die App läuft bereits: ${url}`);
+      if (o.open) openBrowser(url);
+      return;
+    }
+    const url = `${server.url}/app/`;
+    console.log(`\nsincapp Story-Generator läuft: ${url}\nDieses Fenster offen lassen – Beenden mit Strg+C.\n`);
+    if (o.open) openBrowser(url);
+  });
+
+program
+  .command('new')
+  .description('Neuen Job aus Prospektdateien anlegen und bis zur story.json verarbeiten')
+  .requiredOption('-m, --market <slug>', 'Markt (Datei unter markets/)')
+  .requiredOption('-i, --input <pfade...>', 'Prospektseiten (Dateien oder Ordner)')
+  .option('-t, --topic <thema>', 'Thema, z. B. fleisch, snacks, getraenke')
+  .option('-n, --count <n>', 'Anzahl Angebote', (v) => parseInt(v, 10))
+  .option('--recorded <dir>', 'aufgezeichnete Antworten statt Claude (Tests/Demo)')
+  .option('--auto', 'ohne Prüfen direkt die Videos rendern')
+  .action(async (o: { market: string; input: string[]; topic?: string; count?: number; recorded?: string; auto?: boolean }) => {
+    const files = o.input.flatMap((p) => (statSync(p).isDirectory() ? readdirSync(p).map((f) => join(p, f)) : [p])).filter((f) => /\.(pdf|png|jpe?g|webp)$/i.test(f));
+    if (!files.length) throw new Error('Keine Prospektdateien gefunden (PDF, JPG, PNG, WEBP).');
+    const settings = { market: o.market, topic: o.topic ?? null, count: o.count, recorded: o.recorded && resolve(o.recorded) };
+    const meta = await createJob(settings);
+    const dir = jobPath(meta.id);
+    for (const f of files) await copyFile(f, join(dir, 'input', safeName(basename(f))));
+    console.log(`Job ${meta.id}: ${files.length} Datei(en)`);
+    let last = '';
+    const r = await prepareStory(dir, settings, (p) => {
+      if (p.message !== last) console.log(`[${Math.round(p.fraction * 100)} %] ${(last = p.message)}`);
+    });
+    for (const n of r.notes) console.log(`Hinweis: ${n}`);
+    console.log(`story.json mit ${r.story.offers.length} Angeboten: ${dir}`);
+    if (!o.auto) {
+      console.log(`Prüfen: pnpm cli app  →  Job „${meta.id}“ öffnen`);
+      return;
+    }
+    ensureTemplateBuilt();
+    const res = await renderStory({ jobDir: dir, outDir: join(dir, 'output'), langs: r.story.lang as ('de' | 'tr')[], log: (m) => console.log(m) });
+    for (const [lang, file] of Object.entries(res.videos)) {
+      const v = await verifyVideo(file, res.duration);
+      if (!v.ok) process.exitCode = 1;
+      console.log(`${lang}: ${file} ${v.ok ? '✓' : '✗ ' + v.problems.join('; ')}`);
+    }
+  });
 
 program
   .command('review')
@@ -57,8 +140,8 @@ program
     const dir = jobDir(job);
     if (!existsSync(join(dir, 'story.json'))) throw new Error(`Keine story.json in ${dir} – erst \`select\` ausführen.`);
     const server = await startReviewServer(dir, o.port);
-    console.log(`Review läuft: ${server.url}/review/  (Beenden mit Strg+C)`);
-    if (process.platform === 'darwin') spawnSync('open', [`${server.url}/review/`]);
+    console.log(`Review läuft: ${server.url}/review/#/review  (Beenden mit Strg+C)`);
+    openBrowser(`${server.url}/review/#/review`);
   });
 
 program

@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Story as StorySchema } from '../../core/schema';
 import { formatDateRange } from '../../core/format';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
-import { api, type State, type StoryOffer } from './api';
+import { type JobClient, type RenderState, type State, type StoryOffer } from './api';
 import type { Story } from '../../core/schema';
 
 const TR_MAX = 14;
+
+/** API und URL-Basis des geöffneten Jobs (z. B. "/jobs/<id>/") */
+const JobCtx = createContext<{ api: JobClient; base: string }>(null!);
 type Busy = Record<string, string | undefined>;
 
-export function App() {
+export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: string; onBack?: () => void }) {
   const [state, setState] = useState<State | null>(null);
   const [story, setStory] = useState<Story | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -16,15 +19,31 @@ export function App() {
   const [imgV, setImgV] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [dialog, setDialog] = useState<string | null>(null);
-  const [render, setRender] = useState<Awaited<ReturnType<typeof api.render>> | 'running' | null>(null);
+  const [render, setRender] = useState<RenderState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     api.state().then((s) => {
       setState(s);
       setStory(s.story);
+      if (s.render.running || s.render.result) setRender(s.render);
     }, (e) => setLoadError(e.message));
-  }, []);
+  }, [api]);
+
+  // Fortschritt beim Rendern abfragen
+  useEffect(() => {
+    if (!render?.running) return;
+    const h = setInterval(async () => {
+      try {
+        const r = await api.renderState();
+        setRender(r);
+        if (r.error) say(r.error, true);
+      } catch {
+        /* nächster Versuch */
+      }
+    }, 1000);
+    return () => clearInterval(h);
+  }, [render?.running, api]);
 
   const say = (text: string, error = false) => {
     setToast({ text, error });
@@ -108,11 +127,9 @@ export function App() {
 
   const doRender = async () => {
     if (!(await save())) return;
-    setRender('running');
     try {
-      setRender(await api.render());
+      setRender(await api.startRender());
     } catch (e) {
-      setRender(null);
       say((e as Error).message, true);
     }
   };
@@ -123,19 +140,23 @@ export function App() {
   const inStory = new Set(story.offers.map((o) => o.id));
   const others = (extraction?.offers ?? []).filter((o) => !inStory.has(o.id) && o.price);
 
+  const rendering = !!render?.running;
   return (
+    <JobCtx.Provider value={{ api, base: state.urlBase }}>
     <div className="app">
       <header>
+        {onBack && <button className="ghost back" onClick={onBack}>← Übersicht</button>}
         <div className="brand">
-          <span className="dot" /> Review · {story.market.name}
+          <span className="dot" /> {title ?? `Prüfen · ${story.market.name}`}
         </div>
         <div className="spacer" />
         {dirty && <span className="hint">ungespeichert</span>}
-        <button onClick={save} disabled={!!validation}>Speichern</button>
-        <button className="primary" onClick={doRender} disabled={!!validation || render === 'running'}>
-          {render === 'running' ? 'Rendert … (1–3 Min.)' : 'Video rendern'}
+        <button onClick={save} disabled={!!validation || rendering}>Speichern</button>
+        <button className="primary" onClick={doRender} disabled={!!validation || rendering}>
+          {rendering ? `Video wird erstellt … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Video erstellen'}
         </button>
       </header>
+      {rendering && <div className="progressbar"><div style={{ width: `${(render!.fraction * 100).toFixed(1)}%` }} /></div>}
 
       <main>
         <section className="edit">
@@ -175,7 +196,7 @@ export function App() {
         </section>
         <aside>
           <Preview story={previewStory} />
-          {render && render !== 'running' && <RenderResult r={render} />}
+          {render?.result && !rendering && <RenderResult r={render.result} />}
         </aside>
       </main>
 
@@ -192,6 +213,7 @@ export function App() {
       )}
       {toast && <div className={`toast ${toast.error ? 'error' : ''}`}>{toast.text}</div>}
     </div>
+    </JobCtx.Provider>
   );
 }
 
@@ -285,6 +307,7 @@ function OfferList(p: {
   update: (fn: (s: Story) => Story) => void;
   openImage: (id: string) => void;
 }) {
+  const { base } = useContext(JobCtx);
   const drag = useRef<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const move = (from: number, to: number) =>
@@ -320,7 +343,7 @@ function OfferList(p: {
           >
             <div className="handle" title="Ziehen zum Sortieren">⋮⋮</div>
             <div className="thumb" onClick={() => o.id && p.openImage(o.id)} title="Bild ändern">
-              <img src={`/job/${o.img}${o.id && p.imgV[o.id] ? `?v=${p.imgV[o.id]}` : ''}`} style={{ transform: `scale(${o.imgZoom})` }} />
+              <img src={`${base}${o.img}${o.id && p.imgV[o.id] ? `?v=${p.imgV[o.id]}` : ''}`} style={{ transform: `scale(${o.imgZoom})` }} />
               <span className="src">{p.busy[o.id ?? ''] ?? sourceLabel(ex?.imgSource)}</span>
             </div>
             <div className="fields">
@@ -393,6 +416,7 @@ function sourceLabel(s?: string) {
 }
 
 function Preview({ story }: { story: unknown }) {
+  const { base } = useContext(JobCtx);
   const frame = useRef<HTMLIFrameElement>(null);
   const [lang, setLang] = useState<'de' | 'tr'>('de');
   const [duration, setDuration] = useState(0);
@@ -467,26 +491,26 @@ function Preview({ story }: { story: unknown }) {
         </span>
       </div>
       <div className="phone">
-        <iframe ref={frame} key={lang} src={`/index.html?lang=${lang}`} onLoad={onLoad} title="Vorschau" />
+        <iframe ref={frame} key={lang} src={`/index.html?lang=${lang}&story=${encodeURIComponent(`${base}story.json`)}`} onLoad={onLoad} title="Vorschau" />
       </div>
       <input type="range" min={0} max={duration || 1} step={0.033} value={t} onChange={(e) => (setPlaying(false), setT(Number(e.target.value)))} />
     </div>
   );
 }
 
-function RenderResult({ r }: { r: Awaited<ReturnType<typeof api.render>> }) {
+function RenderResult({ r }: { r: NonNullable<RenderState['result']> }) {
   return (
     <div className="card render">
-      <b>Fertig in {r.seconds.toFixed(0)} s</b>
+      <b>Videos fertig ({r.seconds.toFixed(0)} s)</b>
       {Object.entries(r.videos).map(([lang, url]) => {
         const c = r.checks.find((x) => url.endsWith(x.file));
         return (
           <div key={lang}>
-            <a href={url} download>story-{lang}.mp4</a> {c && <span className={c.ok ? 'ok' : 'warn'}>{c.ok ? `✓ ${c.sizeMB.toFixed(1)} MB, ${c.duration.toFixed(1)} s` : `⚠ ${c.problems.join('; ')}`}</span>}
+            <a className="download" href={url} download>⬇ Video {lang.toUpperCase()} herunterladen</a> {c && <span className={c.ok ? 'ok' : 'warn'}>{c.ok ? `✓ ${c.sizeMB.toFixed(1)} MB, ${c.duration.toFixed(1)} s` : `⚠ ${c.problems.join('; ')}`}</span>}
           </div>
         );
       })}
-      {r.poster && <a href={r.poster} download>preview.png</a>}
+      {r.poster && <a href={r.poster} download>⬇ Vorschaubild</a>}
     </div>
   );
 }
@@ -500,6 +524,7 @@ function ImageDialog(p: {
   onImage: (o: ExtractedOffer, warnings?: string[]) => void;
   onOffer: (o: ExtractedOffer) => void;
 }) {
+  const { api, base } = useContext(JobCtx);
   const o = p.offer;
   const [tab, setTab] = useState<'web' | 'crop' | 'upload'>(o.imgAlternatives?.length ? 'web' : 'crop');
   const [query, setQuery] = useState([o.brand, o.name.de, o.unit].filter(Boolean).join(' '));
@@ -541,7 +566,7 @@ function ImageDialog(p: {
             <div className="grid">
               {(o.imgAlternatives ?? []).map((a, i) => (
                 <div key={a.url} className={`cand ${a.match ? 'match' : ''}`}>
-                  {a.file ? <img src={`/job/${a.file}`} /> : <div className="noimg">nicht geladen</div>}
+                  {a.file ? <img src={`${base}${a.file}`} /> : <div className="noimg">nicht geladen</div>}
                   <small title={a.title}>{a.title || a.source}</small>
                   {a.verdict && <small className={a.match ? 'ok' : 'muted'}>{a.match ? '✓ ' : ''}{a.verdict}</small>}
                   <button
@@ -616,6 +641,7 @@ function ImageDialog(p: {
 
 /** Seite anzeigen, Rechteck ziehen, ausschneiden. Koordinaten in Pixeln des Seitenbilds. */
 function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolean; onCrop: (bbox: number[]) => void }) {
+  const { base } = useContext(JobCtx);
   const img = useRef<HTMLImageElement>(null);
   const [box, setBox] = useState<number[]>(offer.bbox);
   const [scale, setScale] = useState(1);
@@ -634,7 +660,7 @@ function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolea
       <div className="cropwrap">
         <img
           ref={img}
-          src={`/job/${offer.pageFile}`}
+          src={`${base}${offer.pageFile}`}
           draggable={false}
           onLoad={(e) => setScale(e.currentTarget.clientWidth / e.currentTarget.naturalWidth)}
           onMouseDown={(e) => {

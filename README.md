@@ -2,10 +2,31 @@
 
 Prospekt rein, Instagram-Story (MP4, 1080×1920) raus.
 
-> Stand: **Meilenstein 3** – Template + MP4 (M1), Extraktion + Freisteller (M2), Produktbilder aus dem Internet mit Bibliothek, Auswahl und Review-Oberfläche (M3).
-> Der komplette `new`-Ablauf in einem Befehl folgt in Meilenstein 4.
+> Stand: **Meilenstein 4** – Template + MP4 (M1), Extraktion + Freisteller (M2), Produktbilder aus dem Internet mit Bibliothek, Auswahl und Review-Oberfläche (M3), Web-App mit Assistent und `new`-Befehl (M4).
 
-## Setup
+## Schnellstart auf dem Mac (Web-App)
+
+1. Ordner von GitHub holen: `git clone https://github.com/kerimio/sincapp-video-creator.git` (oder als ZIP laden und entpacken).
+2. Im Finder **`Start sincapp.command`** doppelklicken. Beim ersten Mal wird alles installiert (Homebrew muss vorhanden sein, siehe https://brew.sh; dauert 5–10 Minuten), danach öffnet sich der Browser.
+   Bei einem ZIP-Download meldet macOS evtl. „nicht verifizierter Entwickler“: einmal Rechtsklick → **Öffnen**.
+3. In der App unter **Einstellungen** den Anthropic-Key eintragen (Brave-Key empfohlen). Die Keys bleiben in der Datei `.env` auf dem Rechner.
+4. **+ Neues Video** → Markt wählen → Prospektseiten hineinziehen → Thema und Anzahl → **Weiter**. Nach dem Auslesen die Angebote prüfen und **Video erstellen** klicken; die MP4s (DE + TR) gibt es dann zum Herunterladen.
+
+Ohne Key lässt sich alles mit **Demo mit Saray-Beispiel** ausprobieren (gespeicherte Antworten statt Claude).
+Das Terminalfenster muss offen bleiben, solange die App läuft. Jobs liegen unter `jobs/`, die Produkt-Bibliothek unter `library/`.
+
+Ohne Doppelklick: `pnpm cli app` (Port mit `--port`, Browser nicht öffnen mit `--no-open`).
+
+## Alles in einem Befehl
+
+```bash
+./bin/sincapp-story.mjs new --market saray --input ~/Downloads/prospekt/ --topic fleisch --count 6
+# → jobs/<datum>-saray-fleisch/story.json, danach in der App prüfen
+./bin/sincapp-story.mjs new --market saray --input ~/Downloads/prospekt/ --auto
+# → ohne Prüfen direkt output/story-de.mp4 und story-tr.mp4
+```
+
+## Setup (Entwicklung)
 
 Voraussetzungen: Node 20.12+, pnpm, ffmpeg (`brew install ffmpeg`), Python 3.10+.
 
@@ -61,17 +82,19 @@ Optionen: `--no-price-check`, `--images` (gleich alle Bilder holen), `--recorded
   3. **Prospekt-Ausschnitt** als Notlösung.
 - Ergebnis: `story.json`, Bilder in `images/`, Hinweise in `report.md`.
 
-## Review-Oberfläche
+## Prüfen (Review)
+
+In der Web-App öffnet sich das Prüfen nach dem Auslesen automatisch. Einzelne Job-Ordner gehen auch direkt:
 
 ```bash
-pnpm review saray-kw44        # öffnet http://127.0.0.1:4321/review/
+pnpm review saray-kw44        # einzelner Job ohne App: http://127.0.0.1:4321/review/#/review
 ```
 
 - Angebote hinzufügen/entfernen, per Ziehen sortieren, Preis, Menge, Namen (DE/TR, mit 14-Zeichen-Zähler), Zusatz und Zoom ändern.
 - Überschrift, Zeile darüber und Gültigkeit ändern.
 - **Bild ändern:** Internet-Treffer (mit Urteil des Abgleichs) übernehmen oder neu suchen, im Prospekt ein Rechteck ziehen und neu ausschneiden, oder ein eigenes Foto hochladen. Jede Wahl landet in der Bibliothek.
 - Live-Vorschau in DE/TR mit Abspielen und Zeitleiste, Hinweise zu unsicheren Preisen und Bildern.
-- **Video rendern** speichert und erzeugt `output/story-de.mp4`, `story-tr.mp4`, `preview.png` inkl. Prüfung.
+- **Video erstellen** speichert und erzeugt `output/story-de.mp4`, `story-tr.mp4`, `preview.png` inkl. Prüfung.
 
 Abnahme gegen die 6 Saray-Beispielseiten (≥ 95 % erkannt, keine falschen Preise ohne Markierung, Zeitraum erkannt):
 

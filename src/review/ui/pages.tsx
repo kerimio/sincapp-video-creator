@@ -1,0 +1,434 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDateRange } from '../../core/format';
+import { call, jobClient } from './api';
+import { ReviewPage } from './App';
+
+// ---------- Typen der App-API ----------
+interface Market { slug: string; name: string; logo: string; addresses: string[] }
+interface Run { running: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
+interface Job {
+  id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string };
+  inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
+  files?: string[]; run?: Run | null;
+}
+type Settings = Record<'ANTHROPIC_API_KEY' | 'BRAVE_API_KEY' | 'REMOVEBG_API_KEY', boolean>;
+
+export const go = (hash: string) => (location.hash = hash);
+
+const TOPICS: [string, string][] = [
+  ['', 'Alles gemischt'],
+  ['fleisch', 'Fleisch & Wurst'],
+  ['snacks', 'Snacks & Süßes'],
+  ['vorrat', 'Vorrat (Reis, Nudeln, Konserven)'],
+  ['getraenke', 'Getränke'],
+  ['frische', 'Obst, Gemüse & Frische'],
+  ['milch', 'Milch & Käse'],
+  ['haushalt', 'Haushalt & Drogerie'],
+];
+
+function Shell({ children, active }: { children: React.ReactNode; active?: string }) {
+  return (
+    <div className="app">
+      <header>
+        <div className="brand" onClick={() => go('#/')} style={{ cursor: 'pointer' }}>
+          <span className="dot" /> sincapp Story-Generator
+        </div>
+        <div className="spacer" />
+        <nav>
+          <a className={active === 'home' ? 'on' : ''} href="#/">Übersicht</a>
+          <a className={active === 'lib' ? 'on' : ''} href="#/bibliothek">Produkt-Bibliothek</a>
+          <a className={active === 'set' ? 'on' : ''} href="#/einstellungen">Einstellungen</a>
+        </nav>
+      </header>
+      <div className="page">{children}</div>
+    </div>
+  );
+}
+
+// ---------- Übersicht ----------
+export function Home() {
+  const [jobs, setJobs] = useState<Job[] | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [err, setErr] = useState('');
+  const load = () => call<Job[]>('GET', '/api/jobs').then(setJobs, (e) => setErr(e.message));
+  useEffect(() => {
+    load();
+    call<Settings>('GET', '/api/settings').then(setSettings);
+  }, []);
+  const demo = async () => {
+    const j = await call<Job>('POST', '/api/jobs/demo');
+    await call('POST', `/api/jobs/${j.id}/process`);
+    go(`#/job/${j.id}`);
+  };
+  return (
+    <Shell active="home">
+      {settings && !settings.ANTHROPIC_API_KEY && (
+        <div className="notice">
+          Zum Auslesen eigener Prospekte fehlt noch der Anthropic-API-Key. <a href="#/einstellungen">Jetzt eintragen</a> – oder erst mal die Demo mit dem Saray-Beispiel ausprobieren.
+        </div>
+      )}
+      <div className="hero">
+        <div>
+          <h1>Prospekt rein, Story raus.</h1>
+          <p className="muted">Prospektseiten hochladen, Angebote prüfen, fertiges Instagram-Video (DE + TR) herunterladen.</p>
+        </div>
+        <div className="row">
+          <button className="ghost" onClick={() => demo().catch((e) => setErr(e.message))}>Demo mit Saray-Beispiel</button>
+          <button className="primary big" onClick={() => go('#/neu')}>+ Neues Video</button>
+        </div>
+      </div>
+      {err && <div className="errors">{err}</div>}
+      <h2>Bisherige Videos</h2>
+      {jobs && !jobs.length && <p className="muted">Noch keine – leg mit „Neues Video“ los.</p>}
+      <div className="jobs">
+        {jobs?.map((j) => (
+          <div key={j.id} className="card job" onClick={() => go(`#/job/${j.id}`)}>
+            <div className="poster">{j.poster ? <img src={`${j.poster}?v=${j.createdAt}`} /> : <span>{j.hasStory ? 'noch kein Video' : 'in Arbeit'}</span>}</div>
+            <div className="meta">
+              <b>{j.title}</b>
+              <span className="muted">
+                {j.dates ? formatDateRange(j.dates.from, j.dates.to) : new Date(j.createdAt).toLocaleDateString('de-DE')}
+                {j.offers ? ` · ${j.offers} Angebote` : ''}
+              </span>
+              <span className={j.videos.length ? 'ok' : 'muted'}>{j.videos.length ? `✓ Video ${j.videos.map((v) => v.toUpperCase()).join(' + ')}` : j.hasStory ? 'bereit zum Prüfen' : `${j.inputs} Seite(n) hochgeladen`}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+// ---------- Neues Video: Markt, Prospekte, Einstellungen ----------
+export function NewJob() {
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [market, setMarket] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [topic, setTopic] = useState('');
+  const [count, setCount] = useState(8);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    call<Market[]>('GET', '/api/markets').then((m) => {
+      setMarkets(m);
+      if (m.length === 1) setMarket(m[0].slug);
+    });
+    call<Settings>('GET', '/api/settings').then(setSettings);
+  }, []);
+
+  const add = (list: FileList | null) => {
+    if (!list) return;
+    const ok = [...list].filter((f) => /\.(pdf|png|jpe?g|webp)$/i.test(f.name));
+    if (ok.length < list.length) setErr('Nur PDF, JPG, PNG oder WEBP – andere Dateien wurden ignoriert.');
+    setFiles((f) => [...f, ...ok].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true })));
+  };
+
+  const start = async () => {
+    setErr('');
+    try {
+      setBusy('Job wird angelegt …');
+      const name = markets.find((m) => m.slug === market)?.name ?? market;
+      const topicLabel = TOPICS.find(([k]) => k === topic)?.[1];
+      const job = await call<Job>('POST', '/api/jobs', { market, topic: topic || null, count, title: `${name}${topic ? ` – ${topicLabel}` : ''}` });
+      for (const [i, f] of files.entries()) {
+        setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
+        await call('POST', `/api/jobs/${job.id}/files?name=${encodeURIComponent(f.name)}`, undefined, f);
+      }
+      setBusy('Auslesen startet …');
+      await call('POST', `/api/jobs/${job.id}/process`);
+      go(`#/job/${job.id}`);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy('');
+    }
+  };
+
+  const noKey = settings && !settings.ANTHROPIC_API_KEY;
+  return (
+    <Shell>
+      <Steps current={0} />
+      <div className="wizard">
+        <section className="card">
+          <h3>1. Markt</h3>
+          <div className="markets">
+            {markets.map((m) => (
+              <button key={m.slug} className={`market ${market === m.slug ? 'on' : ''}`} onClick={() => setMarket(m.slug)}>
+                <img src={m.logo} />
+                <span>{m.name}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="card">
+          <h3>2. Prospekt hochladen</h3>
+          <div
+            className="drop"
+            onClick={() => input.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              add(e.dataTransfer.files);
+            }}
+          >
+            Prospektseiten hierher ziehen oder klicken
+            <small>PDF, JPG, PNG oder WEBP – auch mehrere auf einmal</small>
+            <input ref={input} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden onChange={(e) => add(e.target.files)} />
+          </div>
+          {files.length > 0 && (
+            <div className="files">
+              {files.map((f, i) => (
+                <div key={f.name + i} className="file">
+                  {f.type.startsWith('image/') ? <Thumb file={f} /> : <div className="pdf">PDF</div>}
+                  <small>{f.name}</small>
+                  <button className="ghost danger" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="card">
+          <h3>3. Einstellungen</h3>
+          <div className="row">
+            <label className="grow">
+              Thema
+              <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+                {TOPICS.map(([k, l]) => (
+                  <option key={k} value={k}>{l}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Angebote im Video: <b>{count}</b>
+              <input type="range" min={2} max={12} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+            </label>
+          </div>
+          <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>
+        </section>
+
+        {noKey && (
+          <div className="notice">
+            Zum Auslesen fehlt der Anthropic-API-Key. <a href="#/einstellungen">Unter Einstellungen eintragen</a>.
+          </div>
+        )}
+        {err && <div className="errors">{err}</div>}
+        <div className="row end">
+          <button className="ghost" onClick={() => go('#/')}>Abbrechen</button>
+          <button className="primary big" disabled={!market || !files.length || !!busy || !!noKey} onClick={start}>
+            {busy || 'Weiter: Prospekt auslesen →'}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+function Thumb({ file }: { file: File }) {
+  const url = useMemo(() => URL.createObjectURL(file), [file]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  return <img src={url} />;
+}
+
+export function Steps({ current }: { current: number }) {
+  const steps = ['Prospekt & Einstellungen', 'Auslesen', 'Prüfen', 'Video'];
+  return (
+    <div className="steps">
+      {steps.map((s, i) => (
+        <div key={s} className={i < current ? 'done' : i === current ? 'on' : ''}>
+          <span>{i < current ? '✓' : i + 1}</span> {s}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Job: Auslesen (Fortschritt) → Prüfen ----------
+export function JobPage({ id }: { id: string }) {
+  const [job, setJob] = useState<Job | null>(null);
+  const [err, setErr] = useState('');
+  const api = useMemo(() => jobClient(`/api/jobs/${id}`), [id]);
+
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      try {
+        const j = await call<Job>('GET', `/api/jobs/${id}`);
+        if (stop) return;
+        setJob(j);
+        if (j.run?.running) setTimeout(tick, 800);
+      } catch (e) {
+        setErr((e as Error).message);
+      }
+    };
+    tick();
+    return () => {
+      stop = true;
+    };
+  }, [id]);
+
+  const retry = async () => {
+    setErr('');
+    try {
+      await call('POST', `/api/jobs/${id}/process`);
+      setJob(await call<Job>('GET', `/api/jobs/${id}`));
+      location.reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  const remove = async () => {
+    if (!confirm('Diesen Job mit allen Dateien löschen?')) return;
+    await call('DELETE', `/api/jobs/${id}`);
+    go('#/');
+  };
+
+  if (err && !job) return <Shell><div className="errors">{err}</div></Shell>;
+  if (!job) return <Shell><p>Lade …</p></Shell>;
+
+  const run = job.run;
+  if (run?.running || (!job.hasStory && !run?.error)) {
+    const f = run?.progress.fraction ?? 0;
+    return (
+      <Shell>
+        <Steps current={1} />
+        <div className="card working">
+          <h3>{job.title}</h3>
+          {run?.running ? (
+            <>
+              <div className="progressbar big"><div style={{ width: `${(f * 100).toFixed(1)}%` }} /></div>
+              <p>{run.progress.message}</p>
+              <p className="muted small">Claude liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.</p>
+            </>
+          ) : (
+            <>
+              <p>Für diesen Job wurde das Auslesen noch nicht gestartet ({job.inputs} Seite(n) hochgeladen).</p>
+              <button className="primary" onClick={retry} disabled={!job.inputs}>Jetzt auslesen</button>
+            </>
+          )}
+          {err && <div className="errors">{err}</div>}
+        </div>
+      </Shell>
+    );
+  }
+  if (run?.error && !job.hasStory) {
+    return (
+      <Shell>
+        <Steps current={1} />
+        <div className="card working">
+          <h3>{job.title}</h3>
+          <div className="errors">Das hat nicht geklappt: {run.error}</div>
+          <p className="muted">Details stehen im Bericht (<a href={`/jobs/${id}/report.md`} target="_blank">report.md</a>).</p>
+          <div className="row">
+            <button className="ghost danger" onClick={remove}>Job löschen</button>
+            <button className="primary" onClick={retry}>Noch mal versuchen</button>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+  return (
+    <>
+      {run?.notes && run.notes.length > 0 && <Notes notes={run.notes} />}
+      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} />
+    </>
+  );
+}
+
+function Notes({ notes }: { notes: string[] }) {
+  const [open, setOpen] = useState(true);
+  if (!open) return null;
+  return (
+    <div className="notes">
+      <b>Hinweise vom Auslesen</b>
+      <ul>{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+      <button className="ghost" onClick={() => setOpen(false)}>Ausblenden</button>
+    </div>
+  );
+}
+
+// ---------- Einstellungen ----------
+export function SettingsPage() {
+  const [s, setS] = useState<Settings | null>(null);
+  const [vals, setVals] = useState({ ANTHROPIC_API_KEY: '', BRAVE_API_KEY: '', REMOVEBG_API_KEY: '' });
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    call<Settings>('GET', '/api/settings').then(setS);
+  }, []);
+  const save = async () => {
+    const body = Object.fromEntries(Object.entries(vals).filter(([, v]) => v.trim()));
+    setS(await call<Settings>('PUT', '/api/settings', body));
+    setVals({ ANTHROPIC_API_KEY: '', BRAVE_API_KEY: '', REMOVEBG_API_KEY: '' });
+    setMsg('Gespeichert. Die Keys liegen nur auf diesem Rechner (Datei .env).');
+  };
+  const rows: [keyof Settings, string, string][] = [
+    ['ANTHROPIC_API_KEY', 'Anthropic (Pflicht)', 'Liest die Prospekte und vergleicht Internet-Bilder mit dem Prospekt. Key unter console.anthropic.com anlegen.'],
+    ['BRAVE_API_KEY', 'Brave Search (empfohlen)', 'Bildersuche im Internet für saubere Produktfotos. Key unter api-dashboard.search.brave.com anlegen.'],
+    ['REMOVEBG_API_KEY', 'remove.bg (optional)', 'Nur als Ausweichlösung, wenn das lokale Freistellen nicht sauber klappt.'],
+  ];
+  return (
+    <Shell active="set">
+      <h1>Einstellungen</h1>
+      <div className="card settings">
+        {rows.map(([k, label, help]) => (
+          <div key={k} className="setting">
+            <div>
+              <b>{label}</b> {s && (s[k] ? <span className="ok">✓ eingetragen</span> : <span className="warn">fehlt</span>)}
+              <p className="muted small">{help}</p>
+            </div>
+            <input type="password" placeholder={s?.[k] ? 'neuen Key eintragen, um ihn zu ersetzen' : 'Key einfügen'} value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} />
+          </div>
+        ))}
+        <div className="row end">
+          {msg && <span className="ok">{msg}</span>}
+          <button className="primary" onClick={save} disabled={!Object.values(vals).some((v) => v.trim())}>Speichern</button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ---------- Produkt-Bibliothek ----------
+interface LibEntry { key: string; brand: string | null; name: { de: string; tr: string }; unit: string | null; img: string; url: string; source: { type: string; url?: string }; verified: boolean; uses: number; addedAt: string }
+export function LibraryPage() {
+  const [entries, setEntries] = useState<LibEntry[] | null>(null);
+  const [q, setQ] = useState('');
+  const load = () => call<LibEntry[]>('GET', '/api/library').then(setEntries);
+  useEffect(() => {
+    load();
+  }, []);
+  const shown = (entries ?? []).filter((e) => `${e.brand} ${e.name.de} ${e.name.tr}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')));
+  return (
+    <Shell active="lib">
+      <div className="row">
+        <h1 className="grow">Produkt-Bibliothek</h1>
+        <input placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <p className="muted">Jedes Produktbild, das im Internet gefunden und mit dem Prospekt abgeglichen oder von dir beim Prüfen gewählt wurde, landet hier und wird beim nächsten Prospekt automatisch wiederverwendet. Einfache Ausschnitte aus dem Prospekt kommen nicht hinein.</p>
+      {entries && !entries.length && <p className="muted">Noch leer – sie füllt sich, sobald der Brave-Key eingetragen ist oder du beim Prüfen ein Bild auswählst.</p>}
+      <div className="grid lib">
+        {shown.map((e) => (
+          <div key={e.img} className="cand">
+            <img src={e.url} />
+            <b>{e.brand} {e.name.de}</b>
+            <small className="muted">{e.unit} · {sourceName(e.source.type)} · {e.uses}× verwendet</small>
+            <button
+              className="ghost danger"
+              onClick={async () => {
+                if (!confirm('Aus der Bibliothek entfernen? Beim nächsten Mal wird wieder gesucht.')) return;
+                await call('DELETE', `/api/library/${encodeURIComponent(e.img)}`);
+                load();
+              }}
+            >
+              Entfernen
+            </button>
+          </div>
+        ))}
+      </div>
+    </Shell>
+  );
+}
+const sourceName = (t: string) => ({ web: 'Internet', openfoodfacts: 'Open Food Facts', prospekt: 'Prospekt', manual: 'eigenes Bild' })[t] ?? t;

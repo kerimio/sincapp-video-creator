@@ -65,7 +65,8 @@ export function startStaticServer(mounts: Mounts, port = 0, handler?: Handler, h
       res.writeHead(404, { 'content-type': 'text/plain' }).end(`not found: ${pathname}`);
     }
   });
-  return new Promise((ok) => {
+  return new Promise((ok, fail) => {
+    server.once('error', fail);
     server.listen(port, host, () => {
       const addr = server.address();
       const p = typeof addr === 'object' && addr ? addr.port : port;
