@@ -2,8 +2,8 @@
 
 Prospekt rein, Instagram-Story (MP4, 1080×1920) raus.
 
-> Stand: **Meilenstein 2** – Story-Template + MP4-Export (M1), Extraktion mit Claude Vision und Freisteller (M2).
-> Auswahl, Review-UI und der komplette `new`-Ablauf folgen in Meilenstein 3–4.
+> Stand: **Meilenstein 3** – Template + MP4 (M1), Extraktion + Freisteller (M2), Produktbilder aus dem Internet mit Bibliothek, Auswahl und Review-Oberfläche (M3).
+> Der komplette `new`-Ablauf in einem Befehl folgt in Meilenstein 4.
 
 ## Setup
 
@@ -14,7 +14,7 @@ pnpm install
 pnpm exec playwright install chromium   # einmalig
 pnpm setup:python                       # einmalig: .venv mit rembg (Freisteller) und PDF-Unterstützung
 pnpm build:template
-cp .env.example .env                    # ANTHROPIC_API_KEY eintragen, optional REMOVEBG_API_KEY
+cp .env.example .env                    # ANTHROPIC_API_KEY eintragen, optional BRAVE_API_KEY und REMOVEBG_API_KEY
 ```
 
 Die Freisteller-Modelle (ca. 220 MB) lädt rembg beim ersten Lauf nach `~/.u2net`.
@@ -43,11 +43,35 @@ Ablauf je Seite:
 3. **Preis-Gegencheck:** Jedes Preisschild wird einzeln ausgeschnitten und noch einmal gelesen. Nur wenn beide Lesungen übereinstimmen, gilt der Preis als sicher (`priceConfidence` 0.98), sonst < 0.9 und ein Hinweis im Bericht.
 4. Normalisierung: Preis „13,99“, Menge getrennt („5×140 g“), türkischer Name auf max. 2 × 14 Zeichen (sonst gekürzt + Hinweis), doppelte Angebote zusammengefasst.
 5. Freisteller lokal mit rembg (`birefnet-general-lite`, Rückfall `isnet-general-use`): Preisschilder werden vorher entfernt und die verdeckte Stelle aufgefüllt, Inseln entfernt, Rand geprüft (≥ 90 % transparent), Schachbrett-Fakes erkannt. Klappt es lokal nicht und `REMOVEBG_API_KEY` ist gesetzt, übernimmt remove.bg.
-6. Internet-Bilder: Open Food Facts liefert bis zu 3 Alternativen je Angebot (`imgAlternatives`), Auswahl später im Review.
-
 Fehler einzelner Seiten oder Bilder landen in `report.md`, der Lauf läuft weiter.
 
-Optionen: `--no-price-check`, `--no-cutout`, `--no-internet`, `--recorded <ordner>` (gespeicherte Antworten statt Claude), `--eval <ground-truth.json>`.
+Optionen: `--no-price-check`, `--images` (gleich alle Bilder holen), `--recorded <ordner>` (gespeicherte Antworten statt Claude), `--eval <ground-truth.json>`.
+
+## Auswahl und Produktbilder (Meilenstein 3)
+
+```bash
+./bin/sincapp-story.mjs select saray-kw44 --market saray            # 8 Angebote, gemischt
+./bin/sincapp-story.mjs select saray-kw44 --market saray --topic fleisch --count 6
+```
+
+- **Auswahl:** Angebote ohne Preis und Dubletten fallen raus, sichere Preise und saubere Bilder zuerst, dann reihum aus den Warengruppen. Themen (`fleisch`, `snacks`, `vorrat`, `getraenke`, `frische`, `milch`, `haushalt`) filtern und setzen die passende Überschrift.
+- **Produktbilder**, in dieser Reihenfolge:
+  1. **Bibliothek** (`library/`, Ort änderbar mit `SINCAPP_LIBRARY`): einmal gefundene Produkte werden wiederverwendet – gleiche Marke, gleicher Name (DE oder TR), gleiche Menge.
+  2. **Internet:** Bildersuche mit Marke + Name + Menge über die Brave Search API (`BRAVE_API_KEY`) und Open Food Facts. Claude vergleicht jeden Treffer mit dem Prospekt-Ausschnitt (gleiches Produkt, gleiche Sorte, sauberes Foto). Nur ein bestätigter Treffer wird genommen, freigestellt (oder vorhandene Transparenz übernommen) und in der Bibliothek gespeichert.
+  3. **Prospekt-Ausschnitt** als Notlösung.
+- Ergebnis: `story.json`, Bilder in `images/`, Hinweise in `report.md`.
+
+## Review-Oberfläche
+
+```bash
+pnpm review saray-kw44        # öffnet http://127.0.0.1:4321/review/
+```
+
+- Angebote hinzufügen/entfernen, per Ziehen sortieren, Preis, Menge, Namen (DE/TR, mit 14-Zeichen-Zähler), Zusatz und Zoom ändern.
+- Überschrift, Zeile darüber und Gültigkeit ändern.
+- **Bild ändern:** Internet-Treffer (mit Urteil des Abgleichs) übernehmen oder neu suchen, im Prospekt ein Rechteck ziehen und neu ausschneiden, oder ein eigenes Foto hochladen. Jede Wahl landet in der Bibliothek.
+- Live-Vorschau in DE/TR mit Abspielen und Zeitleiste, Hinweise zu unsicheren Preisen und Bildern.
+- **Video rendern** speichert und erzeugt `output/story-de.mp4`, `story-tr.mp4`, `preview.png` inkl. Prüfung.
 
 Abnahme gegen die 6 Saray-Beispielseiten (≥ 95 % erkannt, keine falschen Preise ohne Markierung, Zeitraum erkannt):
 

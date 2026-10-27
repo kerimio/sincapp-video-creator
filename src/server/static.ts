@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
@@ -25,7 +25,7 @@ export interface StaticServer {
   server: Server;
 }
 
-function resolveFile(mounts: Mounts, pathname: string): string | null {
+export function resolveFile(mounts: Mounts, pathname: string): string | null {
   const prefixes = Object.keys(mounts).sort((a, b) => b.length - a.length);
   for (const prefix of prefixes) {
     if (!pathname.startsWith(prefix)) continue;
@@ -38,19 +38,35 @@ function resolveFile(mounts: Mounts, pathname: string): string | null {
   return null;
 }
 
-export function startStaticServer(mounts: Mounts, port = 0): Promise<StaticServer> {
-  const server = createServer((req, res) => {
-    const pathname = new URL(req.url ?? '/', 'http://x').pathname;
-    const file = resolveFile(mounts, pathname);
-    if (!file) {
-      res.writeHead(404, { 'content-type': 'text/plain' }).end(`not found: ${pathname}`);
+/** Liefert eine Datei aus den Mounts aus; false, wenn es keine gibt. */
+export function serveStatic(mounts: Mounts, req: IncomingMessage, res: ServerResponse) {
+  const pathname = new URL(req.url ?? '/', 'http://x').pathname;
+  const file = resolveFile(mounts, pathname);
+  if (!file) return false;
+  res.writeHead(200, { 'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+  createReadStream(file).pipe(res);
+  return true;
+}
+
+export type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean> | boolean;
+
+/** Statischer Server; `handler` (z. B. eine API) kommt vor den Dateien dran. */
+export function startStaticServer(mounts: Mounts, port = 0, handler?: Handler, host = '127.0.0.1'): Promise<StaticServer> {
+  const server = createServer(async (req, res) => {
+    try {
+      if (handler && (await handler(req, res))) return;
+    } catch (e) {
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: (e as Error).message }));
       return;
     }
-    res.writeHead(200, { 'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream', 'cache-control': 'no-store' });
-    createReadStream(file).pipe(res);
+    if (!serveStatic(mounts, req, res)) {
+      const pathname = new URL(req.url ?? '/', 'http://x').pathname;
+      res.writeHead(404, { 'content-type': 'text/plain' }).end(`not found: ${pathname}`);
+    }
   });
   return new Promise((ok) => {
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, host, () => {
       const addr = server.address();
       const p = typeof addr === 'object' && addr ? addr.port : port;
       ok({ url: `http://127.0.0.1:${p}`, server, close: () => new Promise((r) => server.close(() => r())) });

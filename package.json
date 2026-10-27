@@ -20,7 +20,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "setup:python": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
-    "eval:saray": "tsx tools/eval-saray.ts"
+    "eval:saray": "tsx tools/eval-saray.ts",
+    "build:review": "vite build --config vite.review.config.ts",
+    "review": "tsx src/cli/index.ts review"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

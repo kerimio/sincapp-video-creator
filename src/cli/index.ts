@@ -18,6 +18,7 @@ import { buildStory, findTopic, selectOffers } from '../select/select';
 import type { Extraction } from '../extract/schema';
 import { extractionReport } from '../report';
 import { writeFile } from 'node:fs/promises';
+import { startReviewServer } from '../review/server';
 
 // .env laden (Node ≥ 20.12)
 if (existsSync(join(ROOT, '.env'))) process.loadEnvFile?.(join(ROOT, '.env'));
@@ -39,6 +40,26 @@ function ensureTemplateBuilt() {
   const r = spawnSync('pnpm', ['build:template'], { cwd: ROOT, stdio: 'inherit' });
   if (r.status !== 0) throw new Error('Template-Build fehlgeschlagen');
 }
+
+function ensureReviewBuilt() {
+  if (existsSync(join(ROOT, 'dist/review/index.html'))) return;
+  const r = spawnSync('pnpm', ['build:review'], { cwd: ROOT, stdio: 'inherit' });
+  if (r.status !== 0) throw new Error('Review-Build fehlgeschlagen');
+}
+
+program
+  .command('review')
+  .argument('<job>', 'Job mit story.json (und extraction.json)')
+  .option('-p, --port <n>', 'Port', (v) => parseInt(v, 10), 4321)
+  .action(async (job: string, o: { port: number }) => {
+    ensureTemplateBuilt();
+    ensureReviewBuilt();
+    const dir = jobDir(job);
+    if (!existsSync(join(dir, 'story.json'))) throw new Error(`Keine story.json in ${dir} – erst \`select\` ausführen.`);
+    const server = await startReviewServer(dir, o.port);
+    console.log(`Review läuft: ${server.url}/review/  (Beenden mit Strg+C)`);
+    if (process.platform === 'darwin') spawnSync('open', [`${server.url}/review/`]);
+  });
 
 program
   .command('render')

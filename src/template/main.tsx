@@ -15,7 +15,7 @@ declare global {
     sincapp: {
       ready: Promise<{ duration: number }>;
       seek: (t: number) => void;
-      setStory: (data: unknown) => Promise<void>;
+      setStory: (data: unknown) => Promise<{ duration: number }>;
       error?: string;
     };
   }
@@ -86,7 +86,7 @@ window.sincapp = {
     t = time;
     draw();
   },
-  async setStory(data: unknown) {
-    await load(data);
+  setStory(data: unknown) {
+    return load(data);
   },
 };
