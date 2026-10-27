@@ -80,8 +80,9 @@ export interface ExtractedOffer {
   priceConfidence: number;
   /** Freigestelltes Bild relativ zum Job-Ordner. */
   img?: string;
-  imgSource?: 'prospekt' | 'removebg' | 'openfoodfacts';
-  imgAlternatives?: { source: 'openfoodfacts'; url: string; title: string }[];
+  imgSource?: 'library' | 'web' | 'prospekt' | 'removebg' | 'manual';
+  /** Fundstücke aus dem Internet; `file` relativ zum Job-Ordner, `verdict` vom Abgleich mit dem Prospekt */
+  imgAlternatives?: { source: string; url: string; title: string; file?: string; match?: boolean; verdict?: string }[];
   warnings: string[];
 }
 

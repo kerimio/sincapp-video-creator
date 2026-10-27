@@ -152,9 +152,38 @@ def drop_specks(alpha, min_share=0.03):
     return np.where(grown, alpha, 0).astype(np.uint8)
 
 
+def save_trimmed(rgba, out, extra):
+    a = rgba[..., 3]
+    ys, xs = np.nonzero(a > 8)
+    if len(xs) == 0:
+        return None
+    rgba = rgba[max(0, ys.min() - 2):ys.max() + 3, max(0, xs.min() - 2):xs.max() + 3]
+    img = Image.fromarray(rgba, "RGBA")
+    if max(img.size) > MAX_SIDE:
+        s = MAX_SIDE / max(img.size)
+        img = img.resize((round(img.width * s), round(img.height * s)), Image.LANCZOS)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    img.save(out, optimize=True)
+    return dict(extra, out=out, width=img.width, height=img.height, coverage=round(float((rgba[..., 3] > 128).mean()), 4))
+
+
 def process(job, sessions, cache):
     warnings = []
     path = job["image"]
+    if job.get("bbox") is None:
+        # Ganzes Bild (z. B. Produktfoto aus dem Internet). Ist es schon freigestellt, nur zuschneiden.
+        src = Image.open(path)
+        if src.mode in ("RGBA", "LA", "P"):
+            rgba = np.array(src.convert("RGBA"), dtype=np.uint8)
+            edge = border_transparency(rgba[..., 3])
+            if edge >= 0.9 and (rgba[..., 3] < 25).mean() > 0.05:
+                if looks_like_checkerboard(rgba[..., :3], rgba[..., 3]):
+                    warnings.append("Bild sieht nach einem gefakten Transparenz-Schachbrett aus")
+                res = save_trimmed(rgba, job["out"], {"ok": not warnings, "model": "vorhanden", "edgeTransparent": round(edge, 4), "warnings": warnings})
+                if res:
+                    return res
+        w, h = src.size
+        job = dict(job, bbox=[0, 0, w, h], pad=0)
     if path not in cache:
         cache.clear()
         cache[path] = Image.open(path).convert("RGB")

@@ -7,3 +7,4 @@ jobs/*/
 .cache/
 tmp/
 .venv/
+library/
