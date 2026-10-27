@@ -152,6 +152,31 @@ def drop_specks(alpha, min_share=0.03):
     return np.where(grown, alpha, 0).astype(np.uint8)
 
 
+def plain_background_alpha(rgb, tol=26.0):
+    """Produktfoto auf einfarbigem Hintergrund (typisch: weiß im Shop): nur den Hintergrund
+    vom Rand her wegnehmen, das Produkt bleibt vollständig. None, wenn der Rand nicht einfarbig ist."""
+    h, w = rgb.shape[:2]
+    f = np.concatenate([rgb[:3].reshape(-1, 3), rgb[-3:].reshape(-1, 3), rgb[:, :3].reshape(-1, 3), rgb[:, -3:].reshape(-1, 3)]).astype(np.float32)
+    bg = np.median(f, axis=0)
+    if (np.linalg.norm(f - bg, axis=1) < tol).mean() < 0.92:
+        return None
+    dist = np.linalg.norm(rgb.astype(np.float32) - bg, axis=2)
+    cand = dist < tol
+    lab, _ = ndimage.label(cand)
+    edge_labels = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+    back = np.isin(lab, edge_labels[edge_labels > 0])
+    fg = ndimage.binary_fill_holes(~back)
+    share = float(fg.mean())
+    if share < 0.06 or share > 0.97:
+        return None
+    # weiche Kante: Übergang über den Farbabstand, nur direkt am Rand des Produkts
+    ring = ndimage.binary_dilation(fg, iterations=2) & ~ndimage.binary_erosion(fg, iterations=1)
+    soft = np.clip((dist - tol * 0.5) / (tol * 1.5), 0, 1)
+    alpha = np.where(fg, 1.0, 0.0)
+    alpha = np.where(ring, np.maximum(alpha * soft, np.where(fg, soft, 0)), alpha)
+    return drop_specks((alpha * 255).astype(np.uint8))
+
+
 def save_trimmed(rgba, out, extra):
     a = rgba[..., 3]
     ys, xs = np.nonzero(a > 8)
@@ -182,6 +207,12 @@ def process(job, sessions, cache):
                 res = save_trimmed(rgba, job["out"], {"ok": not warnings, "model": "vorhanden", "edgeTransparent": round(edge, 4), "warnings": warnings})
                 if res:
                     return res
+        rgb = np.array(src.convert("RGB"), dtype=np.uint8)
+        a = plain_background_alpha(rgb)
+        if a is not None and border_transparency(a) >= 0.9:
+            res = save_trimmed(np.dstack([rgb, a]), job["out"], {"ok": True, "model": "hintergrund", "edgeTransparent": round(border_transparency(a), 4), "warnings": warnings})
+            if res:
+                return res
         w, h = src.size
         job = dict(job, bbox=[0, 0, w, h], pad=0)
     if path not in cache:
