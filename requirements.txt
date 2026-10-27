@@ -1,0 +1,7 @@
+# Python-Teil (Freisteller, PDF-Seiten). Installieren mit: pnpm setup:python
+rembg[cpu]==2.0.67
+pillow>=11
+numpy>=2
+scipy>=1.14
+opencv-python-headless>=4.10
+pypdfium2>=4.30

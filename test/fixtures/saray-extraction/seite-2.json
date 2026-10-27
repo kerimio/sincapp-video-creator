@@ -1,0 +1,107 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Kavak",
+   "name_de": "Güllü Tosya Reis",
+   "name_tr": "Güllü Tosya Pirinç",
+   "unit": "5 kg",
+   "price": "7.99",
+   "category": "grundnahrung",
+   "bbox": [
+    115,
+    515,
+    545,
+    895
+   ],
+   "price_tag_bbox": [
+    45,
+    655,
+    240,
+    745
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Ankara",
+   "name_de": "Nudeln",
+   "name_tr": "Makarna",
+   "unit": "500 g",
+   "price": "0.65",
+   "category": "grundnahrung",
+   "bbox": [
+    665,
+    555,
+    1055,
+    875
+   ],
+   "price_tag_bbox": [
+    955,
+    560,
+    1145,
+    645
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "diverse Sorten",
+   "note_tr": "çeşitli çeşitler"
+  },
+  {
+   "brand": "Tat",
+   "name_de": "Kichererbsen 9 mm",
+   "name_tr": "Koçbaşı Nohut",
+   "unit": "1 kg",
+   "price": "1.99",
+   "category": "grundnahrung",
+   "bbox": [
+    90,
+    975,
+    445,
+    1285
+   ],
+   "price_tag_bbox": [
+    340,
+    1150,
+    530,
+    1235
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Dere",
+   "name_de": "Grüne Linsen",
+   "name_tr": "Yeşil Mercimek",
+   "unit": "1 kg",
+   "price": "1.99",
+   "category": "grundnahrung",
+   "bbox": [
+    625,
+    962,
+    955,
+    1285
+   ],
+   "price_tag_bbox": [
+    910,
+    1140,
+    1105,
+    1225
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  }
+ ]
+}

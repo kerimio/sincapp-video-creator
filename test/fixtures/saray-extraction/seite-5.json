@@ -1,0 +1,131 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Samyang",
+   "name_de": "Buldak",
+   "name_tr": "Buldak Ramen",
+   "unit": "5×140 g",
+   "price": "5.99",
+   "category": "snacks",
+   "bbox": [
+    115,
+    585,
+    520,
+    885
+   ],
+   "price_tag_bbox": [
+    320,
+    543,
+    515,
+    625
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "diverse Sorten",
+   "note_tr": "çeşitli çeşitler"
+  },
+  {
+   "brand": "Takis",
+   "name_de": "Blue Heat und Fuego",
+   "name_tr": "Blue Heat ve Fuego",
+   "unit": "93 g",
+   "price": "1.49",
+   "category": "snacks",
+   "bbox": [
+    700,
+    475,
+    1050,
+    800
+   ],
+   "price_tag_bbox": [
+    875,
+    790,
+    1070,
+    880
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Derby",
+   "name_de": "Chips",
+   "name_tr": "Cips",
+   "unit": "18×18 g",
+   "price": "2.99",
+   "category": "snacks",
+   "bbox": [
+    120,
+    1012,
+    315,
+    1300
+   ],
+   "price_tag_bbox": [
+    55,
+    1210,
+    235,
+    1290
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Ülker",
+   "name_de": "Saklıköy Doppelkekse mit Milchfüllung",
+   "name_tr": "Saklıköy Sütlü Bisküvi",
+   "unit": "3×88 g",
+   "price": "0.99",
+   "category": "suesses",
+   "bbox": [
+    420,
+    1050,
+    760,
+    1275
+   ],
+   "price_tag_bbox": [
+    430,
+    1200,
+    620,
+    1290
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Ülker",
+   "name_de": "Peki 8 Kek",
+   "name_tr": "Peki 8 Kek",
+   "unit": "210 g",
+   "price": "0.99",
+   "category": "suesses",
+   "bbox": [
+    815,
+    1030,
+    1110,
+    1240
+   ],
+   "price_tag_bbox": [
+    830,
+    1200,
+    1015,
+    1290
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "Karamell oder Erdbeere",
+   "note_tr": "karamel veya çilek"
+  }
+ ]
+}

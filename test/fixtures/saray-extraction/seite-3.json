@@ -1,0 +1,83 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Durra",
+   "name_de": "Tahin",
+   "name_tr": "Tahin",
+   "unit": "800 g",
+   "price": "4.99",
+   "category": "konserven",
+   "bbox": [
+    235,
+    568,
+    565,
+    818
+   ],
+   "price_tag_bbox": [
+    70,
+    615,
+    255,
+    700
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Durra",
+   "name_de": "Sardinen",
+   "name_tr": "Sardalya",
+   "unit": "125 g",
+   "price": "0.79",
+   "category": "konserven",
+   "bbox": [
+    678,
+    720,
+    1130,
+    885
+   ],
+   "price_tag_bbox": [
+    705,
+    615,
+    900,
+    705
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "scharf oder mild",
+   "note_tr": "acılı veya sade"
+  },
+  {
+   "brand": "Durra",
+   "name_de": "Eingelegtes Mischgemüse",
+   "name_tr": "Karışık Turşu",
+   "unit": "2750 g",
+   "price": "3.49",
+   "category": "konserven",
+   "bbox": [
+    270,
+    938,
+    600,
+    1300
+   ],
+   "price_tag_bbox": [
+    560,
+    1185,
+    745,
+    1275
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  }
+ ]
+}

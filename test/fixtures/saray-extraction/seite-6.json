@@ -1,0 +1,59 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Lentz",
+   "name_de": "Kontaktgrill",
+   "name_tr": "Tost Makinesi",
+   "unit": "",
+   "price": "14.99",
+   "category": "haushalt",
+   "bbox": [
+    470,
+    535,
+    1065,
+    910
+   ],
+   "price_tag_bbox": [
+    255,
+    585,
+    505,
+    665
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "Grillfläche 23 × 14,5 cm",
+   "note_tr": "23 × 14,5 cm ızgara"
+  },
+  {
+   "brand": "Peros",
+   "name_de": "Bleichmittel",
+   "name_tr": "Çamaşır Suyu",
+   "unit": "950 ml",
+   "price": "0.99",
+   "category": "haushalt",
+   "bbox": [
+    480,
+    915,
+    745,
+    1360
+   ],
+   "price_tag_bbox": [
+    735,
+    1130,
+    975,
+    1215
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  }
+ ]
+}

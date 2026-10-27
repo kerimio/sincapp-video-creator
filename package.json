@@ -18,9 +18,12 @@
     "cli": "tsx src/cli/index.ts",
     "diff:reference": "pnpm build:template && tsx tools/diff-reference.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "setup:python": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "eval:saray": "tsx tools/eval-saray.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "commander": "^14.0.0",
     "playwright": "1.63.0",
     "react": "18.3.1",

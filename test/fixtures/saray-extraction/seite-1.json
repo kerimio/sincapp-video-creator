@@ -1,0 +1,83 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Egetürk",
+   "name_de": "Sırma Knoblauchwurst",
+   "name_tr": "Sırma Parmak Sucuk",
+   "unit": "1 kg",
+   "price": "13.99",
+   "category": "wurst",
+   "bbox": [
+    75,
+    538,
+    440,
+    918
+   ],
+   "price_tag_bbox": [
+    357,
+    770,
+    563,
+    850
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Efepaşa",
+   "name_de": "Paşam Knoblauchwurst",
+   "name_tr": "Paşam Parmak Sucuk",
+   "unit": "1 kg",
+   "price": "13.99",
+   "category": "wurst",
+   "bbox": [
+    700,
+    598,
+    1060,
+    1003
+   ],
+   "price_tag_bbox": [
+    885,
+    548,
+    1090,
+    625
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  },
+  {
+   "brand": "Egetürk / Efepaşa",
+   "name_de": "Salami",
+   "name_tr": "Dilimli Salam",
+   "unit": "150 g",
+   "price": "1.69",
+   "category": "wurst",
+   "bbox": [
+    70,
+    1062,
+    500,
+    1295
+   ],
+   "price_tag_bbox": [
+    490,
+    1040,
+    700,
+    1130
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": "diverse Sorten",
+   "note_tr": "çeşitli çeşitler"
+  }
+ ]
+}

@@ -1,0 +1,35 @@
+{
+ "market": "Saray Market",
+ "validFrom": "2026-10-28",
+ "validTo": "2026-11-07",
+ "addresses": [
+  "Lange Laube 3, 30159 Hannover"
+ ],
+ "phone": "0511 167 47 78",
+ "offers": [
+  {
+   "brand": "Tanay",
+   "name_de": "Yakut Ceylon-Schwarztee",
+   "name_tr": "Yakut Yaprak Çayı",
+   "unit": "800 g",
+   "price": "2.99",
+   "category": "getraenke",
+   "bbox": [
+    160,
+    582,
+    840,
+    1180
+   ],
+   "price_tag_bbox": [
+    755,
+    948,
+    1085,
+    1110
+   ],
+   "confidence": 0.97,
+   "price_confidence": 0.98,
+   "note_de": null,
+   "note_tr": null
+  }
+ ]
+}

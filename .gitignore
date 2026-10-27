@@ -6,3 +6,4 @@ jobs/*/
 *.log
 .cache/
 tmp/
+.venv/
