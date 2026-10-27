@@ -556,13 +556,14 @@ function ImageDialog(p: {
                   p.run('Suche …', async () => {
                     const r = await api.search(o.id, query);
                     p.onOffer(r.offer);
+                    if (!r.offer.imgAlternatives?.length) throw new Error(r.errors.length ? `Suche fehlgeschlagen: ${r.errors.join('; ')}` : `Keine Treffer für „${r.query}“`);
                   })
                 }
               >
                 Suchen
               </button>
             </div>
-            {!p.search.brave && <p className="muted">Gesucht wird nur bei Open Food Facts. Für Bilder aus dem ganzen Netz <code>BRAVE_API_KEY</code> in die .env eintragen.</p>}
+            {!p.search.brave && <p className="muted">Ohne Brave-Key wird nur bei Open Food Facts gesucht – dort gibt es viele türkische Marken nicht. Für Bilder aus dem ganzen Netz den Brave-Key unter <a href="#/einstellungen">Einstellungen</a> eintragen.</p>}
             <div className="grid">
               {(o.imgAlternatives ?? []).map((a, i) => (
                 <div key={a.url} className={`cand ${a.match ? 'match' : ''}`}>

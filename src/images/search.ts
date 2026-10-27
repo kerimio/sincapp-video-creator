@@ -39,8 +39,14 @@ export class OpenFoodFactsImages implements ImageSearchProvider {
   name = 'openfoodfacts';
   constructor(private fetchImpl: Fetch = fetch) {}
   async search(query: string, opts: { limit?: number } = {}) {
-    const r = await findProductImages({ brand: null, names: [query] }, { fetchImpl: this.fetchImpl, limit: opts.limit ?? 4 });
-    return r.map((c) => ({ url: c.url, title: c.title, provider: this.name }));
+    // Open Food Facts verlangt alle Suchwörter – Menge weglassen und notfalls nur mit dem Namen ohne Marke suchen
+    const noUnit = query.replace(/\b\d+(?:[.,]\d+)?\s*(?:x|×)?\s*\d*\s*(?:kg|g|l|ml|cl|stk|st)\b\.?/gi, ' ').replace(/\s+/g, ' ').trim();
+    const tries = [...new Set([query, noUnit, noUnit.split(' ').slice(1).join(' ')])].filter((q) => q.split(' ').length >= 1 && q.length > 2);
+    for (const q of tries) {
+      const r = await findProductImages({ brand: null, names: [q] }, { fetchImpl: this.fetchImpl, limit: opts.limit ?? 4 });
+      if (r.length) return r.map((c) => ({ url: c.url, title: c.title, provider: this.name }));
+    }
+    return [];
   }
 }
 
