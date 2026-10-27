@@ -4,6 +4,15 @@
 cd "$(dirname "$0")" || exit 1
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Homebrew-Node bevorzugen, auch wenn es nicht verlinkt ist (ältere Node-Versionen im PATH stören sonst)
+use_brew_node() {
+  command -v brew >/dev/null || return
+  local p
+  p="$(brew --prefix node 2>/dev/null)"
+  [ -x "$p/bin/node" ] && export PATH="$p/bin:$PATH"
+}
+use_brew_node
+
 fail() {
   echo
   echo "✗ $1"
@@ -29,7 +38,10 @@ if [ ${#need[@]} -gt 0 ]; then
   echo "→ Installiere ${need[*]} (einmalig, dauert ein paar Minuten) …"
   brew install "${need[@]}" || fail "Installation von ${need[*]} fehlgeschlagen."
   [ -z "$PY" ] && PY="$(brew --prefix)/bin/python3.12"
+  use_brew_node
+  node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>20||(a===20&&b>=12)?0:1)' || fail "Node ist noch zu alt ($(node -v)). Bitte im Terminal \"brew upgrade node\" ausführen."
 fi
+echo "Node $(node -v)"
 
 # 2. pnpm (ohne globale Installation)
 if command -v pnpm >/dev/null; then PNPM=(pnpm); else PNPM=(npx --yes pnpm@10.28.0); fi
