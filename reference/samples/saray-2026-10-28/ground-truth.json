@@ -1,0 +1,27 @@
+{
+  "market": "Saray Market",
+  "validFrom": "2026-10-28",
+  "validTo": "2026-11-07",
+  "addresses": ["Lange Laube 3, 30159 Hannover"],
+  "phone": "0511 167 47 78",
+  "offers": [
+    {"page": 1, "brand": "Egetürk", "name": "Sırma Knoblauchwurst", "unit": "1 kg", "price": "13,99"},
+    {"page": 1, "brand": "Efepaşa", "name": "Paşam Knoblauchwurst", "unit": "1 kg", "price": "13,99"},
+    {"page": 1, "brand": "Egetürk / Efepaşa", "name": "Salam, diverse Sorten", "unit": "150 g", "price": "1,69"},
+    {"page": 2, "brand": "Kavak", "name": "Güllü Tosya Reis", "unit": "5 kg", "price": "7,99"},
+    {"page": 2, "brand": "Ankara", "name": "Nudeln, diverse Sorten", "unit": "500 g", "price": "0,65"},
+    {"page": 2, "brand": "Tat", "name": "Kichererbsen 9 mm", "unit": "1 kg", "price": "1,99"},
+    {"page": 2, "brand": "Dere", "name": "Grüne Linsen", "unit": "1 kg", "price": "1,99"},
+    {"page": 3, "brand": "Durra", "name": "Tahin", "unit": "800 g", "price": "4,99"},
+    {"page": 3, "brand": "Durra", "name": "Sardinen, scharf oder mild", "unit": "125 g", "price": "0,79"},
+    {"page": 3, "brand": "Durra", "name": "eingelegtes Mischgemüse", "unit": "2750 g", "price": "3,49"},
+    {"page": 4, "brand": "Tanay", "name": "Yakut Ceylon-Schwarztee", "unit": "800 g", "price": "2,99"},
+    {"page": 5, "brand": "Samyang", "name": "Buldak, diverse Sorten", "unit": "5×140 g", "price": "5,99"},
+    {"page": 5, "brand": "Takis", "name": "Blue Heat und Fuego", "unit": "93 g", "price": "1,49"},
+    {"page": 5, "brand": "Derby", "name": "Chips", "unit": "18×18 g", "price": "2,99"},
+    {"page": 5, "brand": "Ülker", "name": "Saklıköy Doppelkekse mit Milchfüllung", "unit": "3×88 g", "price": "0,99"},
+    {"page": 5, "brand": "Ülker", "name": "Peki 8 Kek, Karamell oder Erdbeere", "unit": "210 g", "price": "0,99"},
+    {"page": 6, "brand": "Lentz", "name": "Kontaktgrill, Grillfläche 23 × 14,5 cm", "unit": "", "price": "14,99"},
+    {"page": 6, "brand": "Peros", "name": "Bleichmittel", "unit": "950 ml", "price": "0,99"}
+  ]
+}

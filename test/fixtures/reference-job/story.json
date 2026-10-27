@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "market": {
+    "name": "Saray Market",
+    "slug": "saray",
+    "logo": "saray/logo.jpg",
+    "instagram": "saraymarket",
+    "addresses": ["Lange Laube 3, 30159 Hannover"]
+  },
+  "lang": ["de", "tr"],
+  "dates": { "from": "2026-10-28", "to": "2026-10-30" },
+  "headline": { "de": ["Fleisch-", "angebote"], "tr": ["Et", "fırsatları"] },
+  "offers": [
+    { "img": "images/saray-rindermett.png", "imgZoom": 1.05, "price": "10,99", "unit": "1 kg",
+      "name": { "de": ["Rinder-", "mett"], "tr": ["Dana", "kıyma"] } },
+    { "img": "images/saray-mett-gemischt.png", "imgZoom": 1.0, "price": "10,99", "unit": "1 kg",
+      "name": { "de": ["Gemischtes", "Mett"], "tr": ["Karışık", "kıyma"] },
+      "note": { "de": "Lamm & Rind", "tr": "Kuzu & dana" } },
+    { "img": "images/saray-haehnchen.png", "imgZoom": 1.15, "price": "29,95", "unit": "5 kg",
+      "name": { "de": ["Hähnchen-", "brust"], "tr": ["Tavuk", "göğsü"] } },
+    { "img": "images/saray-rinderhals.png", "imgZoom": 1.05, "price": "12,99", "unit": "1 kg",
+      "name": { "de": ["Rinderhals", "ohne Knochen"], "tr": ["Dana boyun", "kemiksiz"] } },
+    { "img": "images/saray-rippen.png", "imgZoom": 1.0, "price": "10,99", "unit": "1 kg",
+      "name": { "de": ["Rinderrippen", "ohne Knochen"], "tr": ["Dana kaburga", "kemiksiz"] } }
+  ],
+  "appScreenshot": "images/app-screen-saray.png"
+}

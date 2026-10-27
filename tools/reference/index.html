@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!-- Lädt die Original-Referenz (reference/story-saray.jsx + animations-v3.jsx) für den Pixelvergleich. -->
+<link rel="stylesheet" href="/tpl/fonts.css" />
+<style>html,body{margin:0;background:#000}#root{position:relative;width:1080px;height:2100px}
+svg[data-om-exportable-video-with-duration-secs]{transform:none!important;box-shadow:none!important}
+[data-om-starter]{justify-content:flex-start!important}
+</style>
+<script src="/vendor/react.production.min.js"></script>
+<script src="/vendor/react-dom.production.min.js"></script>
+<script src="/vendor/babel.min.js"></script>
+<script>
+window.OM_SCENES = '[{"name":"Intro","dur":3.6},{"name":"S1","dur":4.5,"nat":6.5},{"name":"S2","dur":4.5,"nat":6.5},{"name":"CTA","dur":6}]';
+window.OM_PLAYBACK = '{"mode":"loop"}';
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(async () => {
+  const lang = new URLSearchParams(location.search).get('lang') || 'de';
+  const src = await Promise.all(['/ref/animations-v3.jsx', '/ref/story-saray.jsx'].map((u) => fetch(u).then((r) => r.text())));
+  const code = src.join('\n;\n').replace('https://cdn.jsdelivr.net/npm/simple-icons@v16/icons/apple.svg', 'assets/icons/apple.svg');
+  const js = Babel.transform(code, { presets: ['react'] }).code;
+  const s = document.createElement('script');
+  s.textContent = js + '\n;window.__SarayStory = SarayStory; window.__Easing = Easing;';
+  document.head.appendChild(s);
+  const sample = 'AÄÖÜßÇĞİŞ€0123456789 aäöüçğışü';
+  await Promise.all([500, 600, 700, 800, 900].map((w) => document.fonts.load(w + ' 40px Archivo', sample)));
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.__SarayStory, { lang }));
+  await new Promise((r) => setTimeout(r, 300));
+  const svg = document.querySelector('[data-om-sync-seek]');
+  await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+  window.refSeek = (t) => svg.dispatchEvent(new CustomEvent('data-om-seek-to-time-frame', { detail: { time: t, sync: true } }));
+  window.refRect = () => { const r = svg.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+  window.refReady = true;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+jobs/*/
+!jobs/.gitkeep
+.env
+*.log
+.cache/
+tmp/

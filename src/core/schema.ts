@@ -1,0 +1,89 @@
+import { z } from 'zod';
+
+export const LANGS = ['de', 'tr'] as const;
+export const Lang = z.enum(LANGS);
+export type Lang = z.infer<typeof Lang>;
+
+const Localized = z.object({ de: z.string(), tr: z.string() });
+const Lines = z.array(z.string().min(1)).min(1).max(2);
+
+/** Preis im deutschen Format, z. B. "13,99". */
+export const PriceString = z.string().regex(/^\d{1,4},\d{2}$/, 'Preis muss im Format "13,99" sein');
+
+const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Datum muss im Format JJJJ-MM-TT sein');
+
+export const LogoCrop = z.object({
+  w: z.number().positive(),
+  h: z.number().positive(),
+  offsetX: z.number().min(0),
+  offsetY: z.number().min(0),
+});
+
+export const Market = z.object({
+  name: z.string().min(1),
+  slug: z.string().regex(/^[a-z0-9-]+$/),
+  /** Pfad relativ zu markets/, z. B. "saray/logo.jpg". */
+  logo: z.string().min(1),
+  /** Ausschnitt des Logos in Bildpixeln; ohne Angabe wird das ganze Bild gezeigt. */
+  logoCrop: LogoCrop.optional(),
+  instagram: z.string().regex(/^[A-Za-z0-9._]+$/, 'Instagram-Handle ohne @'),
+  addresses: z.array(z.string().min(1)).min(1).max(3),
+  theme: z
+    .object({
+      /** Hintergründe der Angebotsseiten, werden zyklisch wiederholt. */
+      pages: z.array(z.enum(['red', 'nut'])).min(1).optional(),
+    })
+    .optional(),
+});
+export type Market = z.infer<typeof Market>;
+
+export const Offer = z.object({
+  id: z.string().optional(),
+  /** Pfad relativ zum Job-Ordner, z. B. "images/offer-1.png". */
+  img: z.string().min(1),
+  price: PriceString,
+  unit: z.union([z.string(), Localized]).optional(),
+  name: z.object({ de: Lines, tr: Lines }),
+  note: Localized.optional(),
+  imgZoom: z.number().positive().max(3).default(1),
+});
+export type Offer = z.infer<typeof Offer>;
+
+export const SceneDurations = z.object({
+  intro: z.number().positive().default(3.6),
+  page: z.number().positive().default(4.5),
+  cta: z.number().positive().default(6),
+});
+
+export const Story = z
+  .object({
+    version: z.literal(1).default(1),
+    market: Market,
+    lang: z.array(Lang).min(1).default(['de', 'tr']),
+    dates: z.object({ from: IsoDate, to: IsoDate }),
+    headline: z.object({ de: Lines, tr: Lines }),
+    eyebrow: Localized.optional(),
+    offers: z.array(Offer).min(2).max(15),
+    /** Angebote pro Seite; ohne Angabe automatisch (3/2-Regel). */
+    pages: z.array(z.union([z.literal(2), z.literal(3)])).optional(),
+    /** Pfad relativ zum Job-Ordner. */
+    appScreenshot: z.string().optional(),
+    scenes: SceneDurations.default({}),
+  })
+  .superRefine((s, ctx) => {
+    if (s.pages) {
+      const sum = s.pages.reduce((a, b) => a + b, 0);
+      if (sum !== s.offers.length) {
+        ctx.addIssue({ code: 'custom', path: ['pages'], message: `Seiten summieren sich auf ${sum}, es gibt aber ${s.offers.length} Angebote` });
+      }
+    }
+    if (s.dates.from > s.dates.to) {
+      ctx.addIssue({ code: 'custom', path: ['dates'], message: 'Startdatum liegt nach dem Enddatum' });
+    }
+  });
+export type StoryInput = z.input<typeof Story>;
+export type Story = z.infer<typeof Story>;
+
+export function parseStory(data: unknown): Story {
+  return Story.parse(data);
+}

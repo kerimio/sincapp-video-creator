@@ -1,0 +1,148 @@
+{
+  "market": {
+    "name": "Akdeniz Supermarkt",
+    "slug": "akdeniz",
+    "logo": "saray/logo.jpg",
+    "instagram": "akdeniz.supermarkt.hannover",
+    "addresses": [
+      "Vahrenwalder Straße 123, 30165 Hannover",
+      "Limmerstraße 45, 30451 Hannover",
+      "Podbielskistraße 210, 30177 Hannover-List"
+    ]
+  },
+  "dates": {
+    "from": "2026-12-29",
+    "to": "2027-01-04"
+  },
+  "headline": {
+    "de": [
+      "Wochen-",
+      "angebote"
+    ],
+    "tr": [
+      "Haftanın",
+      "fırsatları"
+    ]
+  },
+  "offers": [
+    {
+      "img": "images/saray-rindermett.png",
+      "price": "13,99",
+      "unit": "1 kg",
+      "name": {
+        "de": [
+          "Knoblauch-",
+          "wurst Sırma"
+        ],
+        "tr": [
+          "Sırma",
+          "sucuk"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-mett-gemischt.png",
+      "price": "0,99",
+      "unit": "3×88 g",
+      "name": {
+        "de": [
+          "Saklıköy",
+          "Doppelkekse"
+        ],
+        "tr": [
+          "Saklıköy",
+          "bisküvi"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-haehnchen.png",
+      "price": "1,69",
+      "unit": "150 g",
+      "name": {
+        "de": [
+          "Rindfleisch-",
+          "Salami Extra"
+        ],
+        "tr": [
+          "Dana",
+          "salam"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-rinderhals.png",
+      "price": "1,99",
+      "unit": "1 kg",
+      "name": {
+        "de": [
+          "Kichererbsen",
+          "9 mm"
+        ],
+        "tr": [
+          "Koçbaşı",
+          "nohut"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-rippen.png",
+      "price": "2,99",
+      "unit": "800 g",
+      "name": {
+        "de": [
+          "Ceylon-",
+          "Schwarztee"
+        ],
+        "tr": [
+          "Seylan",
+          "siyah çayı"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-rindermett.png",
+      "price": "3,49",
+      "unit": "2750 g",
+      "name": {
+        "de": [
+          "Eingelegtes",
+          "Mischgemüse"
+        ],
+        "tr": [
+          "Karışık",
+          "turşu"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-mett-gemischt.png",
+      "price": "14,99",
+      "name": {
+        "de": [
+          "Kontaktgrill",
+          "Edelstahl"
+        ],
+        "tr": [
+          "Tost",
+          "makinesi"
+        ]
+      }
+    },
+    {
+      "img": "images/saray-haehnchen.png",
+      "price": "129,95",
+      "unit": "5×140 g",
+      "name": {
+        "de": [
+          "Hähnchenbrust-",
+          "filet XXL"
+        ],
+        "tr": [
+          "Tavuk göğsü",
+          "fileto XXL"
+        ]
+      }
+    }
+  ]
+}
