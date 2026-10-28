@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ClaudeReader, RecordedReader, type PageReader } from '../extract/claude';
+import { RecordedReader, type PageReader } from '../extract/claude';
+import { makeMatcher, makeReader } from '../ai/provider';
 import { extractJob } from '../extract/extract';
 import type { Extraction } from '../extract/schema';
-import { ClaudeMatcher } from '../images/match';
 import { resolveImages } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
 import { Library } from '../library/library';
@@ -37,7 +37,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   if (!existsSync(marketFile)) throw new Error(`Markt "${s.market}" nicht gefunden (markets/${s.market}.json)`);
   const topic = findTopic(s.topic ?? undefined);
 
-  const reader: PageReader = s.recorded ? new RecordedReader(s.recorded) : new ClaudeReader();
+  const reader: PageReader = s.recorded ? new RecordedReader(s.recorded) : makeReader();
   onProgress({ step: 'extract', message: 'Prospektseiten werden vorbereitet …', fraction: 0.02 });
   let pagesTotal = 1;
   const ex = await extractJob({
@@ -63,7 +63,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
     jobDir,
     library: await Library.open(),
     providers: providersFromEnv(),
-    matcher: process.env.ANTHROPIC_API_KEY && !s.recorded ? new ClaudeMatcher() : null,
+    matcher: s.recorded ? null : makeMatcher(),
     log: (m) => {
       const cut = m.match(/^Freisteller (\d+)\/(\d+)/);
       if (cut) done = Number(cut[1]);

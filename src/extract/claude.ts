@@ -15,7 +15,7 @@ export interface PageReader {
   readPrices(crops: string[], pageFile: string): Promise<(string | null)[]>;
 }
 
-const PAGE_PROMPT = (w: number, h: number) => `Das ist eine Seite aus einem Supermarkt-Prospekt (türkischer bzw. internationaler Supermarkt in Deutschland). Das Bild ist ${w}×${h} Pixel groß.
+export const PAGE_PROMPT = (w: number, h: number) => `Das ist eine Seite aus einem Supermarkt-Prospekt (türkischer bzw. internationaler Supermarkt in Deutschland). Das Bild ist ${w}×${h} Pixel groß.
 
 Erfasse jedes Angebot auf der Seite – auch kleine und solche am Rand. Ein Angebot ist ein Produkt (oder eine Produktgruppe wie "diverse Sorten") mit eigenem Preisschild.
 
@@ -35,7 +35,7 @@ Außerdem für die Seite: Marktname, Gültigkeitszeitraum (validFrom/validTo als
 
 Koordinaten in Pixeln dieses Bildes, Ursprung oben links.`;
 
-const PRICE_PROMPT = `Jedes Bild ist ein Ausschnitt mit einem Preisschild aus einem Supermarkt-Prospekt. Lies den Angebotspreis auf jedem Schild, Ziffern genau wie gedruckt, Cent mit Punkt ("13.99"; hochgestellte Cent zählen als Nachkommastellen). Ist auf einem Ausschnitt kein Preis lesbar, gib null zurück.`;
+export const PRICE_PROMPT = `Jedes Bild ist ein Ausschnitt mit einem Preisschild aus einem Supermarkt-Prospekt. Lies den Angebotspreis auf jedem Schild, Ziffern genau wie gedruckt, Cent mit Punkt ("13.99"; hochgestellte Cent zählen als Nachkommastellen). Ist auf einem Ausschnitt kein Preis lesbar, gib null zurück.`;
 
 async function imageBlock(file: string) {
   const ext = extname(file).toLowerCase();

@@ -7,12 +7,12 @@ import { parseStory } from '../core/schema';
 import { renderStory } from '../render/render';
 import { verifyVideo } from '../render/verify';
 import { ROOT } from '../paths';
-import { ClaudeReader, RecordedReader } from '../extract/claude';
+import { RecordedReader } from '../extract/claude';
+import { makeMatcher, makeReader } from '../ai/provider';
 import { extractJob } from '../extract/extract';
 import { evaluate, type GroundTruth } from '../extract/evaluate';
 import { resolveImages, type ResolveOptions } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
-import { ClaudeMatcher } from '../images/match';
 import { Library } from '../library/library';
 import { buildStory, findTopic, selectOffers } from '../select/select';
 import type { Extraction } from '../extract/schema';
@@ -173,7 +173,7 @@ async function imageOptions(dir: string): Promise<ResolveOptions> {
     jobDir: dir,
     library: await Library.open(),
     providers: providersFromEnv(),
-    matcher: process.env.ANTHROPIC_API_KEY ? new ClaudeMatcher() : null,
+    matcher: makeMatcher(),
     log: (m) => console.log(m),
   };
 }
@@ -214,7 +214,7 @@ program
   .action(async (job: string, o: { recorded?: string; priceCheck: boolean; images?: boolean; eval?: string }) => {
     const started = Date.now();
     const dir = jobDir(job);
-    const reader = o.recorded ? new RecordedReader(resolve(o.recorded)) : new ClaudeReader();
+    const reader = o.recorded ? new RecordedReader(resolve(o.recorded)) : makeReader();
     const ex = await extractJob({ jobDir: dir, reader, priceCheck: o.priceCheck, log: (m) => console.log(m) });
     const notes: string[] = [];
     if (o.images && ex.offers.length) notes.push(...(await resolveImages(ex.offers, await imageOptions(dir))).notes);

@@ -8,7 +8,7 @@ import { safeName } from '../src/app/jobs';
 let server: Awaited<ReturnType<typeof startAppServer>>;
 let jobs = '';
 const saved: Record<string, string | undefined> = {};
-const ENV = ['SINCAPP_JOBS', 'SINCAPP_LIBRARY', 'SINCAPP_ENV_FILE', 'SINCAPP_NO_OPENFOODFACTS', 'ANTHROPIC_API_KEY', 'BRAVE_API_KEY'];
+const ENV = ['SINCAPP_JOBS', 'SINCAPP_LIBRARY', 'SINCAPP_ENV_FILE', 'SINCAPP_NO_OPENFOODFACTS', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'SINCAPP_AI'];
 
 beforeAll(async () => {
   for (const k of ENV) saved[k] = process.env[k];
@@ -18,6 +18,7 @@ beforeAll(async () => {
   process.env.SINCAPP_ENV_FILE = join(mkdtempSync(join(tmpdir(), 'env-')), '.env');
   process.env.SINCAPP_NO_OPENFOODFACTS = '1';
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   delete process.env.BRAVE_API_KEY;
   server = await startAppServer(0, () => {});
 });
@@ -42,7 +43,7 @@ describe('App-Server', () => {
   it('speichert Keys in der .env, ohne sie zurückzugeben', async () => {
     expect((await api('GET', '/api/settings')).data.BRAVE_API_KEY).toBe(false);
     const { data } = await api('PUT', '/api/settings', { BRAVE_API_KEY: ' test-key\n', EVIL: 'x' });
-    expect(data).toEqual({ ANTHROPIC_API_KEY: false, BRAVE_API_KEY: true, REMOVEBG_API_KEY: false });
+    expect(data).toEqual({ ANTHROPIC_API_KEY: false, GEMINI_API_KEY: false, BRAVE_API_KEY: true, REMOVEBG_API_KEY: false, ai: null });
     const env = readFileSync(process.env.SINCAPP_ENV_FILE!, 'utf8');
     expect(env).toBe('BRAVE_API_KEY=test-key\n');
     await api('PUT', '/api/settings', { BRAVE_API_KEY: '' });
@@ -60,7 +61,7 @@ describe('App-Server', () => {
     expect(existsSync(join(jobs, job.id, 'input/Seite-1.png'))).toBe(true);
 
     const p = await api('POST', `/api/jobs/${job.id}/process`);
-    expect(p.data.error).toMatch(/Anthropic-API-Key/);
+    expect(p.data.error).toMatch(/KI-Key \(Anthropic oder Google Gemini\)/);
     expect((await api('GET', '/api/jobs/..%2F..%2Fetc')).status).toBe(404);
   });
 

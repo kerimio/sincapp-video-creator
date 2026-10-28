@@ -11,7 +11,8 @@ interface Job {
   inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
   files?: string[]; run?: Run | null;
 }
-type Settings = Record<'ANTHROPIC_API_KEY' | 'BRAVE_API_KEY' | 'REMOVEBG_API_KEY', boolean>;
+type KeyName = 'ANTHROPIC_API_KEY' | 'GEMINI_API_KEY' | 'BRAVE_API_KEY' | 'REMOVEBG_API_KEY';
+type Settings = Record<KeyName, boolean> & { ai: 'claude' | 'gemini' | null };
 
 export const go = (hash: string) => (location.hash = hash);
 
@@ -62,9 +63,9 @@ export function Home() {
   };
   return (
     <Shell active="home">
-      {settings && !settings.ANTHROPIC_API_KEY && (
+      {settings && !settings.ai && (
         <div className="notice">
-          Zum Auslesen eigener Prospekte fehlt noch der Anthropic-API-Key. <a href="#/einstellungen">Jetzt eintragen</a> – oder erst mal die Demo mit dem Saray-Beispiel ausprobieren.
+          Zum Auslesen eigener Prospekte fehlt noch ein KI-Key (Anthropic oder Google Gemini). <a href="#/einstellungen">Jetzt eintragen</a> – oder erst mal die Demo mit dem Saray-Beispiel ausprobieren.
         </div>
       )}
       <div className="hero">
@@ -146,7 +147,7 @@ export function NewJob() {
     }
   };
 
-  const noKey = settings && !settings.ANTHROPIC_API_KEY;
+  const noKey = settings && !settings.ai;
   return (
     <Shell>
       <Steps current={0} />
@@ -212,7 +213,7 @@ export function NewJob() {
 
         {noKey && (
           <div className="notice">
-            Zum Auslesen fehlt der Anthropic-API-Key. <a href="#/einstellungen">Unter Einstellungen eintragen</a>.
+            Zum Auslesen fehlt ein KI-Key (Anthropic oder Google Gemini). <a href="#/einstellungen">Unter Einstellungen eintragen</a>.
           </div>
         )}
         {err && <div className="errors">{err}</div>}
@@ -353,7 +354,8 @@ function Notes({ notes }: { notes: string[] }) {
 // ---------- Einstellungen ----------
 export function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
-  const [vals, setVals] = useState({ ANTHROPIC_API_KEY: '', BRAVE_API_KEY: '', REMOVEBG_API_KEY: '' });
+  const empty: Record<KeyName, string> = { ANTHROPIC_API_KEY: '', GEMINI_API_KEY: '', BRAVE_API_KEY: '', REMOVEBG_API_KEY: '' };
+  const [vals, setVals] = useState(empty);
   const [msg, setMsg] = useState('');
   useEffect(() => {
     call<Settings>('GET', '/api/settings').then(setS);
@@ -361,17 +363,19 @@ export function SettingsPage() {
   const save = async () => {
     const body = Object.fromEntries(Object.entries(vals).filter(([, v]) => v.trim()));
     setS(await call<Settings>('PUT', '/api/settings', body));
-    setVals({ ANTHROPIC_API_KEY: '', BRAVE_API_KEY: '', REMOVEBG_API_KEY: '' });
+    setVals(empty);
     setMsg('Gespeichert. Die Keys liegen nur auf diesem Rechner (Datei .env).');
   };
-  const rows: [keyof Settings, string, string][] = [
-    ['ANTHROPIC_API_KEY', 'Anthropic (Pflicht)', 'Liest die Prospekte und vergleicht Internet-Bilder mit dem Prospekt. Key unter console.anthropic.com anlegen.'],
+  const rows: [KeyName, string, string][] = [
+    ['ANTHROPIC_API_KEY', 'Anthropic Claude', 'Liest die Prospekte und vergleicht Internet-Bilder mit dem Prospekt. Key unter console.anthropic.com anlegen.'],
+    ['GEMINI_API_KEY', 'Google Gemini', 'Alternative zu Claude – es reicht einer der beiden. Key unter aistudio.google.com anlegen.'],
     ['BRAVE_API_KEY', 'Brave Search (empfohlen)', 'Bildersuche im Internet für saubere Produktfotos. Key unter api-dashboard.search.brave.com anlegen.'],
     ['REMOVEBG_API_KEY', 'remove.bg (optional)', 'Nur als Ausweichlösung, wenn das lokale Freistellen nicht sauber klappt.'],
   ];
   return (
     <Shell active="set">
       <h1>Einstellungen</h1>
+      {s && <p className="muted">KI zum Auslesen: <b>{s.ai === 'claude' ? 'Anthropic Claude' : s.ai === 'gemini' ? 'Google Gemini' : 'noch keine – einen der beiden Keys eintragen'}</b>{s.ANTHROPIC_API_KEY && s.GEMINI_API_KEY ? ' (beide Keys da – Claude wird genommen)' : ''}</p>}
       <div className="card settings">
         {rows.map(([k, label, help]) => (
           <div key={k} className="setting">

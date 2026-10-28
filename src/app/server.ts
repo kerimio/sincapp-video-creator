@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { aiProvider, NO_AI_KEY } from '../ai/provider';
 import { Library, libraryDir } from '../library/library';
 import { ROOT } from '../paths';
 import { readBody, sendJson, jobApi } from '../review/server';
@@ -9,7 +10,7 @@ import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summ
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
-const KEYS = ['ANTHROPIC_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
+const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
 const SAMPLES = join(ROOT, 'reference/samples/saray-2026-10-28');
 
 interface Run {
@@ -71,7 +72,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
 
     if (p === '/api/settings') {
       if (method === 'PUT') await writeEnv(JSON.parse((await readBody(req)).toString('utf8')));
-      return sendJson(res, Object.fromEntries(KEYS.map((k) => [k, !!process.env[k]])));
+      return sendJson(res, { ...Object.fromEntries(KEYS.map((k) => [k, !!process.env[k]])), ai: aiProvider() });
     }
 
     if (p === '/api/library') {
@@ -142,7 +143,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       if (sub === 'process' && method === 'POST') {
         if (runs.get(id)?.running) return sendJson(res, { error: 'Läuft bereits' }, 409);
         const meta = await readJob(id);
-        if (!meta.settings.recorded && !process.env.ANTHROPIC_API_KEY) throw new Error('Zum Auslesen fehlt der Anthropic-API-Key – bitte unter Einstellungen eintragen.');
+        if (!meta.settings.recorded && !aiProvider()) throw new Error(NO_AI_KEY);
         process_(id, meta.settings);
         return sendJson(res, runs.get(id), 202);
       }

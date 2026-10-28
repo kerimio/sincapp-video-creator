@@ -1,7 +1,7 @@
 /**
  * Abnahme-Lauf: die 6 Saray-Seiten durch die Extraktion schicken und gegen
  * reference/samples/saray-2026-10-28/ground-truth.json prüfen.
- *   pnpm eval:saray              → echter Lauf mit Claude (braucht ANTHROPIC_API_KEY)
+ *   pnpm eval:saray              → echter Lauf mit Claude oder Gemini (braucht ANTHROPIC_API_KEY oder GEMINI_API_KEY)
  *   pnpm eval:saray --recorded   → mit den handannotierten Antworten (offline)
  * Weitere Optionen werden an `sincapp-story extract` durchgereicht (z. B. --no-cutout).
  */

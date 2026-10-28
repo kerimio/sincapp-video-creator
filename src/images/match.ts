@@ -23,7 +23,7 @@ export interface ProductMatcher {
   compare(prospektCrop: string, candidates: string[], product: string): Promise<MatchResult['candidates']>;
 }
 
-const PROMPT = (product: string, n: number) => `Bild 0 ist ein Ausschnitt aus einem Supermarkt-Prospekt und zeigt: ${product}.
+export const MATCH_PROMPT = (product: string, n: number) => `Bild 0 ist ein Ausschnitt aus einem Supermarkt-Prospekt und zeigt: ${product}.
 Die Bilder 1 bis ${n} wurden im Internet gefunden.
 
 Prüfe für jedes Fundstück, ob es genau dieses Produkt zeigt (gleiche Marke, gleiches Produkt, gleiche Sorte und Verpackung – die Packungsgröße darf leicht abweichen, im Prospekt können mehrere Packungen nebeneinander stehen) und ob es sich als freigestelltes Produktfoto für eine Werbe-Story eignet.`;
@@ -45,7 +45,7 @@ export class ClaudeMatcher implements ProductMatcher {
     if (!candidates.length) return [];
     const content: Anthropic.Beta.BetaContentBlockParam[] = [{ type: 'text', text: 'Bild 0 (Prospekt):' }, await image(prospektCrop)];
     for (const [i, c] of candidates.entries()) content.push({ type: 'text', text: `Bild ${i + 1}:` }, await image(c));
-    content.push({ type: 'text', text: PROMPT(product, candidates.length) });
+    content.push({ type: 'text', text: MATCH_PROMPT(product, candidates.length) });
     const res = await this.client.beta.messages.parse({
       model: MODEL,
       max_tokens: 8000,

@@ -6,7 +6,7 @@ import { parseStory } from '../core/schema';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
 import { adoptImage, resolveImages } from '../images/resolve';
 import { downloadImage, providersFromEnv, searchAll, searchQuery } from '../images/search';
-import { ClaudeMatcher } from '../images/match';
+import { aiProvider, makeMatcher } from '../ai/provider';
 import { Library } from '../library/library';
 import { ROOT } from '../paths';
 import { runPython } from '../python';
@@ -118,7 +118,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
       return sendJson(res, {
         story: existsSync(storyFile) ? JSON.parse(await readFile(storyFile, 'utf8')) : null,
         extraction: await readEx(),
-        search: { brave: !!process.env.BRAVE_API_KEY, matcher: !!process.env.ANTHROPIC_API_KEY },
+        search: { brave: !!process.env.BRAVE_API_KEY, matcher: !!aiProvider() },
         urlBase,
         render: { ...render },
         videos: existsSync(join(jobDir, 'output/story-de.mp4')) || existsSync(join(jobDir, 'output/story-tr.mp4')),
@@ -144,7 +144,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
           jobDir,
           library: await library(),
           providers: providersFromEnv(),
-          matcher: process.env.ANTHROPIC_API_KEY ? new ClaudeMatcher() : null,
+          matcher: makeMatcher(),
           log,
         });
         await saveEx(ex!);

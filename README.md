@@ -9,7 +9,7 @@ Prospekt rein, Instagram-Story (MP4, 1080×1920) raus.
 1. Ordner von GitHub holen: `git clone https://github.com/kerimio/sincapp-video-creator.git` (oder als ZIP laden und entpacken).
 2. Im Finder **`Start sincapp.command`** doppelklicken. Beim ersten Mal wird alles installiert (Homebrew muss vorhanden sein, siehe https://brew.sh; dauert 5–10 Minuten), danach öffnet sich der Browser.
    Bei einem ZIP-Download meldet macOS evtl. „nicht verifizierter Entwickler“: einmal Rechtsklick → **Öffnen**.
-3. In der App unter **Einstellungen** den Anthropic-Key eintragen (Brave-Key empfohlen). Die Keys bleiben in der Datei `.env` auf dem Rechner.
+3. In der App unter **Einstellungen** einen KI-Key eintragen – Anthropic **oder** Google Gemini – und den Brave-Key (empfohlen). Die Keys bleiben in der Datei `.env` auf dem Rechner.
 4. **+ Neues Video** → Markt wählen → Prospektseiten hineinziehen → Thema und Anzahl → **Weiter**. Nach dem Auslesen die Angebote prüfen und **Video erstellen** klicken; die MP4s (DE + TR) gibt es dann zum Herunterladen.
 
 Ohne Key lässt sich alles mit **Demo mit Saray-Beispiel** ausprobieren (gespeicherte Antworten statt Claude).
@@ -35,7 +35,7 @@ pnpm install
 pnpm exec playwright install chromium   # einmalig
 pnpm setup:python                       # einmalig: .venv mit rembg (Freisteller) und PDF-Unterstützung
 pnpm build:template
-cp .env.example .env                    # ANTHROPIC_API_KEY eintragen, optional BRAVE_API_KEY und REMOVEBG_API_KEY
+cp .env.example .env                    # ANTHROPIC_API_KEY oder GEMINI_API_KEY eintragen, optional BRAVE_API_KEY und REMOVEBG_API_KEY
 ```
 
 Die Freisteller-Modelle (ca. 220 MB) lädt rembg beim ersten Lauf nach `~/.u2net`.
@@ -60,7 +60,7 @@ mkdir -p jobs/saray-kw44/input && cp ~/Downloads/prospekt/*.{jpg,png,pdf} jobs/s
 
 Ablauf je Seite:
 1. PDF-Seiten werden zu PNG, große Bilder auf 2000 px verkleinert (`tools/prep.py`).
-2. Claude (`claude-opus-5-5`, Structured Output) liest Marke, Name DE/TR, Menge, Preis, Zusatz, Warengruppe, Bildausschnitt, Preisschild, Gültigkeit, Markt und Adressen.
+2. Claude (`claude-opus-5-5`) oder Gemini (`gemini-4-argon`, änderbar mit `GEMINI_MODEL`) – je nachdem, welcher Key da ist; bei beiden Claude, außer `SINCAPP_AI=gemini` – liest per Structured Output Marke, Name DE/TR, Menge, Preis, Zusatz, Warengruppe, Bildausschnitt, Preisschild, Gültigkeit, Markt und Adressen.
 3. **Preis-Gegencheck:** Jedes Preisschild wird einzeln ausgeschnitten und noch einmal gelesen. Nur wenn beide Lesungen übereinstimmen, gilt der Preis als sicher (`priceConfidence` 0.98), sonst < 0.9 und ein Hinweis im Bericht.
 4. Normalisierung: Preis „13,99“, Menge getrennt („5×140 g“), türkischer Name auf max. 2 × 14 Zeichen (sonst gekürzt + Hinweis), doppelte Angebote zusammengefasst.
 5. Freisteller lokal mit rembg (`birefnet-general-lite`, Rückfall `isnet-general-use`): Preisschilder werden vorher entfernt und die verdeckte Stelle aufgefüllt, Inseln entfernt, Rand geprüft (≥ 90 % transparent), Schachbrett-Fakes erkannt. Klappt es lokal nicht und `REMOVEBG_API_KEY` ist gesetzt, übernimmt remove.bg.
