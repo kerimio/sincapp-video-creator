@@ -21,6 +21,20 @@ Ohne Doppelklick: `pnpm cli app` (Port mit `--port`, Browser nicht öffnen mit `
 
 Märkte (Name, Adresse, Logo, Instagram) und Prospekte (Seiten, Gültigkeit) kommen direkt aus der sincapp-Firestore-Datenbank (Projekt `trprosp`, änderbar mit `SINCAPP_FIREBASE_PROJECT`, z. B. `sincapp-dev`). `markets` und `prospects` sind öffentlich lesbar – es braucht weder Login noch Key, und das Tool schreibt nie etwas zurück. Ein gewählter Markt wird unter `.cache/markets/` abgelegt, damit Story und Video ihn wie eine lokale Markt-Datei nutzen.
 
+## Studio: Design, Formate, Export (Meilenstein 5)
+
+Ein Video entsteht in drei Schritten: **Angebote** prüfen → **Design** wählen → **Export**.
+
+- **Neues Video:** Markt wählen, ein oder mehrere Prospekte anhaken. Aus allen Prospekten kommen automatisch die besten Angebote ins Video (groß abgebildete Angebote und in Firestore gepflegte Produkte zuerst).
+- **Design:** 5 Vorlagen (Klassik, Frisch, Premium, Knallig, Minimal), alle Farben einzeln oder „Farben aus dem Markt-Logo“, Hintergrund (Logo, Punkte, Verlauf, schlicht), Preis (Etikett, Kreis, flach), Effekte (Einflug, Seitenwechsel, Tempo, Wippen). „Als Standard für <Markt> speichern“ – neue Videos dieses Markts starten dann damit. Eigenes Logo pro Markt hochladbar.
+- **Formate:** Story 9:16, Feed 4:5, Quadrat 1:1, jedes Angebot einzeln als Bild. Die Vorschau rechts schaltet zwischen allen um.
+- **Export:** Pakete („Wochenpaket“, „Nur Story“, „Feed-Beitrag“, „Nur Bilder“) oder frei wählbar; Instagram-Texte mit Hashtags (DE/TR); alles als ZIP. Der Export kostet keine KI-Tokens.
+- **Bild aus dem Prospekt:** Rechteck ziehen oder mit dem Pen umranden – der Ausschnitt wird so übernommen, wie er ist. Hintergrund nur auf Wunsch entfernen.
+
+**Kosten sparen:** KI-Antworten werden pro Seite gemerkt (`.cache/ki`), dieselbe Seite wird nie zweimal bezahlt. Seiten ohne Produkte (laut Firestore-Fundstellen) werden übersprungen, der Zeitraum kommt aus Firestore. Preis-Gegencheck und Bildvergleich laufen mit dem günstigeren Modell (`GEMINI_CHECK_MODEL`, Standard `gemini-3.8-flash`).
+
+Vorschau aller Vorlagen und Formate: `pnpm tsx tools/preview-designs.ts` (Bilder in `tmp/designs`).
+
 ## Alles in einem Befehl
 
 ```bash
