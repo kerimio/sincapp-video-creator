@@ -1,9 +1,11 @@
 import type { Story } from '../../core/schema';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
 import type { RenderState } from '../server';
+import type { ExportOptions } from '../../render/export';
+import type { Design } from '../../core/design';
 
 export type StoryOffer = Story['offers'][number];
-export type { RenderState };
+export type { RenderState, ExportOptions };
 export interface State {
   story: Story;
   extraction: Extraction | null;
@@ -36,7 +38,10 @@ export function jobClient(base: string) {
     alternative: (id: string, index: number) => call<OfferRes>('POST', `${base}/offer/${id}/alternative`, { index }),
     search: (id: string, query: string) => call<OfferRes & { query: string; errors: string[] }>('POST', `${base}/offer/${id}/search`, { query }),
     upload: (id: string, file: File) => call<OfferRes>('POST', `${base}/offer/${id}/upload`, undefined, file),
-    startRender: () => call<RenderState>('POST', `${base}/render`),
+    startRender: (opts: ExportOptions) => call<RenderState>('POST', `${base}/render`, opts),
+    marketDesign: () => call<{ design: Design | null }>('GET', `${base}/market-design`),
+    saveMarketDesign: (design: unknown) => call<{ design: Design }>('PUT', `${base}/market-design`, design),
+    uploadLogo: (file: File) => call<{ story: Story }>('POST', `${base}/market-logo`, undefined, file),
     renderState: () => call<RenderState>('GET', `${base}/render`),
   };
 }

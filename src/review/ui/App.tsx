@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Story as StorySchema } from '../../core/schema';
 import { formatDateRange } from '../../core/format';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
-import { type JobClient, type RenderState, type State, type StoryOffer } from './api';
+import { type ExportOptions, type JobClient, type RenderState, type State, type StoryOffer } from './api';
+import { DesignPanel, ExportPanel, Preview, type View } from './studio';
 import type { Story } from '../../core/schema';
 
 const TR_MAX = 14;
@@ -21,6 +22,8 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
   const [dialog, setDialog] = useState<string | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'angebote' | 'design' | 'export'>('angebote');
+  const [view, setView] = useState<View>('story');
 
   useEffect(() => {
     api.state().then((s) => {
@@ -125,10 +128,10 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
     }
   };
 
-  const doRender = async () => {
-    if (!(await save())) return;
+  const doExport = async (opts: ExportOptions) => {
+    if (dirty && !(await save())) return;
     try {
-      setRender(await api.startRender());
+      setRender(await api.startRender(opts));
     } catch (e) {
       say((e as Error).message, true);
     }
@@ -151,16 +154,22 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
         </div>
         <div className="spacer" />
         {dirty && <span className="hint">ungespeichert</span>}
-        <button onClick={save} disabled={!!validation || rendering}>Speichern</button>
-        <button className="primary" onClick={doRender} disabled={!!validation || rendering}>
-          {rendering ? `Video wird erstellt … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Video erstellen'}
-        </button>
+        <button onClick={save} disabled={!!validation || rendering || !dirty}>{dirty ? 'Speichern' : '✓ Gespeichert'}</button>
+        {tab !== 'export' && (
+          <button className="primary" onClick={() => setTab('export')} disabled={!!validation}>
+            {rendering ? `Export läuft … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Weiter zum Export →'}
+          </button>
+        )}
       </header>
       {rendering && <div className="progressbar"><div style={{ width: `${(render!.fraction * 100).toFixed(1)}%` }} /></div>}
 
       <main>
         <section className="edit">
-          <StoryHeader story={story} update={update} />
+          <div className="tabs">
+            <button className={tab === 'angebote' ? 'on' : ''} onClick={() => setTab('angebote')}><i>1</i> Angebote</button>
+            <button className={tab === 'design' ? 'on' : ''} onClick={() => setTab('design')}><i>2</i> Design</button>
+            <button className={tab === 'export' ? 'on' : ''} onClick={() => setTab('export')}><i>3</i> Export</button>
+          </div>
           {validation && (
             <div className="errors">
               {validation.map((v) => (
@@ -168,6 +177,10 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
               ))}
             </div>
           )}
+          {tab === 'design' && <DesignPanel story={story} update={update} api={api} say={say} onStory={(s) => { setStory(s); setDirty(false); }} />}
+          {tab === 'export' && <ExportPanel story={story} api={api} render={render} start={doExport} dirty={dirty} disabled={!!validation} />}
+          {tab === 'angebote' && <>
+          <StoryHeader story={story} update={update} />
           <OfferCount n={story.offers.length} />
           <OfferList
             story={story}
@@ -193,10 +206,11 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
               </div>
             ))}
           </div>
+          <div className="next"><button className="primary" onClick={() => setTab('design')}>Weiter zum Design →</button></div>
+          </>}
         </section>
         <aside>
-          <Preview story={previewStory} />
-          {render?.result && !rendering && <RenderResult r={render.result} />}
+          <Preview story={previewStory} base={state.urlBase} view={view} setView={setView} />
         </aside>
       </main>
 
@@ -413,106 +427,6 @@ function OfferList(p: {
 
 function sourceLabel(s?: string) {
   return s === 'library' ? 'Bibliothek' : s === 'web' ? 'Internet' : s === 'manual' ? 'eigenes Bild' : s === 'removebg' ? 'remove.bg' : 'Prospekt';
-}
-
-function Preview({ story }: { story: unknown }) {
-  const { base } = useContext(JobCtx);
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [lang, setLang] = useState<'de' | 'tr'>('de');
-  const [duration, setDuration] = useState(0);
-  const [t, setT] = useState(4.5);
-  const [playing, setPlaying] = useState(false);
-  const [ready, setReady] = useState(false);
-  const win = () => frame.current?.contentWindow as (Window & { sincapp?: Window['sincapp'] }) | null;
-
-  const onLoad = useCallback(async () => {
-    setReady(false);
-    const s = win()?.sincapp;
-    if (!s) return;
-    try {
-      let r = await s.ready;
-      if (story) r = await s.setStory(story);
-      setDuration(r.duration);
-      s.seek(t);
-      setReady(true);
-    } catch (e) {
-      console.error('Vorschau:', e);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang]);
-
-  // Live-Daten übernehmen (leicht verzögert, damit Tippen flüssig bleibt)
-  useEffect(() => {
-    if (!story || !ready) return;
-    const h = setTimeout(async () => {
-      const s = win()?.sincapp;
-      if (!s) return;
-      const r = await s.setStory(story).catch(() => null);
-      if (r) setDuration(r.duration);
-      s.seek(t);
-    }, 250);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [story, ready]);
-
-  useEffect(() => {
-    win()?.sincapp?.seek(t);
-  }, [t]);
-
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      setT((x) => {
-        const n = x + (now - last) / 1000;
-        return n >= duration ? 0 : n;
-      });
-      last = now;
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, duration]);
-
-  return (
-    <div className="preview">
-      <div className="row">
-        <div className="seg">
-          {(['de', 'tr'] as const).map((l) => (
-            <button key={l} className={lang === l ? 'on' : ''} onClick={() => setLang(l)}>
-              {l.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <button className="ghost" onClick={() => setPlaying((p) => !p)}>{playing ? 'Pause' : 'Abspielen'}</button>
-        <span className="muted">
-          {t.toFixed(1)} / {duration.toFixed(1)} s
-        </span>
-      </div>
-      <div className="phone">
-        <iframe ref={frame} key={lang} src={`/index.html?lang=${lang}&story=${encodeURIComponent(`${base}story.json`)}`} onLoad={onLoad} title="Vorschau" />
-      </div>
-      <input type="range" min={0} max={duration || 1} step={0.033} value={t} onChange={(e) => (setPlaying(false), setT(Number(e.target.value)))} />
-    </div>
-  );
-}
-
-function RenderResult({ r }: { r: NonNullable<RenderState['result']> }) {
-  return (
-    <div className="card render">
-      <b>Videos fertig ({r.seconds.toFixed(0)} s)</b>
-      {Object.entries(r.videos).map(([lang, url]) => {
-        const c = r.checks.find((x) => url.endsWith(x.file));
-        return (
-          <div key={lang}>
-            <a className="download" href={url} download>⬇ Video {lang.toUpperCase()} herunterladen</a> {c && <span className={c.ok ? 'ok' : 'warn'}>{c.ok ? `✓ ${c.sizeMB.toFixed(1)} MB, ${c.duration.toFixed(1)} s` : `⚠ ${c.problems.join('; ')}`}</span>}
-          </div>
-        );
-      })}
-      {r.poster && <a href={r.poster} download>⬇ Vorschaubild</a>}
-    </div>
-  );
 }
 
 function ImageDialog(p: {

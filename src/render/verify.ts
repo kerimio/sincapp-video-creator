@@ -24,7 +24,7 @@ function capture(cmd: string, args: string[]): Promise<{ out: string; err: strin
 const ffprobeBin = () => process.env.FFPROBE_PATH || ffmpegBin().replace(/ffmpeg(\.exe)?$/, 'ffprobe$1');
 
 /** Prüft die Instagram-Kriterien aus der Spezifikation. */
-export async function verifyVideo(file: string, expectedDuration: number): Promise<VideoCheck> {
+export async function verifyVideo(file: string, expectedDuration: number, size = { w: 1080, h: 1920 }): Promise<VideoCheck> {
   const { out } = await capture(ffprobeBin(), ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,codec_name,pix_fmt:format=duration', '-of', 'json', file]);
   const j = JSON.parse(out);
   const s = j.streams[0];
@@ -39,7 +39,7 @@ export async function verifyVideo(file: string, expectedDuration: number): Promi
     sizeMB: (await stat(file)).size / 1024 / 1024,
   };
   const problems: string[] = [];
-  if (info.width !== 1080 || info.height !== 1920) problems.push(`Auflösung ${info.width}×${info.height} statt 1080×1920`);
+  if (info.width !== size.w || info.height !== size.h) problems.push(`Auflösung ${info.width}×${info.height} statt ${size.w}×${size.h}`);
   if (Math.abs(info.fps - 30) > 0.01) problems.push(`${info.fps} fps statt 30`);
   if (info.codec !== 'h264') problems.push(`Codec ${info.codec} statt H.264`);
   if (info.pixFmt !== 'yuv420p') problems.push(`Pixelformat ${info.pixFmt} statt yuv420p`);
