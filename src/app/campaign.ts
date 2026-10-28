@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Design } from '../core/design';
-import { DE_SOFT_CHARS, normalizePrice, TR_MAX_CHARS, wrapLines } from '../extract/normalize';
+import { DE_SOFT_CHARS, normalizePrice, TR_MAX_CHARS, nameLines } from '../extract/normalize';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { markBestPrices } from '../library/bestprice';
@@ -49,7 +49,7 @@ export async function prepareCampaign(jobDir: string, market: string, c: Catalog
       pageFile: '',
       brand: e.brand,
       name: e.name,
-      lines: { de: wrapLines(e.name.de, DE_SOFT_CHARS, 2, false).lines, tr: wrapLines(e.name.tr, TR_MAX_CHARS).lines },
+      lines: { de: nameLines(e.brand, e.name.de, DE_SOFT_CHARS, false).lines, tr: nameLines(e.brand, e.name.tr, TR_MAX_CHARS).lines },
       unit: e.unit,
       price: priceOf(it.price),
       note: e.variant && e.variant.de && e.variant.tr ? e.variant : null,

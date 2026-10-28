@@ -16,13 +16,19 @@ const ex: Extraction = { version: 1, createdAt: '', model: 'test', market: 'Sara
 const market = JSON.parse(readFileSync(join(ROOT, 'markets/saray.json'), 'utf8'));
 
 describe('Auswahl', () => {
-  it('Standard: 8 Angebote, keine doppelt, viele Warengruppen gemischt', () => {
+  it('Standard: 8 Angebote, Fleisch und Wurst zuerst, danach gemischt', () => {
     const { offers: picked } = selectOffers(offers);
     expect(picked).toHaveLength(8);
     expect(new Set(picked.map((o) => o.id)).size).toBe(8);
-    expect(new Set(picked.map((o) => o.category)).size).toBeGreaterThanOrEqual(6);
-    // erste Seite (3 Angebote) aus drei verschiedenen Gruppen
-    expect(new Set(picked.slice(0, 3).map((o) => o.category)).size).toBe(3);
+    // alle 3 Wurst-Angebote vorn, auch wenn andere Gruppen dafür wegfallen
+    expect(picked.slice(0, 3).map((o) => o.category)).toEqual(['wurst', 'wurst', 'wurst']);
+    // der Rest reihum aus verschiedenen Gruppen
+    expect(new Set(picked.slice(3).map((o) => o.category)).size).toBe(5);
+  });
+
+  it('Fleisch füllt die Story, wenn es mehr gibt als Platz ist', () => {
+    const { offers: picked } = selectOffers(offers, { count: 2 });
+    expect(picked.map((o) => o.category)).toEqual(['wurst', 'wurst']);
   });
 
   it('Thema filtert und ändert die Überschrift', () => {
@@ -43,8 +49,17 @@ describe('Auswahl', () => {
   it('unsichere Preise kommen nach hinten und werden gemeldet', () => {
     const copy = offers.map((o) => ({ ...o, priceConfidence: o.id === 's1-1' ? 0.5 : 0.98 }));
     const all = selectOffers(copy, { count: 18 });
-    expect(all.offers.at(-1)?.id === 's1-1' || all.offers.findIndex((o) => o.id === 's1-1') > 8).toBe(true);
+    // Wurst bleibt vorn, aber das unsichere Angebot hinter den sicheren Wurst-Angeboten
+    expect(all.offers.slice(0, 3).map((o) => o.id)).toEqual(['s1-2', 's1-3', 's1-1']);
     expect(all.warnings.join()).toMatch(/s1-1/);
+  });
+
+  it('Marke steht im Namen, wenn sie in 2 Zeilen passt', () => {
+    const byId = (id: string) => offers.find((o) => o.id === id)!;
+    expect(byId('s1-1').lines).toEqual({ de: ['Egetürk Sırma', 'Knoblauchwurst'], tr: ['Egetürk Sırma', 'Parmak Sucuk'] });
+    // zu lang mit Marke → Name allein; mehrere Marken → keine
+    expect(byId('s4-1').lines.de).toEqual(['Yakut Ceylon-', 'Schwarztee']);
+    expect(byId('s1-3').lines.de).toEqual(['Salami']);
   });
 
   it('baut eine gültige story.json mit Daten, Eyebrow und Zeilen', () => {

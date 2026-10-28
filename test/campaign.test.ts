@@ -71,7 +71,7 @@ describe('Kampagne aus dem Katalog', () => {
     expect(story.market.name).toBe('Saray Market');
     expect(story.dates).toEqual({ from: '2026-10-29', to: '2026-11-04' });
     expect(story.offers.map((o) => [o.img, o.price])).toEqual([['images/k1.png', '3,99'], ['images/k2.png', '2,50']]);
-    expect(story.offers[0]).toMatchObject({ badge: 'bestpreis', bestWeeks: 12, name: { tr: ['Yakut', 'Yaprak Çayı'] } });
+    expect(story.offers[0]).toMatchObject({ badge: 'bestpreis', bestWeeks: 12, name: { tr: ['Tanay Yakut', 'Yaprak Çayı'] } });
     expect(story.offers[1].badge).toBeUndefined();
     expect(story.offers[1].note).toEqual({ de: 'geröstet', tr: 'kavrulmuş' });
     expect(readFileSync(join(dir, 'images/k1.png'), 'utf8')).toBe('png');

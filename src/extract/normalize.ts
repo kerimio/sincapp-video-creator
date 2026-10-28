@@ -115,6 +115,22 @@ export function wrapLines(text: string, maxChars: number, maxLines = 2, truncate
   return { lines: kept.map((l) => (l.length > maxChars ? l.slice(0, maxChars - 1) + '…' : l)), truncated: true };
 }
 
+/**
+ * Zeilen für den Namen auf der Karte, wenn möglich mit Marke davor ("Egetürk" + "Sucuk" →
+ * ["Egetürk", "Sucuk"]). Die Marke kommt nur dazu, wenn alles in 2 Zeilen passt, ohne zu kürzen –
+ * sonst bleibt es beim Namen allein. Steht die Marke schon im Namen, nicht doppelt; mehrere Marken
+ * ("Egetürk / Efepaşa") passen nie sauber auf die Karte und bleiben weg.
+ */
+export function nameLines(brand: string | null | undefined, name: string, maxChars: number, truncate = true): Wrapped {
+  const b = brand?.replace(/\s+/g, ' ').trim();
+  const low = (x: string) => x.toLocaleLowerCase('de');
+  if (b && !/[/,&+]/.test(b) && !low(name).includes(low(b))) {
+    const w = wrapLines(`${b} ${name}`, maxChars, 2, true);
+    if (!w.truncated) return w;
+  }
+  return wrapLines(name, maxChars, 2, truncate);
+}
+
 /** Grenzen aus der Spezifikation. */
 export const TR_MAX_CHARS = 14;
 /** DE wird vom Template über die Schriftgröße eingepasst; das Limit sorgt nur für schöne Umbrüche. */

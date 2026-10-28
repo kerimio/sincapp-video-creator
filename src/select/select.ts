@@ -62,6 +62,9 @@ export function offerBoosts(ex: Pick<Extraction, 'offers' | 'pages'>, firestoreN
   return out;
 }
 
+/** Warengruppen, die bei der Auswahl immer Vorrang haben. */
+export const MEAT: string[] = ['fleisch', 'wurst'];
+
 export interface SelectOptions {
   topic?: Topic | null;
   /** Zusatzpunkte je Angebot (id → Punkte), z. B. groß im Prospekt oder in Firestore gepflegt. */
@@ -96,10 +99,13 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
     list.push(o);
     byCat.set(o.category, list);
   }
-  // Warengruppen nach ihrem besten Angebot ordnen
-  const queues = [...byCat.values()].sort((a, b) => score(b[0]) - score(a[0]));
-  const picked: ExtractedOffer[] = [];
-  while (picked.length < want) {
+  // Fleisch und Wurst kommen immer zuerst (das zieht im türkischen Supermarkt am meisten),
+  // der Rest danach reihum, die Warengruppen nach ihrem besten Angebot geordnet.
+  const picked = MEAT.flatMap((c) => byCat.get(c) ?? [])
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, want);
+  const queues = [...byCat.entries()].filter(([c]) => !MEAT.includes(c)).map(([, q]) => q).sort((a, b) => score(b[0]) - score(a[0]));
+  while (picked.length < want && queues.some((q) => q.length)) {
     for (const q of queues) {
       const o = q.shift();
       if (o) picked.push(o);

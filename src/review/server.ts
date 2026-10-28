@@ -181,7 +181,15 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
       if (action === 'alternative') {
         const { index } = JSON.parse((await readBody(req)).toString('utf8')) as { index: number };
         const alt = o.imgAlternatives?.[index];
-        if (!alt?.file) throw new Error('Diese Alternative ist nicht heruntergeladen');
+        if (!alt) throw new Error('Diese Alternative gibt es nicht mehr – bitte neu suchen');
+        // noch nicht (oder nicht mehr) auf der Platte? Dann jetzt laden – wer „Übernehmen“ klickt, will das Bild
+        if (!alt.file || !existsSync(join(jobDir, alt.file))) {
+          try {
+            alt.file = relative(jobDir, await downloadImage(alt.url, join(jobDir, 'work/candidates', o.id, `a${Date.now()}-${index}`)));
+          } catch (e) {
+            throw new Error(`Bild ließ sich nicht herunterladen (${(e as Error).message}). Bitte ein anderes wählen oder neu suchen.`);
+          }
+        }
         const r = await cutout(o, join(jobDir, alt.file), null);
         await adoptImage(o, jobDir, r.out, await library(), { type: alt.source === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: alt.url });
         clearImgWarnings(o, r.warnings);
