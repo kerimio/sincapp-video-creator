@@ -66,4 +66,26 @@ describe.skipIf(!hasPython)('Bildquelle: Bibliothek → Internet → Prospekt', 
     // jetzt auch in der Bibliothek
     expect(lib.find({ brand: 'Tanay', name: { de: 'Yakut Ceylon-Schwarztee' }, unit: '800 g' })?.verified).toBe(true);
   }, 120000);
+
+  it('Prospekt-Bild im Katalog: einmal im Internet suchen, danach nicht bei jedem Video', async () => {
+    const { dir, offers } = job();
+    const tahin = offers.filter((o) => o.id === 's3-1');
+    const lib = await Library.open(mkdtempSync(join(tmpdir(), 'lib-')));
+    const src = join(dir, 'tahin.png');
+    writeFileSync(src, transparentProduct());
+    await lib.put({ brand: 'Durra', name: { de: 'Tahin' }, unit: '800 g' }, src, { type: 'prospekt' }, false);
+
+    let searches = 0;
+    const provider: ImageSearchProvider = { name: 'brave', search: async () => (searches++, []) };
+    await resolveImages(tahin, { jobDir: dir, library: lib, providers: [provider], matcher: null });
+    expect(searches).toBe(1);
+    expect(tahin[0].imgSource).toBe('library');
+    expect(lib.entries[0].webTried).toBeTruthy();
+
+    tahin[0].img = undefined;
+    tahin[0].imgSource = undefined;
+    await resolveImages(tahin, { jobDir: dir, library: lib, providers: [provider], matcher: null });
+    expect(searches).toBe(1);
+    expect(tahin[0].imgSource).toBe('library');
+  }, 120000);
 });

@@ -110,9 +110,9 @@ Optionen: `--no-price-check`, `--images` (gleich alle Bilder holen), `--recorded
 
 - **Auswahl:** Angebote ohne Preis und Dubletten fallen raus, sichere Preise und saubere Bilder zuerst, dann reihum aus den Warengruppen. Themen (`fleisch`, `snacks`, `vorrat`, `getraenke`, `frische`, `milch`, `haushalt`) filtern und setzen die passende Überschrift.
 - **Produktbilder**, in dieser Reihenfolge:
-  1. **Bibliothek** (`library/`, Ort änderbar mit `SINCAPP_LIBRARY`): einmal gefundene Produkte werden wiederverwendet – gleiche Marke, gleicher Name (DE oder TR), gleiche Menge.
+  1. **Produkt-Katalog** (`library/`, Ort änderbar mit `SINCAPP_LIBRARY`): einmal gefundene Produkte werden wiederverwendet – gleiche Marke, gleicher Name (DE oder TR), gleiche Menge. Eigene Bilder gehen vor Internet-Fotos, beide werden ohne Suche und ohne KI genommen. Liegt nur ein Prospekt-Ausschnitt vor, wird einmal im Internet gesucht; ohne Treffer merkt sich der Katalog das.
   2. **Internet:** Bildersuche mit Marke + Name + Menge über die Brave Search API (`BRAVE_API_KEY`) und Open Food Facts. Claude vergleicht jeden Treffer mit dem Prospekt-Ausschnitt (gleiches Produkt, gleiche Sorte, sauberes Foto). Nur ein bestätigter Treffer wird genommen, freigestellt (oder vorhandene Transparenz übernommen) und in der Bibliothek gespeichert.
-  3. **Prospekt-Ausschnitt** als Notlösung.
+  3. **Prospekt-Ausschnitt** als Notlösung. In den Katalog kommt davon genau eine Packung: `tools/single.py` erkennt doppelt abgebildete Packungen (SIFT-Merkmale mit gleichem Versatz), nimmt die vordere und räumt die Kante auf – lokal, kostenlos. Im Katalog verbessert „Bilder verbessern“ alle Prospekt-Bilder auf einmal (erst Internet, dann Zuschnitt).
 - Ergebnis: `story.json`, Bilder in `images/`, Hinweise in `report.md`.
 
 ## Prüfen (Review)

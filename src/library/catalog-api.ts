@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { copyFile, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { CATEGORIES, type Category, type Extraction } from '../extract/schema';
@@ -7,6 +8,9 @@ import { jobsDir, validJobId } from '../app/jobs';
 import { runPython } from '../python';
 import { readBody, sendJson } from '../review/server';
 import { Library, type EntryPatch, type LibraryEntry } from './library';
+import { cutoutWeb, findWebImage, singleCopies } from '../images/resolve';
+import { providersFromEnv } from '../images/search';
+import { makeMatcher } from '../ai/provider';
 
 /**
  * Katalog aus allen bisherigen Jobs ergänzen: Warengruppe, Sorte und in welchen
@@ -49,14 +53,107 @@ async function withUrl(lib: Library, e: LibraryEntry) {
   return { ...e, url: `/library/${encodeURIComponent(e.img)}?v=${v}` };
 }
 
-/** /api/library…: Katalog lesen, bearbeiten, Bild ersetzen, entfernen. */
+export type Improved = 'internet' | 'bereinigt' | 'unverändert';
+
+/**
+ * Zuerst ein Internet-Foto für einen Prospekt-Ausschnitt suchen (Suche + eine kurze KI-Prüfung).
+ * Ohne force wird ein erfolgloser Versuch nicht wiederholt. Eigene Bilder und Internet-Fotos bleiben.
+ */
+async function tryWeb(lib: Library, e: LibraryEntry, opts: { force?: boolean; matcher: ReturnType<typeof makeMatcher> }): Promise<{ found: boolean; note?: string }> {
+  const providers = providersFromEnv();
+  if (!providers.length || (!opts.force && e.webTried)) return { found: false };
+  if (!opts.matcher) return { found: false, note: 'Ohne KI-Schlüssel kann kein Internet-Foto sicher geprüft werden' };
+  const work = await mkdtemp(join(tmpdir(), 'sincapp-katalog-'));
+  try {
+    const r = await findWebImage({ id: 'p', brand: e.brand, name: e.name, unit: e.unit }, { image: lib.path(e), box: null }, work, { providers, matcher: opts.matcher });
+    if (r.best) {
+      const out = join(work, 'web.png');
+      const c = (await cutoutWeb([{ image: r.best.file, out }])).get(out);
+      if (c?.ok && !c.warnings.length) {
+        await lib.put({ brand: e.brand, name: e.name, unit: e.unit }, out, { type: r.best.provider === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: r.best.url }, true);
+        return { found: true };
+      }
+    }
+    e.webTried = new Date().toISOString().slice(0, 10);
+    return { found: false, note: r.files.length ? 'Im Internet nichts sicher Passendes gefunden' : 'Im Internet nichts gefunden' };
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}
+
+/** Prospekt-Ausschnitte lokal auf eine Packung zuschneiden (ein Python-Lauf für alle). */
+async function cleanUp(lib: Library, list: LibraryEntry[]) {
+  const todo = list.filter((e) => e.source.type === 'prospekt' && !e.single);
+  if (!todo.length) return 0;
+  const work = await mkdtemp(join(tmpdir(), 'sincapp-katalog-'));
+  try {
+    const items = todo.map((e, i) => ({ e, image: lib.path(e), out: join(work, `${i}.png`) }));
+    const res = await singleCopies(items.map(({ image, out }) => ({ image, out })));
+    let n = 0;
+    for (const it of items) {
+      if (!res.get(it.out)?.ok) continue;
+      await copyFile(it.out, it.image);
+      it.e.single = true;
+      n++;
+    }
+    return n;
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}
+
+/** Ein Produkt verbessern: Internet zuerst, sonst zuschneiden. */
+export async function improveEntry(lib: Library, e: LibraryEntry, opts: { force?: boolean } = {}): Promise<{ result: Improved; note?: string }> {
+  if (e.source.type !== 'prospekt') return { result: 'unverändert', note: 'Bild ist schon ein eigenes oder ein Internet-Foto' };
+  const web = await tryWeb(lib, e, { force: opts.force, matcher: makeMatcher() });
+  if (web.found) return { result: 'internet' };
+  if (await cleanUp(lib, [e])) return { result: 'bereinigt', note: web.note };
+  return { result: 'unverändert', note: web.note };
+}
+
+/** Alle Prospekt-Bilder im Hintergrund verbessern; Stand für die Katalog-Seite. */
+const run = { running: false, done: 0, total: 0, internet: 0, bereinigt: 0, current: '' };
+
+async function improveAll() {
+  const lib = await Library.open();
+  const matcher = makeMatcher();
+  const todo = lib.entries.filter((e) => e.source.type === 'prospekt' && (!e.single || (matcher && !e.webTried)));
+  Object.assign(run, { running: true, done: 0, total: todo.length, internet: 0, bereinigt: 0, current: '' });
+  try {
+    for (const e of todo) {
+      run.current = [e.brand, e.name.de].filter(Boolean).join(' ');
+      try {
+        if ((await tryWeb(lib, e, { matcher })).found) {
+          run.internet++;
+          run.done++;
+          await lib.save();
+        }
+      } catch {
+        /* ein Produkt hält die anderen nicht auf */
+      }
+    }
+    run.current = 'Prospekt-Ausschnitte zuschneiden';
+    run.bereinigt = await cleanUp(lib, todo).catch(() => 0);
+    run.done = run.total;
+    await lib.save();
+  } finally {
+    run.running = false;
+    run.current = '';
+  }
+}
+
+/** /api/library…: Katalog lesen, bearbeiten, Bild ersetzen, verbessern, entfernen. */
 export async function catalogApi(method: string, p: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  if (p === '/api/library/verbessern') {
+    if (method === 'POST' && !run.running) void improveAll();
+    return sendJson(res, run);
+  }
   if (p === '/api/library' && method === 'GET') {
     const lib = await Library.open();
     await enrichFromJobs(lib);
     return sendJson(res, await Promise.all(lib.entries.map((e) => withUrl(lib, e))));
   }
-  const m = p.match(/^\/api\/library\/([^/]+)(\/bild)?$/);
+  const m = p.match(/^\/api\/library\/([^/]+)(\/bild|\/internet)?$/);
   if (!m) return false;
   const lib = await Library.open();
   const img = decodeURIComponent(m[1]);
@@ -77,7 +174,12 @@ export async function catalogApi(method: string, p: string, req: IncomingMessage
     await lib.save();
     return sendJson(res, await withUrl(lib, e));
   }
-  if (m[2] && method === 'POST') {
+  if (m[2] === '/internet' && method === 'POST') {
+    const r = await improveEntry(lib, e, { force: true });
+    await lib.save();
+    return sendJson(res, { ...r, entry: await withUrl(lib, e) });
+  }
+  if (m[2] === '/bild' && method === 'POST') {
     // neues Produktbild: PNG direkt (Transparenz bleibt), JPG/WEBP werden umgewandelt
     const buf = await readBody(req);
     if (buf.length > 15_000_000) return sendJson(res, { error: 'Bild zu groß (max. 15 MB)' }, 400);
@@ -85,16 +187,22 @@ export async function catalogApi(method: string, p: string, req: IncomingMessage
     const jpg = buf[0] === 0xff && buf[1] === 0xd8;
     const webp = buf.subarray(8, 12).toString('latin1') === 'WEBP';
     if (!png && !jpg && !webp) return sendJson(res, { error: 'Bitte ein PNG, JPG oder WEBP' }, 400);
-    if (png) await writeFile(lib.path(e), buf);
-    else {
-      const tmp = `${lib.path(e)}.upload`;
-      await writeFile(tmp, buf);
-      const [line] = await runPython('crops.py', [], [{ image: tmp, box: null, out: lib.path(e), pad: 0, maxSide: 1600 }]);
+    // eigenes Foto freistellen (vorhandene Transparenz bleibt); klappt das nicht, das Bild wie es ist
+    const tmp = `${lib.path(e)}.upload${png ? '.png' : jpg ? '.jpg' : '.webp'}`;
+    await writeFile(tmp, buf);
+    try {
+      const cut = await cutoutWeb([{ image: tmp, out: lib.path(e) }]).catch(() => null);
+      if (!cut?.get(lib.path(e))?.ok) {
+        const [line] = await runPython('crops.py', [], [{ image: tmp, box: null, out: lib.path(e), pad: 0, maxSide: 1600 }]);
+        if (!JSON.parse(line).ok) return sendJson(res, { error: 'Bild ließ sich nicht lesen' }, 400);
+      }
+    } finally {
       await rm(tmp, { force: true });
-      if (!JSON.parse(line).ok) return sendJson(res, { error: 'Bild ließ sich nicht lesen' }, 400);
     }
     e.source = { type: 'manual' };
     e.verified = true;
+    delete e.webTried;
+    delete e.single;
     await lib.save();
     return sendJson(res, await withUrl(lib, e));
   }

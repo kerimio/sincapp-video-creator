@@ -87,8 +87,10 @@ describe('App-Server', () => {
     const img = await fetch(`${server.url}/jobs/${job.id}/${state.story.offers[0].img}`);
     expect(img.headers.get('content-type')).toBe('image/png');
 
-    // Ohne Internetsuche nur Prospekt-Freisteller – die kommen bewusst nicht in die Bibliothek
-    expect((await api('GET', '/api/library')).data).toEqual([]);
+    // Ohne Internet-Foto: Notfall-Ausschnitte aus dem Prospekt, im Katalog als einzelne, bereinigte Packung (ungeprüft)
+    const katalog = (await api('GET', '/api/library')).data as { source: { type: string }; verified: boolean; single?: boolean }[];
+    expect(katalog.length).toBeGreaterThanOrEqual(5);
+    expect(katalog.every((e) => e.source.type === 'prospekt' && !e.verified && e.single)).toBe(true);
 
     const list = (await api('GET', '/api/jobs')).data;
     expect(list.map((j: { id: string }) => j.id)).toContain(job.id);

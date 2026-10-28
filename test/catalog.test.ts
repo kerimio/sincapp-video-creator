@@ -1,4 +1,6 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
+import { pythonBin, runPython } from '../src/python';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -61,6 +63,24 @@ describe('Katalog-Einträge', () => {
   });
 });
 
+describe('Bildquelle im Katalog', () => {
+  it('eigenes Bild vor Internet vor Prospekt', async () => {
+    const lib = await Library.open(mkdtempSync(join(tmpdir(), 'cat-')));
+    const q = { brand: 'Tat', name: { de: 'Ketchup' }, unit: '600 g' };
+    const e = await lib.put(q, png(), { type: 'prospekt' }, false);
+    e.webTried = '2026-10-01';
+    await lib.put(q, png(), { type: 'web', url: 'https://x/k.png' }, true);
+    expect(e.source.type).toBe('web');
+    expect(e.webTried).toBeUndefined();
+    await lib.put(q, png(), { type: 'prospekt' }, false);
+    expect(e.source.type).toBe('web');
+    await lib.put(q, png(), { type: 'manual' }, true);
+    await lib.put(q, png(), { type: 'web' }, true);
+    expect(e.source.type).toBe('manual');
+    expect(lib.entries).toHaveLength(1);
+  });
+});
+
 describe('Katalog aus bisherigen Jobs', () => {
   it('ergänzt Warengruppe, Sorte und Preise ohne KI', async () => {
     const lib = await Library.open(mkdtempSync(join(tmpdir(), 'cat-')));
@@ -79,4 +99,30 @@ describe('Katalog aus bisherigen Jobs', () => {
     // zweiter Lauf ändert nichts
     expect(await enrichFromJobs(lib, jobs)).toBe(false);
   });
+});
+
+describe.skipIf(!existsSync(pythonBin()))('Doppelte Packungen', () => {
+  it('schneidet aus zwei gleichen Packungen genau eine aus', async () => {
+    // Packung 120×160 mit Muster, zweimal versetzt (hintere links oben, vordere rechts unten)
+    const W = 300, H = 200, pw = 120, ph = 160;
+    const pack = (x: number, y: number) => {
+      const v = ((x >> 3) * 73856093) ^ ((y >> 3) * 19349663);
+      return [(v & 255), ((v >> 8) & 255), ((v >> 16) & 255)];
+    };
+    const p = new PNG({ width: W, height: H });
+    for (const [ox, oy] of [[20, 10], [150, 30]])
+      for (let y = 0; y < ph; y++)
+        for (let x = 0; x < pw; x++) {
+          const i = ((y + oy) * W + x + ox) * 4;
+          const [r, g, b] = pack(x, y);
+          p.data[i] = r; p.data[i + 1] = g; p.data[i + 2] = b; p.data[i + 3] = 255;
+        }
+    const dir = mkdtempSync(join(tmpdir(), 'single-'));
+    writeFileSync(join(dir, 'in.png'), PNG.sync.write(p));
+    const [line] = await runPython('single.py', [], [{ image: join(dir, 'in.png'), out: join(dir, 'out.png') }]);
+    const r = JSON.parse(line);
+    expect(r).toMatchObject({ ok: true, copies: 2 });
+    expect(r.width).toBeGreaterThan(pw - 12);
+    expect(r.width).toBeLessThan(pw + 12);
+  }, 120000);
 });

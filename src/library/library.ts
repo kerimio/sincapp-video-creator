@@ -35,7 +35,14 @@ export interface LibraryEntry {
   ean?: string | null;
   /** In welchen Prospekten das Produkt vorkam (Markt, Zeitraum, Preis) */
   seen?: Sighting[];
+  /** Internet-Suche ohne passenden Treffer (Datum) – wird nicht bei jedem Video wiederholt */
+  webTried?: string;
+  /** Prospekt-Bild auf eine Packung zugeschnitten und Kante bereinigt */
+  single?: boolean;
 }
+
+/** Welche Bildquelle gewinnt: eigenes Bild vor Internet vor Prospekt. */
+export const SOURCE_RANK: Record<LibrarySource, number> = { manual: 3, web: 2, openfoodfacts: 2, prospekt: 1 };
 
 export interface Sighting {
   market: string;
@@ -151,10 +158,15 @@ export class Library {
     const now = new Date().toISOString();
     let e = this.entries.find((x) => x.key === key && unitKey(x.unit) === unitKey(q.unit ?? null));
     const file = `${key.replace(/\|/g, '__').slice(0, 80) || 'produkt'}${q.unit ? `__${unitKey(q.unit)}` : ''}.png`;
-    await copyFile(png, join(this.dir, file));
-    if (e) {
-      Object.assign(e, { img: file, source, verified, usedAt: now });
+    if (e && SOURCE_RANK[source.type] < SOURCE_RANK[e.source.type]) {
+      // besseres Bild ist schon da (eigenes > Internet > Prospekt): nur Angaben ergänzen
+    } else if (e) {
+      await copyFile(png, join(this.dir, e.img));
+      Object.assign(e, { source, verified, usedAt: now });
+      if (source.type !== 'prospekt') delete e.webTried;
+      delete e.single;
     } else {
+      await copyFile(png, join(this.dir, file));
       e = { key, brand: q.brand, name: { de: q.name.de, tr: q.name.tr ?? q.name.de }, unit: q.unit ?? null, aliases: [], img: file, source, verified, addedAt: now, usedAt: now, uses: 0 };
       this.entries.push(e);
     }

@@ -11,7 +11,9 @@ interface Entry {
   key: string; brand: string | null; name: { de: string; tr: string }; unit: string | null; img: string; url: string;
   source: { type: string; url?: string }; verified: boolean; uses: number; addedAt: string; usedAt: string;
   category?: Category; variant?: { de: string; tr: string } | null; ean?: string | null; seen?: Sighting[];
+  webTried?: string; single?: boolean;
 }
+interface ImproveRun { running: boolean; done: number; total: number; internet: number; bereinigt: number; current: string }
 type Row = Entry & { size: Size | null; cat: Category; last: Sighting | null };
 
 const SORTS = {
@@ -49,10 +51,24 @@ export function CatalogPage() {
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [prefs, setPrefs] = useState(loadPrefs);
   const [open, setOpen] = useState<string | null>(null);
+  const [improve, setImprove] = useState<ImproveRun | null>(null);
+  const [ai, setAi] = useState(false);
   const load = () => call<Entry[]>('GET', '/api/library').then(setEntries, (e) => setErr(e.message));
   useEffect(() => {
     load();
+    call<ImproveRun>('GET', '/api/library/verbessern').then(setImprove, () => {});
+    call<{ ai: string | null }>('GET', '/api/settings').then((x) => setAi(!!x.ai), () => {});
   }, []);
+  // Fortschritt beim Verbessern abfragen, am Ende Katalog neu laden
+  useEffect(() => {
+    if (!improve?.running) return;
+    const t = setTimeout(async () => {
+      const r = await call<ImproveRun>('GET', '/api/library/verbessern').catch(() => null);
+      if (r && !r.running) load();
+      setImprove(r);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [improve]);
   useEffect(() => {
     try {
       localStorage.setItem(STORE, JSON.stringify(prefs));
@@ -100,6 +116,8 @@ export function CatalogPage() {
     return c;
   }, [rows]);
   const incomplete = rows.filter((r) => !r.category || !r.unit || !r.verified).length;
+  // Prospekt-Bilder, die noch verbessert werden können (Internet noch nicht versucht oder nicht bereinigt)
+  const improvable = rows.filter((r) => r.source.type === 'prospekt' && (!r.single || (ai && !r.webTried))).length;
   const current = rows.find((r) => r.img === open) ?? null;
 
   return (
@@ -117,6 +135,24 @@ export function CatalogPage() {
           </div>
           <input className="search" placeholder="Marke, Produkt, Sorte, Menge oder EAN …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+
+        {improve?.running ? (
+          <div className="card cat-improve">
+            <b>Bilder werden verbessert … {improve.done}/{improve.total}</b>
+            <span className="muted small">{improve.current && `${improve.current} · `}{improve.internet} aus dem Internet, {improve.bereinigt} zugeschnitten</span>
+            <progress max={improve.total || 1} value={improve.done} />
+          </div>
+        ) : improvable > 0 ? (
+          <div className="card cat-improve">
+            <div className="grow">
+              <b>{improvable} {improvable === 1 ? 'Bild stammt' : 'Bilder stammen'} aus dem Prospekt</b>
+              <span className="muted small">Zuerst wird ein sauberes Foto im Internet gesucht (je Produkt eine kurze KI-Prüfung, nur einmal). Gibt es keins, wird der Ausschnitt auf eine Packung zugeschnitten.</span>
+            </div>
+            <button className="primary" onClick={() => call<ImproveRun>('POST', '/api/library/verbessern').then(setImprove, (e) => setErr(e.message))}>Bilder verbessern</button>
+          </div>
+        ) : improve && improve.total > 0 && improve.done === improve.total ? (
+          <p className="muted small">Fertig: {improve.internet} Bilder aus dem Internet, {improve.bereinigt} auf eine Packung zugeschnitten.</p>
+        ) : null}
 
         <div className="chips cat-chips">
           <button className={cat === 'alle' ? 'on' : ''} onClick={() => setCat('alle')}>Alle <small>{rows.length}</small></button>
@@ -307,6 +343,17 @@ function ProductEditor({ r, onClose, onSaved, onRemoved }: { r: Row; onClose: ()
     }
     setBusy('');
   };
+  const fromWeb = async () => {
+    setBusy('Sucht im Internet …');
+    try {
+      const r = await call<{ result: string; note?: string; entry: Entry }>('POST', `${base}/internet`);
+      onSaved(r.entry);
+      setMsg({ text: r.result === 'internet' ? 'Sauberes Foto aus dem Internet übernommen' : r.result === 'bereinigt' ? `${r.note ? `${r.note}. ` : ''}Ausschnitt auf eine Packung zugeschnitten` : r.note ?? 'Nichts geändert', error: r.result === 'unverändert' });
+    } catch (e) {
+      setMsg({ text: (e as Error).message, error: true });
+    }
+    setBusy('');
+  };
   const remove = async () => {
     if (!confirm(`„${fullName(r)}“ aus dem Katalog entfernen? Beim nächsten Prospekt wird dafür wieder ein Bild gesucht.`)) return;
     await call('DELETE', base);
@@ -325,7 +372,8 @@ function ProductEditor({ r, onClose, onSaved, onRemoved }: { r: Row; onClose: ()
           <img src={r.url} alt="" />
         </div>
         <div className="row">
-          <button className="ghost" onClick={() => file.current?.click()} disabled={!!busy}>Bild ersetzen</button>
+          <button className="ghost" onClick={() => file.current?.click()} disabled={!!busy}>Eigenes Bild</button>
+          {r.source.type === 'prospekt' && <button className="ghost" onClick={fromWeb} disabled={!!busy}>Im Internet suchen</button>}
           <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => replace(e.target.files?.[0])} />
           <span className="muted small">Quelle: {SOURCE[r.source.type] ?? r.source.type}{r.source.url && <> · <a href={r.source.url} target="_blank" rel="noreferrer">Original</a></>}</span>
         </div>

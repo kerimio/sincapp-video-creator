@@ -280,3 +280,6 @@ h2.cat-group small { font-size: 13px; }
   .pname { font-size: 14px; overflow-wrap: anywhere; }
 }
 .pbrand .flag { letter-spacing: 0; text-transform: none; font-size: 10px; padding: 1px 6px; }
+.cat-improve { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 12px 0 0; padding: 12px 16px; }
+.cat-improve .grow { display: flex; flex-direction: column; gap: 2px; min-width: 220px; }
+.cat-improve progress { width: 100%; accent-color: var(--red); }
