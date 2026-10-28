@@ -1,10 +1,10 @@
 // Produkt-Katalog: alle freigestellten Produkte mit Marke, Menge, Sorte und Warengruppe,
 // geordnet, durchsuchbar und von Hand zu pflegen. Füllt sich beim Prüfen von selbst.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CATEGORIES, CATEGORY_LABEL, parseSize, unitPrice, type Category, type Size } from '../../core/catalog';
+import { bestPriceWeeks, CATEGORIES, CATEGORY_LABEL, parseSize, unitPrice, type Category, type Size } from '../../core/catalog';
 import { formatDateRange } from '../../core/format';
 import { call } from './api';
-import { Shell } from './pages';
+import { go, Shell } from './pages';
 
 interface Sighting { market: string; price: string | null; from: string | null; to: string | null; job?: string }
 interface Entry {
@@ -53,6 +53,11 @@ export function CatalogPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [improve, setImprove] = useState<ImproveRun | null>(null);
   const [ai, setAi] = useState(false);
+  // Kampagne: gewählte Produkte (Reihenfolge = Reihenfolge im Video); null = normaler Katalog
+  const [pick, setPick] = useState<string[] | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const toggle = (img: string) => setPick((p) => (p ? (p.includes(img) ? p.filter((x) => x !== img) : p.length >= 15 ? p : [...p, img]) : p));
+  const openOrPick = (img: string) => (pick ? toggle(img) : setOpen(img));
   const load = () => call<Entry[]>('GET', '/api/library').then(setEntries, (e) => setErr(e.message));
   useEffect(() => {
     load();
@@ -134,7 +139,16 @@ export function CatalogPage() {
             )}
           </div>
           <input className="search" placeholder="Marke, Produkt, Sorte, Menge oder EAN …" value={q} onChange={(e) => setQ(e.target.value)} />
+          {!pick && rows.length >= 2 && <button className="primary" onClick={() => setPick([])}>Kampagne erstellen</button>}
         </div>
+        {pick && (
+          <div className="card cat-improve cat-pickhint">
+            <div className="grow">
+              <b>Kampagne aus dem Katalog</b>
+              <span className="muted small">Produkte antippen (2 bis 15, in der Reihenfolge fürs Video). Danach Preise und Zeitraum eintragen – ohne Prospekt und ohne KI.</span>
+            </div>
+          </div>
+        )}
 
         {improve?.running ? (
           <div className="card cat-improve">
@@ -198,14 +212,25 @@ export function CatalogPage() {
             <section key={g || 'alle'}>
               {g && <h2 className="cat-group">{g} <small className="muted">{list.length}</small></h2>}
               <div className="cat-grid">
-                {list.map((r) => <ProductCard key={r.img} r={r} onOpen={() => setOpen(r.img)} />)}
+                {list.map((r) => <ProductCard key={r.img} r={r} pickNo={pick ? pick.indexOf(r.img) + 1 : undefined} onOpen={() => openOrPick(r.img)} />)}
               </div>
             </section>
           ))
         ) : (
-          sorted.length > 0 && <ProductTable rows={sorted} onOpen={setOpen} />
+          sorted.length > 0 && <ProductTable rows={sorted} pick={pick} onOpen={openOrPick} />
         )}
       </div>
+      {pick && (
+        <div className="pickbar">
+          <b>{pick.length} {pick.length === 1 ? 'Produkt' : 'Produkte'} gewählt</b>
+          <span className="grow" />
+          <button className="ghost" onClick={() => setPick(null)}>Abbrechen</button>
+          <button className="primary" disabled={pick.length < 2} onClick={() => setPlanning(true)}>Weiter</button>
+        </div>
+      )}
+      {pick && planning && (
+        <CampaignDialog rows={pick.map((img) => rows.find((r) => r.img === img)!).filter(Boolean)} onClose={() => setPlanning(false)} />
+      )}
       {current && (
         <ProductEditor
           r={current}
@@ -221,11 +246,12 @@ export function CatalogPage() {
   );
 }
 
-function ProductCard({ r, onOpen }: { r: Row; onOpen: () => void }) {
+function ProductCard({ r, onOpen, pickNo }: { r: Row; onOpen: () => void; pickNo?: number }) {
   const up = unitPrice(r.last?.price, r.size);
   return (
-    <button className="product" onClick={onOpen} title="Bearbeiten">
+    <button className={`product${pickNo ? ' picked' : ''}`} onClick={onOpen} title={pickNo === undefined ? 'Bearbeiten' : 'Für die Kampagne wählen'}>
       <div className="pimg">
+        {pickNo !== undefined && <span className="picknum">{pickNo || ''}</span>}
         <img src={r.url} loading="lazy" alt="" />
       </div>
       <div className="pbody">
@@ -251,7 +277,7 @@ function ProductCard({ r, onOpen }: { r: Row; onOpen: () => void }) {
   );
 }
 
-function ProductTable({ rows, onOpen }: { rows: Row[]; onOpen: (img: string) => void }) {
+function ProductTable({ rows, onOpen, pick }: { rows: Row[]; onOpen: (img: string) => void; pick: string[] | null }) {
   return (
     <div className="card cat-table-wrap">
       <table className="cat-table">
@@ -271,7 +297,7 @@ function ProductTable({ rows, onOpen }: { rows: Row[]; onOpen: (img: string) => 
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.img} onClick={() => onOpen(r.img)}>
+            <tr key={r.img} className={pick?.includes(r.img) ? 'picked' : ''} onClick={() => onOpen(r.img)}>
               <td><img src={r.url} loading="lazy" alt="" /></td>
               <td>{r.brand ?? <span className="muted">–</span>}</td>
               <td><b>{r.name.de}</b>{!r.verified && <span className="flag inline">ungeprüft</span>}</td>
@@ -420,6 +446,110 @@ function ProductEditor({ r, onClose, onSaved, onRemoved }: { r: Row; onClose: ()
           <p className="muted small">Noch in keinem gelesenen Prospekt gefunden.</p>
         )}
         <p className="muted small">{r.uses}× in Videos benutzt · im Katalog seit {new Date(r.addedAt).toLocaleDateString('de-DE')}</p>
+      </div>
+    </div>
+  );
+}
+
+interface MarketOption { value: string; name: string; firestore: boolean }
+const isoDay = (d: Date) => d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+
+/** Preise und Zeitraum für die gewählten Produkte, dann Zauberknopf oder erst prüfen. */
+function CampaignDialog({ rows, onClose }: { rows: Row[]; onClose: () => void }) {
+  const [markets, setMarkets] = useState<MarketOption[] | null>(null);
+  const [market, setMarket] = useState('');
+  const [title, setTitle] = useState('');
+  const [from, setFrom] = useState(() => isoDay(new Date()));
+  const [to, setTo] = useState(() => isoDay(new Date(Date.now() + 6 * 86_400_000)));
+  const [prices, setPrices] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.img, r.last?.price?.replace('.', ',') ?? ''])));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const local = () => call<{ slug: string; name: string }[]>('GET', '/api/markets').then((l) => l.map((m) => ({ value: m.slug, name: m.name, firestore: false })));
+    call<{ id: string; name: string }[]>('GET', '/api/firestore/markets')
+      .then((l) => l.map((m) => ({ value: m.id, name: m.name, firestore: true })), local)
+      .then((l) => {
+        l.sort((a, b) => coll.compare(a.name, b.name));
+        setMarkets(l);
+        // zuletzt gesehener Markt der Produkte vorwählen
+        const seen = rows.map((r) => r.last?.market).find(Boolean);
+        setMarket(l.find((m) => m.name === seen)?.value ?? l[0]?.value ?? '');
+      }, (e) => setErr(e.message));
+  }, [rows]);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  const missing = rows.filter((r) => !/^\d+([.,]\d{1,2})?$/.test((prices[r.img] ?? '').trim()));
+  const start = async (auto: boolean) => {
+    const m = markets?.find((x) => x.value === market);
+    if (!m) return setErr('Bitte einen Markt wählen');
+    setBusy(true);
+    setErr('');
+    try {
+      const job = await call<{ id: string }>('POST', '/api/kampagne', {
+        ...(m.firestore ? { marketId: m.value } : { market: m.value }),
+        title: title.trim() || `${m.name}: Aktion ${from.slice(8, 10)}.${from.slice(5, 7)}.`,
+        from,
+        to,
+        auto,
+        items: rows.map((r) => ({ img: r.img, price: prices[r.img].trim() })),
+      });
+      go(`#/job/${job.id}`);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="drawer-bg" onClick={onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="row">
+          <h2 className="grow">Kampagne: {rows.length} Produkte</h2>
+          <button className="ghost" onClick={onClose}>✕</button>
+        </div>
+        <div className="form">
+          <label>Markt
+            <select value={market} onChange={(e) => setMarket(e.target.value)} disabled={!markets}>
+              {!markets && <option>lädt …</option>}
+              {markets?.map((m) => <option key={m.value} value={m.value}>{m.name}</option>)}
+            </select>
+          </label>
+          <label>Name (optional)<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="z. B. Grill-Aktion" /></label>
+          <label>Gültig ab<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label>Gültig bis<input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
+        </div>
+        <h3>Aktionspreise</h3>
+        <div className="camp-items">
+          {rows.map((r) => {
+            const weeks = bestPriceWeeks(prices[r.img]?.replace(',', '.'), r.seen, from);
+            return (
+              <div key={r.img} className="camp-item">
+                <img src={r.url} alt="" />
+                <div className="grow">
+                  <b>{fullName(r)}</b>
+                  <span className="muted small">
+                    {[r.size?.label ?? r.unit, r.last?.price && `zuletzt ${r.last.price.replace('.', ',')} €`].filter(Boolean).join(' · ')}
+                  </span>
+                  {weeks && <span className="best">Bester Preis seit {weeks} Wochen</span>}
+                </div>
+                <label className="price">
+                  <input inputMode="decimal" value={prices[r.img] ?? ''} placeholder="0,00" onChange={(e) => setPrices((p) => ({ ...p, [r.img]: e.target.value }))} />
+                  €
+                </label>
+              </div>
+            );
+          })}
+        </div>
+        {err && <p className="warn">{err}</p>}
+        {missing.length > 0 && <p className="muted small">Noch ohne gültigen Preis: {missing.map(fullName).join(', ')}</p>}
+        <div className="row">
+          <button className="ghost" disabled={busy || missing.length > 0 || from > to} onClick={() => start(false)}>Erst prüfen</button>
+          <span className="grow" />
+          <button className="primary" disabled={busy || missing.length > 0 || from > to} onClick={() => start(true)}>{busy ? 'Startet …' : '🐿 Zauberknopf'}</button>
+        </div>
+        <p className="muted small">Zauberknopf: Story-Videos, Reels, Bilder, 7-Tage-Plan und Texte in DE und TR, alles in einem Rutsch.</p>
       </div>
     </div>
   );

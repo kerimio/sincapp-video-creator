@@ -8,6 +8,7 @@ import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
 import { Library } from '../library/library';
+import { markBestPrices } from '../library/bestprice';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
@@ -19,6 +20,8 @@ export interface JobSettings {
   count?: number;
   /** Ordner mit aufgezeichneten Antworten statt Claude (Demo, Tests) */
   recorded?: string;
+  /** Kampagne aus dem Katalog statt Prospekt */
+  catalog?: import('./campaign').CatalogCampaign;
 }
 
 export type Step = 'extract' | 'images' | 'story' | 'render' | 'done';
@@ -111,6 +114,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const design = await readMarketDesign(story.market.slug).catch(() => null);
   // ohne gespeichertes Design: die Vorlage nach dem sincapp Design System
   story.design = Design.parse(design ?? { preset: 'marke' });
+  notes.push(...(await markBestPrices(story, usable, jobDir)));
   await writeFile(join(jobDir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] }));

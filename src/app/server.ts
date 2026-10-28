@@ -15,6 +15,7 @@ import { startStaticServer } from '../server/static';
 import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summarize } from './jobs';
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
 import { MAGIC_PACK } from '../core/packs';
+import { checkCampaign, prepareCampaign, type CatalogCampaign } from './campaign';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
 const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
@@ -87,7 +88,8 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     // Beim Zauberknopf zählt das Auslesen bis 50 %, der Export die zweite Hälfte.
     const k = auto ? 0.5 : 1;
     (async () => {
-      const r = await prepareStory(jobPath(id), settings, (p) => (run.progress = { ...p, fraction: p.fraction * k }));
+      const onProgress = (p: Progress) => (run.progress = { ...p, fraction: p.fraction * k });
+      const r = settings.catalog ? await prepareCampaign(jobPath(id), settings.market, settings.catalog, onProgress) : await prepareStory(jobPath(id), settings, onProgress);
       run.notes = r.notes;
       if (!auto) return;
       const api = apiFor(id);
@@ -221,6 +223,22 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       }
     }
 
+    if (method === 'POST' && p === '/api/kampagne') {
+      // Kampagne aus dem Katalog: Produkte + Preise, ohne Prospekt und ohne KI
+      const b = JSON.parse((await readBody(req)).toString('utf8')) as CatalogCampaign & { marketId?: string; market?: string; title?: string; auto?: boolean };
+      checkCampaign(b);
+      let market = b.market ?? '';
+      if (b.marketId) {
+        const m = (await firestore()).markets.find((x) => x.id === b.marketId);
+        if (!m) throw new Error('Markt nicht gefunden');
+        market = (await cacheMarket(m, fetchImpl)).slug;
+      }
+      if (!market) throw new Error('Bitte einen Markt wählen');
+      const meta = await createJob({ market, catalog: { items: b.items, from: b.from, to: b.to } }, b.title || undefined);
+      process_(meta.id, meta.settings, !!b.auto);
+      return sendJson(res, meta, 201);
+    }
+
     if (method === 'POST' && p === '/api/jobs/demo') {
       // Saray-Beispiel mit den aufgezeichneten Antworten – läuft ohne API-Key
       const meta = await createJob({ market: 'saray', recorded: join(ROOT, 'test/fixtures/saray-extraction') }, 'Demo: Saray Market (Beispiel)');
@@ -266,7 +284,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       if (sub === 'process' && method === 'POST') {
         if (runs.get(id)?.running) return sendJson(res, { error: 'Läuft bereits' }, 409);
         const meta = await readJob(id);
-        if (!meta.settings.recorded && !aiProvider()) throw new Error(NO_AI_KEY);
+        if (!meta.settings.recorded && !meta.settings.catalog && !aiProvider()) throw new Error(NO_AI_KEY);
         const body = (await readBody(req)).toString('utf8');
         process_(id, meta.settings, !!(body && JSON.parse(body).auto));
         return sendJson(res, runs.get(id), 202);

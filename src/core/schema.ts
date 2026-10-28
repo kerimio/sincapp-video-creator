@@ -52,6 +52,8 @@ export const Offer = z.object({
   note: Localized.optional(),
   imgZoom: z.number().positive().max(3).default(1),
   badge: z.enum(BADGES).optional(),
+  /** Günstigster Preis seit so vielen Wochen (aus dem Preisverlauf im Katalog) */
+  bestWeeks: z.number().int().positive().max(104).optional(),
 });
 export type Offer = z.infer<typeof Offer>;
 

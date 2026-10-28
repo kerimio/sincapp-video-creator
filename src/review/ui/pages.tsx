@@ -6,7 +6,7 @@ import { ReviewPage } from './App';
 // ---------- Typen der App-API ----------
 interface Run { running: boolean; auto?: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
 interface Job {
-  id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string };
+  id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string; catalog?: unknown };
   inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
   files?: string[]; run?: Run | null;
 }
@@ -381,7 +381,9 @@ export function JobPage({ id }: { id: string }) {
               <div className="progressbar big"><div style={{ width: `${(f * 100).toFixed(1)}%` }} /></div>
               <p>{run.progress.message}</p>
               <p className="muted small">
-                {run.auto
+                {job.settings.catalog
+                  ? 'Kampagne aus dem Katalog: Bilder und Preise stehen schon fest, es läuft keine KI. Videos, Reels, Bilder und Texte entstehen in etwa 5 Minuten.'
+                  : run.auto
                   ? '✨ Zauberknopf: Die KI liest die Seiten und prüft jeden Preis doppelt, dann entstehen Videos, Reels, Bilder und Texte. Das dauert etwa 10–20 Minuten – hol dir einen Kaffee, das Fenster kann offen bleiben.'
                   : 'Die KI liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.'}
               </p>

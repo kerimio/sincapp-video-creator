@@ -79,3 +79,20 @@ export function unitPrice(price: string | null | undefined, size: Size | null): 
   if (size.base === 'ml') return `${de((p / size.total) * 1000)} €/l`;
   return size.total > 1 ? `${de(p / size.total)} €/Stück` : null;
 }
+
+/**
+ * "Bester Preis seit X Wochen": Ist der Preis höchstens so hoch wie jeder frühere Preis
+ * desselben Produkts (aus früheren Prospekten im Katalog), zählt die Zeitspanne bis zum
+ * ältesten Vorkommen. Erst ab 4 Wochen Verlauf, sonst null.
+ */
+export function bestPriceWeeks(price: string | null | undefined, seen: { price: string | null; from: string | null; job?: string }[] | undefined, from: string, job?: string): number | null {
+  const p = Number((price ?? '').replace(',', '.'));
+  if (!p || !seen?.length) return null;
+  const before = seen.filter((s) => s.from && s.from < from && s.price && (!job || s.job !== job));
+  if (!before.length) return null;
+  const min = Math.min(...before.map((s) => Number(s.price!.replace(',', '.'))).filter((x) => x > 0));
+  if (!(p <= min)) return null;
+  const oldest = before.map((s) => s.from!).sort()[0];
+  const weeks = Math.floor((Date.parse(from) - Date.parse(oldest)) / (7 * 86_400_000));
+  return weeks >= 4 ? Math.min(weeks, 104) : null;
+}

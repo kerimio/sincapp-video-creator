@@ -1,7 +1,7 @@
 import type { Lang, Story } from './schema';
 import { resolveDesign } from './design';
 import { formatDateRange, turkishLocative } from './format';
-import { BADGE_TEXT } from './badges';
+import { badgeText } from './badges';
 import { cityOf } from './captions';
 
 // Bausteine für die "Zauber"-Funktionen: QR-Code am Schluss, Countdown-Videos und 7-Tage-Plan.
@@ -122,7 +122,7 @@ export function offerCaption(story: Story, index: number, lang: Lang, opts: { co
   const handle = m.instagram ? ` @${m.instagram}` : '';
   const city = cityOf(m.addresses[0] ?? '');
   const cd = opts.countdown != null ? countdownCopy(opts.countdown, lang, story.dates.to).sub : null;
-  const badge = o.badge ? ` ${BADGE_TEXT[o.badge][lang]}!` : '';
+  const badge = o.badge ? ` ${badgeText(o, lang)}!` : '';
   const tags = [...new Set([...(lang === 'de' ? ['angebot', 'sparen', 'supermarkt'] : ['indirim', 'firsat', 'turkmarket']), tag(name.split(' ')[0]), tag(m.name), city ? tag(city) : null, 'sincapp'].filter((x): x is string => !!x))].map((t) => `#${t}`);
   if (lang === 'de') {
     return [

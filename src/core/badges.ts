@@ -16,6 +16,13 @@ export const BADGE_TEXT: Record<Badge, Record<Lang, string>> = {
   xxl: { de: 'XXL-Packung', tr: 'Büyük boy' },
 };
 
+/** Sticker-Text fürs Angebot, beim Bestpreis mit Zeitraum für Bildtexte ("Bester Preis seit 8 Wochen"). */
+export function badgeText(o: { badge?: Badge; bestWeeks?: number }, lang: Lang): string | null {
+  if (!o.badge) return null;
+  if (o.badge === 'bestpreis' && o.bestWeeks) return lang === 'de' ? `Bester Preis seit ${o.bestWeeks} Wochen` : `Son ${o.bestWeeks} haftanın en iyi fiyatı`;
+  return BADGE_TEXT[o.badge][lang];
+}
+
 const WEEKDAY = {
   de: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
   tr: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
