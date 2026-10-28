@@ -7,7 +7,8 @@ import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promi
 import { dirname, extname, join } from 'node:path';
 import { aiProvider, currentModels, NO_AI_KEY } from '../ai/provider';
 import { usageSummary } from '../ai/usage';
-import { Library, libraryDir } from '../library/library';
+import { libraryDir } from '../library/library';
+import { catalogApi } from '../library/catalog-api';
 import { ROOT } from '../paths';
 import { readBody, sendJson, jobApi } from '../review/server';
 import { startStaticServer } from '../server/static';
@@ -208,18 +209,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       return sendJson(res, { ...(await usageSummary(month && /^\d{4}-\d{2}$/.test(month) ? month : undefined)), models: currentModels() });
     }
 
-    if (p === '/api/library') {
-      const lib = await Library.open();
-      return sendJson(res, lib.entries.map((e) => ({ ...e, url: `/library/${encodeURIComponent(e.img)}` })));
-    }
-    const libDel = p.match(/^\/api\/library\/(.+)$/);
-    if (libDel && method === 'DELETE') {
-      const lib = await Library.open();
-      const key = decodeURIComponent(libDel[1]);
-      lib.entries = lib.entries.filter((e) => e.img !== key);
-      await lib.save();
-      return sendJson(res, { ok: true });
-    }
+    if (p.startsWith('/api/library') && (await catalogApi(method, p, req, res))) return true;
 
     if (p === '/api/jobs') {
       if (method === 'GET') return sendJson(res, await listJobs());

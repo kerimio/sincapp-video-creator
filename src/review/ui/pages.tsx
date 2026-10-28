@@ -26,7 +26,7 @@ const TOPICS: [string, string][] = [
   ['haushalt', 'Haushalt & Drogerie'],
 ];
 
-function Shell({ children, active }: { children: React.ReactNode; active?: string }) {
+export function Shell({ children, active }: { children: React.ReactNode; active?: string }) {
   return (
     <div className="app">
       <header>
@@ -36,7 +36,7 @@ function Shell({ children, active }: { children: React.ReactNode; active?: strin
         <div className="spacer" />
         <nav>
           <a className={active === 'home' ? 'on' : ''} href="#/">Übersicht</a>
-          <a className={active === 'lib' ? 'on' : ''} href="#/bibliothek">Produkt-Bibliothek</a>
+          <a className={active === 'lib' ? 'on' : ''} href="#/bibliothek">Produkt-Katalog</a>
           <a className={active === 'set' ? 'on' : ''} href="#/einstellungen">Einstellungen</a>
         </nav>
       </header>
@@ -509,44 +509,3 @@ function Usage() {
   );
 }
 
-// ---------- Produkt-Bibliothek ----------
-interface LibEntry { key: string; brand: string | null; name: { de: string; tr: string }; unit: string | null; img: string; url: string; source: { type: string; url?: string }; verified: boolean; uses: number; addedAt: string }
-export function LibraryPage() {
-  const [entries, setEntries] = useState<LibEntry[] | null>(null);
-  const [q, setQ] = useState('');
-  const load = () => call<LibEntry[]>('GET', '/api/library').then(setEntries);
-  useEffect(() => {
-    load();
-  }, []);
-  const shown = (entries ?? []).filter((e) => `${e.brand} ${e.name.de} ${e.name.tr}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')));
-  return (
-    <Shell active="lib">
-      <div className="row">
-        <h1 className="grow">Produkt-Bibliothek</h1>
-        <input placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      <p className="muted">Jedes Produktbild, das im Internet gefunden und mit dem Prospekt abgeglichen oder von dir beim Prüfen gewählt wurde, landet hier und wird beim nächsten Prospekt automatisch wiederverwendet. Einfache Ausschnitte aus dem Prospekt kommen nicht hinein.</p>
-      {entries && !entries.length && <p className="muted">Noch leer – sie füllt sich, sobald der Brave-Key eingetragen ist oder du beim Prüfen ein Bild auswählst.</p>}
-      <div className="grid lib">
-        {shown.map((e) => (
-          <div key={e.img} className="cand">
-            <img src={e.url} />
-            <b>{e.brand} {e.name.de}</b>
-            <small className="muted">{e.unit} · {sourceName(e.source.type)} · {e.uses}× verwendet</small>
-            <button
-              className="ghost danger"
-              onClick={async () => {
-                if (!confirm('Aus der Bibliothek entfernen? Beim nächsten Mal wird wieder gesucht.')) return;
-                await call('DELETE', `/api/library/${encodeURIComponent(e.img)}`);
-                load();
-              }}
-            >
-              Entfernen
-            </button>
-          </div>
-        ))}
-      </div>
-    </Shell>
-  );
-}
-const sourceName = (t: string) => ({ web: 'Internet', openfoodfacts: 'Open Food Facts', prospekt: 'Prospekt', manual: 'eigenes Bild' })[t] ?? t;

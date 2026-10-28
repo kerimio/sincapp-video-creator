@@ -4,7 +4,8 @@ import '../../template/fonts.css';
 import './review.css';
 import { ReviewPage } from './App';
 import { jobClient } from './api';
-import { Home, JobPage, LibraryPage, NewJob, SettingsPage } from './pages';
+import { Home, JobPage, NewJob, SettingsPage } from './pages';
+import { CatalogPage } from './catalog';
 
 /** Einfache Hash-Navigation: #/, #/neu, #/job/<id>, #/einstellungen, #/bibliothek, #/review (Einzel-Review) */
 function Router() {
@@ -23,7 +24,7 @@ function Router() {
   if (job) return <JobPage key={job[1]} id={job[1]} />;
   if (hash.startsWith('#/neu')) return <NewJob />;
   if (hash.startsWith('#/einstellungen')) return <SettingsPage />;
-  if (hash.startsWith('#/bibliothek')) return <LibraryPage />;
+  if (hash.startsWith('#/bibliothek')) return <CatalogPage />;
   return <Home />;
 }
 

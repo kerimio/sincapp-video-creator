@@ -100,7 +100,7 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
       for (const x of s.offers) if (x.id === o.id) x.img = o.img ?? x.img;
       return s;
     });
-    say(warnings.length ? `Bild übernommen – Hinweis: ${warnings.join('; ')}` : 'Bild übernommen und in der Bibliothek gespeichert');
+    say(warnings.length ? `Bild übernommen – Hinweis: ${warnings.join('; ')}` : 'Bild übernommen und im Produkt-Katalog gespeichert');
   };
 
   const addOffer = (id: string) =>
@@ -436,7 +436,7 @@ function OfferList(p: {
 }
 
 function sourceLabel(s?: string) {
-  return s === 'library' ? 'Bibliothek' : s === 'web' ? 'Internet' : s === 'manual' ? 'eigenes Bild' : s === 'removebg' ? 'remove.bg' : 'Prospekt';
+  return s === 'library' ? 'Katalog' : s === 'web' ? 'Internet' : s === 'manual' ? 'eigenes Bild' : s === 'removebg' ? 'remove.bg' : 'Prospekt';
 }
 
 function ImageDialog(p: {

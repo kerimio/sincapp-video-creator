@@ -105,7 +105,7 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
       if (r?.ok && r.width && !r.warnings.length) {
         c.o.img = `images/${c.o.id}.png`;
         c.o.imgSource = 'web';
-        await opts.library.put({ brand: c.o.brand, name: c.o.name, unit: c.o.unit }, join(imagesDir, `${c.o.id}.png`), { type: c.provider === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: c.url }, true);
+        await opts.library.put({ brand: c.o.brand, name: c.o.name, unit: c.o.unit, category: c.o.category, note: c.o.note }, join(imagesDir, `${c.o.id}.png`), { type: c.provider === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: c.url }, true);
       } else {
         c.o.warnings.push(`Bild: Internet-Treffer ließ sich nicht sauber freistellen${r?.warnings.length ? ` (${r.warnings.join('; ')})` : ''} – Prospekt-Ausschnitt verwendet`);
       }
@@ -128,6 +128,6 @@ export async function adoptImage(o: ExtractedOffer, jobDir: string, png: string,
   if (png !== dest) await copyFile(png, dest);
   o.img = `images/${o.id}.png`;
   o.imgSource = source.type === 'prospekt' ? 'prospekt' : source.type === 'manual' ? 'manual' : 'web';
-  await library.put({ brand: o.brand, name: o.name, unit: o.unit }, dest, source, true);
+  await library.put({ brand: o.brand, name: o.name, unit: o.unit, category: o.category, note: o.note }, dest, source, true);
   await library.save();
 }
