@@ -6,6 +6,7 @@ import type { PageReader } from '../extract/claude';
 import { PageResult } from '../extract/schema';
 import type { ProductMatcher } from '../images/match';
 import { ROOT } from '../paths';
+import { logUsage } from './usage';
 
 /**
  * Merkt sich KI-Antworten pro Bildinhalt. Wird derselbe Prospekt noch einmal
@@ -35,6 +36,7 @@ export class CachingReader implements PageReader {
       try {
         const v = parse(JSON.parse(await readFile(f, 'utf8')));
         this.hits++;
+        await logUsage({ model: this.name, task: 'speicher', input: 0, output: 0, cached: true });
         return v;
       } catch {
         /* kaputt → neu holen */
@@ -47,13 +49,14 @@ export class CachingReader implements PageReader {
   }
 
   async readPage(file: string, size: { width: number; height: number }) {
-    const key = await hashFiles([file], `page|${this.inner.name}|${size.width}x${size.height}`);
+    // ohne Modellnamen: eine einmal gelesene Seite wird nie wieder bezahlt, auch nach einem Modellwechsel
+    const key = await hashFiles([file], `page|${size.width}x${size.height}`);
     return this.cached(key, () => this.inner.readPage(file, size), (x) => PageResult.parse(x));
   }
 
   async readPrices(crops: string[], pageFile: string) {
     if (!crops.length) return [];
-    const key = await hashFiles(crops, `prices|${this.inner.name}|${crops.length}`);
+    const key = await hashFiles(crops, `prices|${crops.length}`);
     return this.cached(key, () => this.inner.readPrices(crops, pageFile), (x) => {
       if (!Array.isArray(x) || x.length !== crops.length) throw new Error('falsche Länge');
       return x as (string | null)[];
@@ -72,7 +75,10 @@ export class CachingMatcher implements ProductMatcher {
     if (existsSync(f)) {
       try {
         const v = JSON.parse(await readFile(f, 'utf8'));
-        if (Array.isArray(v) && v.length === candidates.length) return v;
+        if (Array.isArray(v) && v.length === candidates.length) {
+          await logUsage({ model: 'speicher', task: 'bilder', input: 0, output: 0, cached: true });
+          return v;
+        }
       } catch {
         /* neu holen */
       }

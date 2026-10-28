@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { cacheMarket, listMarkets, listProspects, marketDirs, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { cacheMarket, listMarkets, listProspects, marketDirs, marketsCacheDir, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
-import { aiProvider, NO_AI_KEY } from '../ai/provider';
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
+import { aiProvider, currentModels, NO_AI_KEY } from '../ai/provider';
+import { usageSummary } from '../ai/usage';
 import { Library, libraryDir } from '../library/library';
 import { ROOT } from '../paths';
 import { readBody, sendJson, jobApi } from '../review/server';
@@ -50,14 +52,26 @@ export function appVersion() {
 
 export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch) {
   const runs = new Map<string, Run>();
-  // Firestore-Listen kurz zwischenspeichern, damit Klicken im Assistenten nicht jedes Mal lädt
-  let fsCache: { at: number; markets: FsMarket[]; prospects: FsProspect[] } | null = null;
+  // Firestore kostet pro gelesenem Dokument: Listen zwischenspeichern (auch über Neustarts),
+  // Märkte 6 h, Prospekte 15 min; nur Prospekte der letzten 3 Wochen lesen. "Neu laden" holt sofort frisch.
+  const listFile = join(marketsCacheDir(), 'firestore-listen.json');
+  let fsCache: { marketsAt: number; prospectsAt: number; markets: FsMarket[]; prospects: FsProspect[] } | null = null;
   const firestore = async (fresh = false) => {
-    if (!fsCache || fresh || Date.now() - fsCache.at > 60_000) {
-      const [markets, prospects] = await Promise.all([listMarkets(fetchImpl), listProspects(fetchImpl)]);
-      fsCache = { at: Date.now(), markets, prospects };
+    if (!fsCache && existsSync(listFile)) fsCache = JSON.parse(await readFile(listFile, 'utf8').catch(() => 'null'));
+    const now = Date.now();
+    const oldMarkets = !fsCache || fresh || now - fsCache.marketsAt > 6 * 3600_000;
+    const oldProspects = !fsCache || fresh || now - fsCache.prospectsAt > 15 * 60_000;
+    if (oldMarkets || oldProspects) {
+      const since = todayBerlin(new Date(now - 21 * 86_400_000));
+      const [markets, prospects] = await Promise.all([
+        oldMarkets ? listMarkets(fetchImpl) : fsCache!.markets,
+        oldProspects ? listProspects(fetchImpl, since) : fsCache!.prospects,
+      ]);
+      fsCache = { marketsAt: oldMarkets ? now : fsCache!.marketsAt, prospectsAt: oldProspects ? now : fsCache!.prospectsAt, markets, prospects };
+      await mkdir(dirname(listFile), { recursive: true });
+      await writeFile(listFile, JSON.stringify(fsCache));
     }
-    return fsCache;
+    return fsCache!;
   };
   const apis = new Map<string, ReturnType<typeof jobApi>>();
   const apiFor = (id: string) => {
@@ -121,9 +135,18 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       // Logos/Seitenvorschauen über den eigenen Server laden (nur Firebase Storage)
       const src = new URL(url.searchParams.get('url') ?? '', 'http://x');
       if (src.protocol !== 'https:' || src.hostname !== 'firebasestorage.googleapis.com') return sendJson(res, { error: 'Nur Firebase-Storage-Bilder' }, 400);
+      // auf der Platte merken: jedes Vorschaubild wird nur einmal aus dem Storage geladen
+      const cached = join(marketsCacheDir(), 'vorschau', createHash('sha256').update(src.href).digest('hex').slice(0, 32));
+      if (existsSync(cached)) {
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'max-age=604800' }).end(await readFile(cached));
+        return true;
+      }
       const r = await fetchImpl(src.href, { signal: AbortSignal.timeout(20000) });
       if (!r.ok) return sendJson(res, { error: `HTTP ${r.status}` }, 502);
-      res.writeHead(200, { 'content-type': r.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'max-age=86400' }).end(Buffer.from(await r.arrayBuffer()));
+      const buf = Buffer.from(await r.arrayBuffer());
+      await mkdir(dirname(cached), { recursive: true });
+      await writeFile(cached, buf);
+      res.writeHead(200, { 'content-type': r.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'max-age=604800' }).end(buf);
       return true;
     }
     const fsm = p.match(/^\/api\/firestore\/markets\/([^/]+)\/prospects$/);
@@ -141,7 +164,10 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       // ohne Prospekt: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch.
       // Mehrere Prospekte desselben Markts werden zusammen gelesen; die besten Angebote kommen in die Story.
       const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; prospectIds?: string[]; topic?: string | null; count?: number };
-      const { markets, prospects } = await firestore();
+      let { markets, prospects } = await firestore();
+      const known = (id: string) => prospects.some((x) => x.id === id);
+      // gerade erst in Firestore angelegt? Dann einmal frisch laden
+      if (!markets.some((x) => x.id === b.marketId) || [...(b.prospectIds ?? []), ...(b.prospectId ? [b.prospectId] : [])].some((id) => !known(id))) ({ markets, prospects } = await firestore(true));
       const m = markets.find((x) => x.id === b.marketId);
       const ids = [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])];
       const prs = ids.map((id) => prospects.find((x) => x.id === id));
@@ -175,6 +201,11 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     if (p === '/api/settings') {
       if (method === 'PUT') await writeEnv(JSON.parse((await readBody(req)).toString('utf8')));
       return sendJson(res, { ...Object.fromEntries(KEYS.map((k) => [k, !!process.env[k]])), ai: aiProvider() });
+    }
+
+    if (method === 'GET' && p === '/api/usage') {
+      const month = url.searchParams.get('month') ?? undefined;
+      return sendJson(res, { ...(await usageSummary(month && /^\d{4}-\d{2}$/.test(month) ? month : undefined)), models: currentModels() });
     }
 
     if (p === '/api/library') {

@@ -184,6 +184,11 @@ export function NewJob() {
           <div className="row">
             <h3 className="grow">1. Markt</h3>
             {fsMarkets && <input placeholder="Markt suchen …" value={q} onChange={(e) => setQ(e.target.value)} />}
+            {fsMarkets && (
+              <button className="ghost" title="Märkte und Prospekte neu aus Firestore laden (sonst alle 15 Minuten)" onClick={() => call<FsMarket[]>('GET', '/api/firestore/markets?fresh').then((m) => { setFsMarkets(m); const id = marketId; setMarketId(''); setTimeout(() => setMarketId(id), 0); }, (e) => setErr(e.message))}>
+                ↻
+              </button>
+            )}
           </div>
           {fsError && <div className="errors">Firestore ist gerade nicht erreichbar ({fsError}).</div>}
           {!fsMarkets && !fsError && <p className="muted">Lade Märkte aus Firestore …</p>}
@@ -444,15 +449,15 @@ export function SettingsPage() {
     setMsg('Gespeichert. Die Keys liegen nur auf diesem Rechner (Datei .env).');
   };
   const rows: [KeyName, string, string][] = [
-    ['ANTHROPIC_API_KEY', 'Anthropic Claude', 'Liest die Prospekte und vergleicht Internet-Bilder mit dem Prospekt. Key unter console.anthropic.com anlegen.'],
-    ['GEMINI_API_KEY', 'Google Gemini', 'Alternative zu Claude – es reicht einer der beiden. Key unter aistudio.google.com anlegen.'],
-    ['BRAVE_API_KEY', 'Brave Search (empfohlen)', 'Bildersuche im Internet für saubere Produktfotos. Key unter api-dashboard.search.brave.com anlegen.'],
+    ['GEMINI_API_KEY', 'Google Gemini (empfohlen, am günstigsten)', 'Liest die Prospekte mit dem Flash-Modell und vergleicht Internet-Bilder mit dem Prospekt. Key unter aistudio.google.com anlegen.'],
+    ['ANTHROPIC_API_KEY', 'Anthropic Claude', 'Alternative zu Gemini – es reicht einer der beiden. Key unter console.anthropic.com anlegen.'],
+    ['BRAVE_API_KEY', 'Brave Search (optional)', 'Bildersuche im Internet für saubere Produktfotos. Jede Suche wird 30 Tage gemerkt, gleiche Produkte kosten nichts mehr. Key unter api-dashboard.search.brave.com anlegen.'],
     ['REMOVEBG_API_KEY', 'remove.bg (optional)', 'Nur als Ausweichlösung, wenn das lokale Freistellen nicht sauber klappt.'],
   ];
   return (
     <Shell active="set">
       <h1>Einstellungen</h1>
-      {s && <p className="muted">KI zum Auslesen: <b>{s.ai === 'claude' ? 'Anthropic Claude' : s.ai === 'gemini' ? 'Google Gemini' : 'noch keine – einen der beiden Keys eintragen'}</b>{s.ANTHROPIC_API_KEY && s.GEMINI_API_KEY ? ' (beide Keys da – Claude wird genommen)' : ''}</p>}
+      {s && <p className="muted">KI zum Auslesen: <b>{s.ai === 'claude' ? 'Anthropic Claude' : s.ai === 'gemini' ? 'Google Gemini' : 'noch keine – einen der beiden Keys eintragen'}</b>{s.ANTHROPIC_API_KEY && s.GEMINI_API_KEY ? ' (beide Keys da – Gemini wird genommen, weil es günstiger ist)' : ''}</p>}
       <div className="card settings">
         {rows.map(([k, label, help]) => (
           <div key={k} className="setting">
@@ -468,7 +473,39 @@ export function SettingsPage() {
           <button className="primary" onClick={save} disabled={!Object.values(vals).some((v) => v.trim())}>Speichern</button>
         </div>
       </div>
+      <Usage />
     </Shell>
+  );
+}
+
+interface UsageSum { month: string; calls: number; cachedCalls: number; input: number; output: number; thinking: number; byModel: Record<string, { calls: number; input: number; output: number; thinking: number }>; byTask: Record<string, number>; models: { read: string; check: string } | null }
+const TASK_LABEL: Record<string, string> = { seite: 'Seiten gelesen', preise: 'Preise gegengecheckt', bilder: 'Fotos verglichen' };
+const fmt = (n: number) => n.toLocaleString('de-DE');
+
+/** KI-Verbrauch dieses Monats – damit man sieht, was das Tool kostet. */
+function Usage() {
+  const [u, setU] = useState<UsageSum | null>(null);
+  useEffect(() => {
+    call<UsageSum>('GET', '/api/usage').then(setU, () => {});
+  }, []);
+  if (!u) return null;
+  const [y, m] = u.month.split('-');
+  return (
+    <>
+      <h2>KI-Verbrauch im {new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</h2>
+      <div className="card settings">
+        {u.models && <p className="muted small">Modelle: <b>{u.models.read}</b> liest die Seiten, <b>{u.models.check}</b> prüft Preise und Fotos (das günstigste).</p>}
+        <p>
+          <b>{fmt(u.calls)}</b> bezahlte KI-Aufrufe ({Object.entries(u.byTask).map(([k, n]) => `${fmt(n)} ${TASK_LABEL[k] ?? k}`).join(', ') || 'noch keine'}) ·{' '}
+          <b>{fmt(u.cachedCalls)}</b> aus dem Speicher (gratis)
+        </p>
+        <p className="muted small">Tokens: {fmt(u.input)} Eingabe · {fmt(u.output + u.thinking)} Ausgabe{u.thinking ? ` (davon ${fmt(u.thinking)} Nachdenken)` : ''}. Den genauen Betrag in Euro zeigt die Abrechnung bei Google bzw. Anthropic.</p>
+        {Object.keys(u.byModel).length > 1 && (
+          <ul className="small muted">{Object.entries(u.byModel).map(([k, v]) => <li key={k}>{k}: {fmt(v.calls)} Aufrufe, {fmt(v.input)} / {fmt(v.output + v.thinking)} Tokens</li>)}</ul>
+        )}
+        <p className="muted small">So bleibt es günstig: Jede Seite wird nur einmal bezahlt, Seiten ohne Produkte werden übersprungen, der Export (Videos, Bilder, Texte) kostet keine KI.</p>
+      </div>
+    </>
   );
 }
 

@@ -38,7 +38,15 @@ Ein Video entsteht in drei Schritten: **Angebote** prüfen → **Design** wähle
 - **⏰ „Letzte Chance“-Videos** (8 s, 9:16): „Noch 2 Tage!“ und „Nur noch heute!“ mit Countdown-Ring und den drei Top-Angeboten; im Plan liegen sie auf den passenden Tagen.
 - **QR-Code am Schluss** (Design → QR-Code): Route zum Markt (Google Maps), Instagram oder eigener Link – für Laden-Bildschirm, Schaufenster und Ausdrucke.
 
-**Kosten sparen:** KI-Antworten werden pro Seite gemerkt (`.cache/ki`), dieselbe Seite wird nie zweimal bezahlt. Seiten ohne Produkte (laut Firestore-Fundstellen) werden übersprungen, der Zeitraum kommt aus Firestore. Preis-Gegencheck und Bildvergleich laufen mit dem günstigeren Modell (`GEMINI_CHECK_MODEL`, Standard `gemini-3.8-flash`).
+**Kosten sparen** (alles Standard, nichts einzustellen):
+
+- Günstigste Modelle: Gemini Flash liest die Seiten (`GEMINI_MODEL`), Preis-Gegencheck und Fotovergleich mit minimalem „Nachdenken“; bei Claude Sonnet statt Opus und Haiku für die Checks. Sind beide Keys da, wird Gemini genommen.
+- Jede Seite wird nur einmal bezahlt (`.cache/ki`, auch nach einem Modellwechsel). Seiten ohne Produkte (laut Firestore-Fundstellen) werden übersprungen, der Zeitraum kommt aus Firestore.
+- Kaputte KI-Antworten werden höchstens einmal neu angefragt; Fotos werden vor dem Vergleich auf 512 px verkleinert.
+- Bildersuche (Brave) 30 Tage gemerkt; die Produkt-Bibliothek verhindert doppelte Suchen.
+- Firestore: nur Prospekte der letzten 3 Wochen werden gelesen, Listen (15 min / 6 h) und Vorschaubilder liegen auf der Platte. „↻“ beim neuen Video lädt sofort frisch.
+- Einstellungen → „KI-Verbrauch“ zeigt die bezahlten Aufrufe und Tokens des Monats (`.cache/ki/verbrauch.jsonl`).
+- Der Export (Videos, Reels, Bilder, Texte) kostet keine KI.
 
 Vorschau aller Vorlagen und Formate: `pnpm tsx tools/preview-designs.ts` (Bilder in `tmp/designs`; `--extras` für Sticker/Laufband/Reels, `--magic` für Countdown und QR-Code).
 

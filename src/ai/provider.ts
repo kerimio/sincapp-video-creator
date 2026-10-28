@@ -1,20 +1,21 @@
 import { CachingMatcher, CachingReader } from './cache';
 import { ClaudeReader, type PageReader } from '../extract/claude';
 import { ClaudeMatcher, type ProductMatcher } from '../images/match';
-import { GeminiMatcher, GeminiReader } from './gemini';
+import { GeminiMatcher, GeminiReader, geminiCheckModel, geminiModel } from './gemini';
+import { CHECK_MODEL, MODEL } from '../extract/claude';
 
 export type AiProvider = 'claude' | 'gemini';
 
 /**
  * Welche KI liest die Prospekte? Die, deren Key eingetragen ist.
- * Sind beide da, gewinnt SINCAPP_AI (claude|gemini), sonst Claude.
+ * Sind beide da, gewinnt SINCAPP_AI (claude|gemini), sonst Gemini (Flash ist am günstigsten).
  */
 export function aiProvider(env: NodeJS.ProcessEnv = process.env): AiProvider | null {
   const want = env.SINCAPP_AI?.toLowerCase();
   if (want === 'gemini' && env.GEMINI_API_KEY) return 'gemini';
   if (want === 'claude' && env.ANTHROPIC_API_KEY) return 'claude';
-  if (env.ANTHROPIC_API_KEY) return 'claude';
   if (env.GEMINI_API_KEY) return 'gemini';
+  if (env.ANTHROPIC_API_KEY) return 'claude';
   return null;
 }
 
@@ -32,4 +33,12 @@ export function makeMatcher(): ProductMatcher | null {
   const p = aiProvider();
   const m = p === 'gemini' ? new GeminiMatcher() : p === 'claude' ? new ClaudeMatcher() : null;
   return m && new CachingMatcher(m);
+}
+
+/** Welche Modelle gerade benutzt würden (für die Einstellungen). */
+export function currentModels() {
+  const p = aiProvider();
+  if (p === 'gemini') return { read: geminiModel(), check: geminiCheckModel() };
+  if (p === 'claude') return { read: MODEL, check: CHECK_MODEL };
+  return null;
 }

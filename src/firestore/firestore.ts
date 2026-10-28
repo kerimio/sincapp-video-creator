@@ -42,6 +42,27 @@ async function collection(name: string, fetchImpl: Fetch): Promise<Record<string
   return out;
 }
 
+/**
+ * Nur Dokumente mit `field >= value` lesen (Firestore berechnet pro gelesenem Dokument –
+ * so werden alte Prospekte gar nicht erst geladen). Klappt die Abfrage nicht, null.
+ */
+async function queryFrom(name: string, field: string, min: string, fetchImpl: Fetch): Promise<Record<string, any>[] | null> {
+  try {
+    const res = await fetchImpl(`${base().replace(/\/$/, '')}:runQuery`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: { from: [{ collectionId: name }], where: { fieldFilter: { field: { fieldPath: field }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: min } } } } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, FsValue> } }[];
+    if (!Array.isArray(rows)) return null;
+    return rows.filter((r) => r.document).map((r) => ({ _id: r.document!.name.split('/').pop()!, ...fields(r.document!.fields ?? {}) }));
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Märkte ----------
 export interface FsMarket {
   id: string;
@@ -84,8 +105,9 @@ export interface FsProspect {
   products: { name_de: string; name_tr?: string; locations?: { page: number; box: number[]; label?: { de?: string; tr?: string } }[] }[];
 }
 
-export async function listProspects(fetchImpl: Fetch = fetch): Promise<FsProspect[]> {
-  const docs = await collection('prospects', fetchImpl);
+/** Prospekte; mit `since` (YYYY-MM-DD) nur die, die bis mindestens dahin gültig sind. */
+export async function listProspects(fetchImpl: Fetch = fetch, since?: string): Promise<FsProspect[]> {
+  const docs = (since ? await queryFrom('prospects', 'validUntil', since, fetchImpl) : null) ?? (await collection('prospects', fetchImpl));
   return docs
     .map((d) => {
       // tolerant wie die App: marketIds, sonst [marketId]; leere/doppelte Einträge raus

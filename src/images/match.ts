@@ -3,7 +3,8 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { z } from 'zod/v4';
-import { MODEL } from '../extract/claude';
+import { CHECK_MODEL, fallbackParams } from '../extract/claude';
+import { logUsage } from '../ai/usage';
 
 export const MatchResult = z.object({
   candidates: z.array(
@@ -47,14 +48,14 @@ export class ClaudeMatcher implements ProductMatcher {
     for (const [i, c] of candidates.entries()) content.push({ type: 'text', text: `Bild ${i + 1}:` }, await image(c));
     content.push({ type: 'text', text: MATCH_PROMPT(product, candidates.length) });
     const res = await this.client.beta.messages.parse({
-      model: MODEL,
+      model: CHECK_MODEL,
       max_tokens: 8000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...fallbackParams(CHECK_MODEL),
       thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium', format: betaZodOutputFormat(MatchResult) },
+      output_config: { effort: 'low', format: betaZodOutputFormat(MatchResult) },
       messages: [{ role: 'user', content }],
     });
+    await logUsage({ model: CHECK_MODEL, task: 'bilder', input: res.usage.input_tokens, output: res.usage.output_tokens });
     if (res.stop_reason === 'refusal') throw new Error('Abgleich abgelehnt (refusal)');
     if (!res.parsed_output) throw new Error('Abgleich: Antwort nicht lesbar');
     const byId = new Map(res.parsed_output.candidates.map((c) => [c.id, c]));
