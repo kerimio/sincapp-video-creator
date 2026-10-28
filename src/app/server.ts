@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { cacheMarket, listMarkets, listProspects, marketDirs, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
 import { existsSync } from 'node:fs';
 import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -37,6 +39,12 @@ async function writeEnv(values: Partial<Record<(typeof KEYS)[number], string>>) 
   await writeFile(file, lines.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 });
 }
 
+/** Stand des Codes: Git-Commit, sonst package.json-Version. */
+export function appVersion() {
+  const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+}
+
 export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch) {
   const runs = new Map<string, Run>();
   // Firestore-Listen kurz zwischenspeichern, damit Klicken im Assistenten nicht jedes Mal lädt
@@ -73,6 +81,15 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       return true;
     }
     if (!p.startsWith('/api/')) return false;
+
+    if (method === 'GET' && p === '/api/version') return sendJson(res, { version: appVersion() });
+    if (method === 'POST' && p === '/api/shutdown') {
+      // nur für einen neueren Start auf demselben Rechner (Server lauscht ausschließlich auf 127.0.0.1)
+      sendJson(res, { ok: true });
+      log('Beendet – eine neuere Version wurde gestartet.');
+      setTimeout(() => process.exit(0), 200);
+      return true;
+    }
 
     if (method === 'GET' && p === '/api/markets') {
       const files = (await readdir(join(ROOT, 'markets'))).filter((f) => f.endsWith('.json'));

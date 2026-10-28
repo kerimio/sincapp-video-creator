@@ -19,7 +19,7 @@ import type { Extraction } from '../extract/schema';
 import { extractionReport } from '../report';
 import { copyFile, writeFile } from 'node:fs/promises';
 import { startReviewServer } from '../review/server';
-import { startAppServer } from '../app/server';
+import { appVersion, startAppServer } from '../app/server';
 import { createJob, jobPath, jobsDir, safeName } from '../app/jobs';
 import { prepareStory } from '../app/pipeline';
 import { readMarket } from '../firestore/firestore';
@@ -80,15 +80,25 @@ program
     ensureTemplateBuilt();
     ensureReviewBuilt();
     let server;
-    try {
-      server = await startAppServer(o.port);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
-      // läuft schon (z. B. zweimal doppelgeklickt) – einfach die vorhandene App öffnen
-      const url = `http://127.0.0.1:${o.port}/app/`;
-      console.log(`Die App läuft bereits: ${url}`);
-      if (o.open) openBrowser(url);
-      return;
+    for (let attempt = 0; !server; attempt++) {
+      try {
+        server = await startAppServer(o.port);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE' || attempt > 0) throw e;
+        const base = `http://127.0.0.1:${o.port}`;
+        const running = await fetch(`${base}/api/version`).then((r) => (r.ok ? r.json() : null), () => null);
+        if (running?.version === appVersion()) {
+          // gleiche Version läuft schon (z. B. zweimal doppelgeklickt) – einfach öffnen
+          console.log(`Die App läuft bereits: ${base}/app/`);
+          if (o.open) openBrowser(`${base}/app/`);
+          return;
+        }
+        // ältere Version läuft noch (z. B. nach git pull) – beenden und neu starten
+        const stopped = await fetch(`${base}/api/shutdown`, { method: 'POST' }).then((r) => r.ok, () => false);
+        if (!stopped) throw new Error(`Auf Port ${o.port} läuft noch eine ältere Version der App. Bitte deren Terminal-Fenster schließen (oder dort Strg+C) und dann noch mal starten.`);
+        console.log('Ältere Version beendet, starte neu …');
+        await new Promise((r) => setTimeout(r, 800));
+      }
     }
     const url = `${server.url}/app/`;
     console.log(`\nsincapp Story-Generator läuft: ${url}\nDieses Fenster offen lassen – Beenden mit Strg+C.\n`);
