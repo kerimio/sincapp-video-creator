@@ -22,6 +22,7 @@ import { startReviewServer } from '../review/server';
 import { startAppServer } from '../app/server';
 import { createJob, jobPath, jobsDir, safeName } from '../app/jobs';
 import { prepareStory } from '../app/pipeline';
+import { readMarket } from '../firestore/firestore';
 
 // .env laden (Node ≥ 20.12)
 if (existsSync(join(ROOT, '.env'))) process.loadEnvFile?.(join(ROOT, '.env'));
@@ -187,15 +188,13 @@ program
   .action(async (job: string, o: { market: string; topic?: string; count?: number }) => {
     const dir = jobDir(job);
     const ex = JSON.parse(await readFile(join(dir, 'extraction.json'), 'utf8')) as Extraction;
-    const marketFile = join(ROOT, 'markets', `${o.market}.json`);
-    if (!existsSync(marketFile)) throw new Error(`Markt nicht gefunden: ${marketFile}`);
     const topic = findTopic(o.topic);
     const sel = selectOffers(ex.offers, { topic, count: o.count });
     console.log(`Auswahl: ${sel.offers.map((x) => x.id).join(', ')}`);
     const { notes } = await resolveImages(sel.offers, await imageOptions(dir));
     const missing = sel.offers.filter((x) => !x.img);
     if (missing.length) throw new Error(`Kein Bild für ${missing.map((x) => x.id).join(', ')} – siehe report.md`);
-    const { story, warnings } = buildStory(ex, JSON.parse(await readFile(marketFile, 'utf8')), sel.offers, topic);
+    const { story, warnings } = buildStory(ex, await readMarket(o.market), sel.offers, topic);
     await writeFile(join(dir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
     await writeFile(join(dir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
     const report = extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] });

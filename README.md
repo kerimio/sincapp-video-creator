@@ -10,12 +10,16 @@ Prospekt rein, Instagram-Story (MP4, 1080×1920) raus.
 2. Im Finder **`Start sincapp.command`** doppelklicken. Beim ersten Mal wird alles installiert (Homebrew muss vorhanden sein, siehe https://brew.sh; dauert 5–10 Minuten), danach öffnet sich der Browser.
    Bei einem ZIP-Download meldet macOS evtl. „nicht verifizierter Entwickler“: einmal Rechtsklick → **Öffnen**.
 3. In der App unter **Einstellungen** einen KI-Key eintragen – Anthropic **oder** Google Gemini – und den Brave-Key (empfohlen). Die Keys bleiben in der Datei `.env` auf dem Rechner.
-4. **+ Neues Video** → Markt wählen → Prospektseiten hineinziehen → Thema und Anzahl → **Weiter**. Nach dem Auslesen die Angebote prüfen und **Video erstellen** klicken; die MP4s (DE + TR) gibt es dann zum Herunterladen.
+4. **+ Neues Video** → Markt aus Firestore wählen → aktuellen Prospekt anklicken (oder eigene Dateien hochladen) → Thema und Anzahl → **Weiter**. Nach dem Auslesen die Angebote prüfen und **Video erstellen** klicken; die MP4s (DE + TR) gibt es dann zum Herunterladen.
 
 Ohne Key lässt sich alles mit **Demo mit Saray-Beispiel** ausprobieren (gespeicherte Antworten statt Claude).
 Das Terminalfenster muss offen bleiben, solange die App läuft. Jobs liegen unter `jobs/`, die Produkt-Bibliothek unter `library/`.
 
 Ohne Doppelklick: `pnpm cli app` (Port mit `--port`, Browser nicht öffnen mit `--no-open`).
+
+## Daten aus Firestore
+
+Märkte (Name, Adresse, Logo, Instagram) und Prospekte (Seiten, Gültigkeit) kommen direkt aus der sincapp-Firestore-Datenbank (Projekt `trprosp`, änderbar mit `SINCAPP_FIREBASE_PROJECT`, z. B. `sincapp-dev`). `markets` und `prospects` sind öffentlich lesbar – es braucht weder Login noch Key, und das Tool schreibt nie etwas zurück. Ein gewählter Markt wird unter `.cache/markets/` abgelegt, damit Story und Video ihn wie eine lokale Markt-Datei nutzen.
 
 ## Alles in einem Befehl
 

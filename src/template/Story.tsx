@@ -147,7 +147,7 @@ function MarketInfo({ theme, dates, story, lang, hd, urls }: { theme: PageTheme;
       <div style={{ maxWidth: 560, textAlign: 'right', fontSize: size, fontWeight: 600, lineHeight: 1.25, color: light ? C.paper : C.ink2, textWrap: 'balance' } as CSSProperties}>
         {story.market.addresses.map((a, i) => <div key={i}>{a}</div>)}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em', color: light ? (theme.white ? '#fff' : C.amber) : C.red }}>@{story.market.instagram}</div>
+      {story.market.instagram && <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em', color: light ? (theme.white ? '#fff' : C.amber) : C.red }}>@{story.market.instagram}</div>}
     </div>
   );
 }
@@ -303,7 +303,7 @@ export function StoryView({ story, lang, T, cues, logoSize, urls }: StoryProps) 
           <div style={{ fontSize: introAddrSize, fontWeight: 600, color: C.ink2, textAlign: 'center' }}>
             {story.market.addresses.map((a, i) => <div key={i}>{a}</div>)}
           </div>
-          <div style={{ fontSize: 44, fontWeight: 800, color: C.red }}>@{story.market.instagram}</div>
+          {story.market.instagram && <div style={{ fontSize: 44, fontWeight: 800, color: C.red }}>@{story.market.instagram}</div>}
         </div>
       </Shot>
 

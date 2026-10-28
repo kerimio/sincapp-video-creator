@@ -17,7 +17,7 @@ const TYPES: Record<string, string> = {
 };
 
 /** URL-Präfix → Ordner. Das längste passende Präfix gewinnt. */
-export type Mounts = Record<string, string>;
+export type Mounts = Record<string, string | string[]>;
 
 export interface StaticServer {
   url: string;
@@ -29,11 +29,14 @@ export function resolveFile(mounts: Mounts, pathname: string): string | null {
   const prefixes = Object.keys(mounts).sort((a, b) => b.length - a.length);
   for (const prefix of prefixes) {
     if (!pathname.startsWith(prefix)) continue;
-    const base = resolve(mounts[prefix]);
     const rel = decodeURIComponent(pathname.slice(prefix.length)) || 'index.html';
-    const file = normalize(join(base, rel));
-    if (file !== base && !file.startsWith(base + sep)) return null; // kein Ausbruch aus dem Ordner
-    if (existsSync(file) && statSync(file).isFile()) return file;
+    // mehrere Ordner pro Präfix: der erste, in dem die Datei liegt, gewinnt
+    for (const dir of ([] as string[]).concat(mounts[prefix])) {
+      const base = resolve(dir);
+      const file = normalize(join(base, rel));
+      if (file !== base && !file.startsWith(base + sep)) return null; // kein Ausbruch aus dem Ordner
+      if (existsSync(file) && statSync(file).isFile()) return file;
+    }
   }
   return null;
 }

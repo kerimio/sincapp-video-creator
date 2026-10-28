@@ -113,7 +113,7 @@ export function buildStory(ex: Extraction, marketRaw: unknown, picked: Extracted
   }
   const norm = (a: string) => a.toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
   for (const a of ex.addresses) {
-    if (!market.addresses.some((m) => norm(m) === norm(a))) warnings.push(`Adresse "${a}" steht im Prospekt, aber nicht in markets/${market.slug}.json.`);
+    if (!market.addresses.some((m) => norm(m) === norm(a))) warnings.push(`Adresse "${a}" steht im Prospekt, aber nicht bei ${market.name} hinterlegt.`);
   }
   if (ex.market && norm(ex.market) !== norm(market.name)) warnings.push(`Prospekt nennt "${ex.market}", gewählter Markt ist "${market.name}".`);
   const story = parseStory({

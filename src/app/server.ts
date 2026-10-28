@@ -1,3 +1,4 @@
+import { cacheMarket, listMarkets, listProspects, marketDirs, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
 import { existsSync } from 'node:fs';
 import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -36,8 +37,17 @@ async function writeEnv(values: Partial<Record<(typeof KEYS)[number], string>>) 
   await writeFile(file, lines.join('\n').replace(/\n*$/, '\n'), { mode: 0o600 });
 }
 
-export async function startAppServer(port = 4321, log: (m: string) => void = console.log) {
+export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch) {
   const runs = new Map<string, Run>();
+  // Firestore-Listen kurz zwischenspeichern, damit Klicken im Assistenten nicht jedes Mal lädt
+  let fsCache: { at: number; markets: FsMarket[]; prospects: FsProspect[] } | null = null;
+  const firestore = async (fresh = false) => {
+    if (!fsCache || fresh || Date.now() - fsCache.at > 60_000) {
+      const [markets, prospects] = await Promise.all([listMarkets(fetchImpl), listProspects(fetchImpl)]);
+      fsCache = { at: Date.now(), markets, prospects };
+    }
+    return fsCache;
+  };
   const apis = new Map<string, ReturnType<typeof jobApi>>();
   const apiFor = (id: string) => {
     let a = apis.get(id);
@@ -68,6 +78,59 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       const files = (await readdir(join(ROOT, 'markets'))).filter((f) => f.endsWith('.json'));
       const markets = await Promise.all(files.map(async (f) => JSON.parse(await readFile(join(ROOT, 'markets', f), 'utf8'))));
       return sendJson(res, markets.map((m) => ({ slug: m.slug, name: m.name, logo: `/markets/${m.logo}`, addresses: m.addresses })));
+    }
+
+    if (method === 'GET' && p === '/api/firestore/markets') {
+      const { markets, prospects } = await firestore(url.searchParams.has('fresh'));
+      const today = todayBerlin();
+      return sendJson(
+        res,
+        markets.map((m) => ({ ...m, current: prospects.filter((x) => x.marketIds.includes(m.id) && x.validUntil >= today).length })),
+      );
+    }
+    if (method === 'GET' && p === '/api/firestore/image') {
+      // Logos/Seitenvorschauen über den eigenen Server laden (nur Firebase Storage)
+      const src = new URL(url.searchParams.get('url') ?? '', 'http://x');
+      if (src.protocol !== 'https:' || src.hostname !== 'firebasestorage.googleapis.com') return sendJson(res, { error: 'Nur Firebase-Storage-Bilder' }, 400);
+      const r = await fetchImpl(src.href, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return sendJson(res, { error: `HTTP ${r.status}` }, 502);
+      res.writeHead(200, { 'content-type': r.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'max-age=86400' }).end(Buffer.from(await r.arrayBuffer()));
+      return true;
+    }
+    const fsm = p.match(/^\/api\/firestore\/markets\/([^/]+)\/prospects$/);
+    if (method === 'GET' && fsm) {
+      const { prospects } = await firestore();
+      const id = decodeURIComponent(fsm[1]);
+      const today = todayBerlin();
+      const mine = prospects.filter((x) => x.marketIds.includes(id));
+      // aktuelle zuerst (früheste Gültigkeit vorn), danach die letzten abgelaufenen
+      const current = mine.filter((x) => x.validUntil >= today).sort((a, b) => a.validFrom.localeCompare(b.validFrom));
+      const past = mine.filter((x) => x.validUntil < today).slice(0, 4);
+      return sendJson(res, [...current, ...past].map((x) => ({ id: x.id, title: x.title, validFrom: x.validFrom, validUntil: x.validUntil, pages: x.imageUrls.length, thumb: x.thumbnailUrls[0] ?? x.imageUrls[0], current: x.validUntil >= today })));
+    }
+    if (method === 'POST' && p === '/api/jobs/from-firestore') {
+      // ohne prospectId: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch
+      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; topic?: string | null; count?: number };
+      const { markets, prospects } = await firestore();
+      const m = markets.find((x) => x.id === b.marketId);
+      const pr = b.prospectId ? prospects.find((x) => x.id === b.prospectId) : undefined;
+      if (!m || (b.prospectId && !pr)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const market = await cacheMarket(m, fetchImpl);
+      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, pr ? `${m.name} – ${pr.title}` : m.name);
+      if (!pr) return sendJson(res, meta, 201);
+      meta.source = { firestoreProspect: pr.id, marketId: m.id };
+      await saveJob(meta);
+      // Seiten in Reihenfolge laden (1200 px aus dem Admin-Tool)
+      const dir = jobPath(meta.id);
+      await Promise.all(
+        pr.imageUrls.map(async (u, i) => {
+          const r = await fetchImpl(u, { signal: AbortSignal.timeout(30000) });
+          if (!r.ok) throw new Error(`Seite ${i + 1} nicht ladbar (HTTP ${r.status})`);
+          await writeFile(join(dir, 'input', `seite-${String(i + 1).padStart(2, '0')}.jpg`), Buffer.from(await r.arrayBuffer()));
+        }),
+      );
+      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(pr, null, 2) + '\n');
+      return sendJson(res, meta, 201);
     }
 
     if (p === '/api/settings') {
@@ -158,7 +221,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     '/': join(ROOT, 'dist/template'),
     '/app/': join(ROOT, 'dist/review'),
     '/assets/': join(ROOT, 'assets'),
-    '/markets/': join(ROOT, 'markets'),
+    '/markets/': marketDirs(),
     '/jobs/': jobsDir(),
     '/library/': libraryDir(),
   };

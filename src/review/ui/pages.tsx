@@ -4,7 +4,6 @@ import { call, jobClient } from './api';
 import { ReviewPage } from './App';
 
 // ---------- Typen der App-API ----------
-interface Market { slug: string; name: string; logo: string; addresses: string[] }
 interface Run { running: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
 interface Job {
   id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string };
@@ -100,10 +99,19 @@ export function Home() {
   );
 }
 
-// ---------- Neues Video: Markt, Prospekte, Einstellungen ----------
+// ---------- Neues Video: Markt und Prospekt aus Firestore (oder Upload), Einstellungen ----------
+interface FsMarket { id: string; name: string; address: string | null; logoUrl: string | null; current: number }
+const fsImg = (u: string) => `/api/firestore/image?url=${encodeURIComponent(u)}`;
+interface FsProspect { id: string; title: string; validFrom: string; validUntil: string; pages: number; thumb: string; current: boolean }
+
 export function NewJob() {
-  const [markets, setMarkets] = useState<Market[]>([]);
-  const [market, setMarket] = useState('');
+  const [fsMarkets, setFsMarkets] = useState<FsMarket[] | null>(null);
+  const [fsError, setFsError] = useState('');
+  const [q, setQ] = useState('');
+  const [marketId, setMarketId] = useState('');
+  const [prospects, setProspects] = useState<FsProspect[] | null>(null);
+  const [prospectId, setProspectId] = useState('');
+  const [upload, setUpload] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [topic, setTopic] = useState('');
   const [count, setCount] = useState(8);
@@ -113,12 +121,24 @@ export function NewJob() {
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    call<Market[]>('GET', '/api/markets').then((m) => {
-      setMarkets(m);
-      if (m.length === 1) setMarket(m[0].slug);
+    call<FsMarket[]>('GET', '/api/firestore/markets').then(setFsMarkets, (e) => {
+      setFsError(e.message);
+      setUpload(true);
     });
     call<Settings>('GET', '/api/settings').then(setSettings);
   }, []);
+
+  useEffect(() => {
+    setProspects(null);
+    setProspectId('');
+    if (!marketId) return;
+    call<FsProspect[]>('GET', `/api/firestore/markets/${encodeURIComponent(marketId)}/prospects`).then((list) => {
+      setProspects(list);
+      const cur = list.filter((x) => x.current);
+      if (cur.length === 1) setProspectId(cur[0].id);
+      if (!list.length) setUpload(true);
+    }, (e) => setErr(e.message));
+  }, [marketId]);
 
   const add = (list: FileList | null) => {
     if (!list) return;
@@ -127,16 +147,21 @@ export function NewJob() {
     setFiles((f) => [...f, ...ok].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true })));
   };
 
+  const market = fsMarkets?.find((m) => m.id === marketId);
+  const shown = (fsMarkets ?? [])
+    .filter((m) => `${m.name} ${m.address ?? ''}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))
+    .sort((a, b) => Number(b.current > 0) - Number(a.current > 0) || a.name.localeCompare(b.name, 'de'));
+
   const start = async () => {
     setErr('');
     try {
-      setBusy('Job wird angelegt …');
-      const name = markets.find((m) => m.slug === market)?.name ?? market;
-      const topicLabel = TOPICS.find(([k]) => k === topic)?.[1];
-      const job = await call<Job>('POST', '/api/jobs', { market, topic: topic || null, count, title: `${name}${topic ? ` – ${topicLabel}` : ''}` });
-      for (const [i, f] of files.entries()) {
-        setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
-        await call('POST', `/api/jobs/${job.id}/files?name=${encodeURIComponent(f.name)}`, undefined, f);
+      setBusy(upload ? 'Job wird angelegt …' : 'Prospektseiten werden aus Firestore geladen …');
+      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectId: upload ? undefined : prospectId, topic: topic || null, count });
+      if (upload) {
+        for (const [i, f] of files.entries()) {
+          setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
+          await call('POST', `/api/jobs/${job.id}/files?name=${encodeURIComponent(f.name)}`, undefined, f);
+        }
       }
       setBusy('Auslesen startet …');
       await call('POST', `/api/jobs/${job.id}/process`);
@@ -148,68 +173,103 @@ export function NewJob() {
   };
 
   const noKey = settings && !settings.ai;
+  const ready = !!marketId && (upload ? files.length > 0 : !!prospectId);
   return (
     <Shell>
       <Steps current={0} />
       <div className="wizard">
         <section className="card">
-          <h3>1. Markt</h3>
+          <div className="row">
+            <h3 className="grow">1. Markt</h3>
+            {fsMarkets && <input placeholder="Markt suchen …" value={q} onChange={(e) => setQ(e.target.value)} />}
+          </div>
+          {fsError && <div className="errors">Firestore ist gerade nicht erreichbar ({fsError}).</div>}
+          {!fsMarkets && !fsError && <p className="muted">Lade Märkte aus Firestore …</p>}
           <div className="markets">
-            {markets.map((m) => (
-              <button key={m.slug} className={`market ${market === m.slug ? 'on' : ''}`} onClick={() => setMarket(m.slug)}>
-                <img src={m.logo} />
+            {shown.map((m) => (
+              <button key={m.id} className={`market ${marketId === m.id ? 'on' : ''}`} onClick={() => setMarketId(m.id)}>
+                {m.logoUrl ? <img src={fsImg(m.logoUrl)} loading="lazy" /> : <div className="nologo">{m.name.slice(0, 1)}</div>}
                 <span>{m.name}</span>
+                <small className="muted">{m.address}</small>
+                {m.current > 0 && <small className="badge">{m.current} aktuell</small>}
               </button>
             ))}
           </div>
         </section>
 
-        <section className="card">
-          <h3>2. Prospekt hochladen</h3>
-          <div
-            className="drop"
-            onClick={() => input.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              add(e.dataTransfer.files);
-            }}
-          >
-            Prospektseiten hierher ziehen oder klicken
-            <small>PDF, JPG, PNG oder WEBP – auch mehrere auf einmal</small>
-            <input ref={input} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden onChange={(e) => add(e.target.files)} />
-          </div>
-          {files.length > 0 && (
-            <div className="files">
-              {files.map((f, i) => (
-                <div key={f.name + i} className="file">
-                  {f.type.startsWith('image/') ? <Thumb file={f} /> : <div className="pdf">PDF</div>}
-                  <small>{f.name}</small>
-                  <button className="ghost danger" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button>
-                </div>
-              ))}
+        {marketId && (
+          <section className="card">
+            <div className="row">
+              <h3 className="grow">2. Prospekt von {market?.name}</h3>
+              <button className="ghost" onClick={() => setUpload(!upload)}>{upload ? 'Prospekt aus Firestore nehmen' : 'Eigene Dateien hochladen'}</button>
             </div>
-          )}
-        </section>
+            {!upload && (
+              <>
+                {!prospects && <p className="muted">Lade Prospekte …</p>}
+                {prospects && !prospects.length && <p className="muted">Für diesen Markt ist kein Prospekt in Firestore.</p>}
+                <div className="prospects">
+                  {prospects?.map((x) => (
+                    <button key={x.id} className={`prospect ${prospectId === x.id ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => setProspectId(x.id)}>
+                      <img src={fsImg(x.thumb)} loading="lazy" />
+                      <b>{x.title}</b>
+                      <small>{formatDateRange(x.validFrom, x.validUntil)} · {x.pages} Seite{x.pages === 1 ? '' : 'n'}</small>
+                      {!x.current && <small className="warn">abgelaufen</small>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {upload && (
+              <>
+                <div
+                  className="drop"
+                  onClick={() => input.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    add(e.dataTransfer.files);
+                  }}
+                >
+                  Prospektseiten hierher ziehen oder klicken
+                  <small>PDF, JPG, PNG oder WEBP – auch mehrere auf einmal</small>
+                  <input ref={input} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden onChange={(e) => add(e.target.files)} />
+                </div>
+                {files.length > 0 && (
+                  <div className="files">
+                    {files.map((f, i) => (
+                      <div key={f.name + i} className="file">
+                        {f.type.startsWith('image/') ? <Thumb file={f} /> : <div className="pdf">PDF</div>}
+                        <small>{f.name}</small>
+                        <button className="ghost danger" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
 
-        <section className="card">
-          <h3>3. Einstellungen</h3>
-          <div className="row">
-            <label className="grow">
-              Thema
-              <select value={topic} onChange={(e) => setTopic(e.target.value)}>
-                {TOPICS.map(([k, l]) => (
-                  <option key={k} value={k}>{l}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Angebote im Video: <b>{count}</b>
-              <input type="range" min={2} max={12} value={count} onChange={(e) => setCount(Number(e.target.value))} />
-            </label>
-          </div>
-          <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>
-        </section>
+        {marketId && (
+          <section className="card">
+            <h3>3. Einstellungen</h3>
+            <div className="row">
+              <label className="grow">
+                Thema
+                <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+                  {TOPICS.map(([k, l]) => (
+                    <option key={k} value={k}>{l}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Angebote im Video: <b>{count}</b>
+                <input type="range" min={2} max={12} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+              </label>
+            </div>
+            <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>
+          </section>
+        )}
 
         {noKey && (
           <div className="notice">
@@ -219,7 +279,7 @@ export function NewJob() {
         {err && <div className="errors">{err}</div>}
         <div className="row end">
           <button className="ghost" onClick={() => go('#/')}>Abbrechen</button>
-          <button className="primary big" disabled={!market || !files.length || !!busy || !!noKey} onClick={start}>
+          <button className="primary big" disabled={!ready || !!busy || !!noKey} onClick={start}>
             {busy || 'Weiter: Prospekt auslesen →'}
           </button>
         </div>

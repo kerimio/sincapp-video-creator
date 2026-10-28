@@ -26,7 +26,8 @@ export const Market = z.object({
   logo: z.string().min(1),
   /** Ausschnitt des Logos in Bildpixeln; ohne Angabe wird das ganze Bild gezeigt. */
   logoCrop: LogoCrop.optional(),
-  instagram: z.string().regex(/^[A-Za-z0-9._]+$/, 'Instagram-Handle ohne @'),
+  /** ohne Handle wird die @-Zeile weggelassen */
+  instagram: z.string().regex(/^[A-Za-z0-9._]+$/, 'Instagram-Handle ohne @').optional(),
   addresses: z.array(z.string().min(1)).min(1).max(3),
   theme: z
     .object({

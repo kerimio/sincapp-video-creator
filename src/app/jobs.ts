@@ -13,6 +13,8 @@ export interface JobMeta {
   title: string;
   createdAt: string;
   settings: JobSettings;
+  /** Herkunft, wenn der Prospekt aus Firestore kam */
+  source?: { firestoreProspect: string; marketId: string };
 }
 
 export interface JobSummary extends JobMeta {

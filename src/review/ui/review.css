@@ -146,3 +146,12 @@ nav a.on, nav a:hover { background: rgba(250, 246, 241, 0.14); }
 .lib .cand img { background: var(--red); }
 .download { display: inline-block; margin-top: 4px; }
 header button.ghost { color: var(--paper); border-color: rgba(250, 246, 241, 0.4); }
+.market small { font-weight: 500; font-size: 11px; text-align: center; }
+.market .badge { background: var(--ok); color: #fff; border-radius: 99px; padding: 1px 8px; font-weight: 700; }
+.market .nologo { width: 60px; height: 60px; border-radius: 50%; background: var(--line); display: grid; place-items: center; font-size: 26px; }
+.markets { max-height: 420px; overflow: auto; }
+.prospects { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.prospect { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-color: var(--line); text-align: left; font-weight: 500; }
+.prospect img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top; border-radius: 6px; }
+.prospect.on { border-color: var(--red); box-shadow: 0 0 0 2px rgba(194, 74, 24, 0.25); }
+.prospect.old { opacity: 0.6; }

@@ -1,3 +1,4 @@
+import { marketDirs } from '../firestore/firestore';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -227,7 +228,7 @@ export async function startReviewServer(jobDir: string, port = 4321, log: (m: st
     '/': join(ROOT, 'dist/template'),
     '/review/': join(ROOT, 'dist/review'),
     '/assets/': join(ROOT, 'assets'),
-    '/markets/': join(ROOT, 'markets'),
+    '/markets/': marketDirs(),
     '/job/': jobDir,
   };
   return startStaticServer(mounts, port, async (req, res) => {

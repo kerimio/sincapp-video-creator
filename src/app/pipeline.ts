@@ -8,7 +8,7 @@ import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
 import { Library } from '../library/library';
-import { ROOT } from '../paths';
+import { readMarket } from '../firestore/firestore';
 import { extractionReport } from '../report';
 import { buildStory, findTopic, selectOffers } from '../select/select';
 
@@ -33,8 +33,7 @@ export interface Progress {
  * Fehler einzelner Seiten/Bilder landen in report.md; nur ohne verwertbare Angebote wird abgebrochen.
  */
 export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (p: Progress) => void = () => {}) {
-  const marketFile = join(ROOT, 'markets', `${s.market}.json`);
-  if (!existsSync(marketFile)) throw new Error(`Markt "${s.market}" nicht gefunden (markets/${s.market}.json)`);
+  const marketRaw = await readMarket(s.market);
   const topic = findTopic(s.topic ?? undefined);
 
   const reader: PageReader = s.recorded ? new RecordedReader(s.recorded) : makeReader();
@@ -77,7 +76,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   if (missing.length) notes.push(`Ohne Bild weggelassen: ${missing.map((o) => `${o.id} ${o.name.de}`).join(', ')}`);
 
   onProgress({ step: 'story', message: 'Story wird zusammengestellt …', fraction: 0.97 });
-  const { story, warnings } = buildStory(ex, JSON.parse(await readFile(marketFile, 'utf8')), usable, topic);
+  const { story, warnings } = buildStory(ex, marketRaw, usable, topic);
   await writeFile(join(jobDir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] }));

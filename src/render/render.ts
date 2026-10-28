@@ -1,3 +1,4 @@
+import { marketDirs } from '../firestore/firestore';
 import { chromium, type Browser } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile, copyFile } from 'node:fs/promises';
@@ -70,7 +71,7 @@ export function templateMounts(jobDir: string) {
   return {
     '/': join(ROOT, 'dist/template'),
     '/assets/': join(ROOT, 'assets'),
-    '/markets/': join(ROOT, 'markets'),
+    '/markets/': marketDirs(),
     '/job/': resolve(jobDir),
   };
 }
