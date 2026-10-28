@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RecordedReader, type PageReader } from '../extract/claude';
@@ -11,7 +11,7 @@ import { Library } from '../library/library';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
-import { buildStory, findTopic, selectOffers } from '../select/select';
+import { buildStory, findTopic, offerBoosts, selectOffers } from '../select/select';
 
 export interface JobSettings {
   market: string;
@@ -27,6 +27,34 @@ export interface Progress {
   message: string;
   /** 0–1 */
   fraction: number;
+}
+
+/**
+ * Kommt der Prospekt aus Firestore, steht der Gültigkeitszeitraum dort verlässlich drin
+ * (vom Admin eingetragen) – er hat Vorrang vor dem, was die KI auf den Seiten gelesen hat.
+ * Bei mehreren Prospekten: vom frühesten Start bis zum spätesten Ende.
+ */
+export function applyFirestoreDates(ex: { validFrom: string | null; validTo: string | null; warnings: string[] }, jobDir: string) {
+  const f = join(jobDir, 'firestore-prospekt.json');
+  if (!existsSync(f)) return;
+  const raw = JSON.parse(readFileSync(f, 'utf8'));
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { validFrom?: string; validUntil?: string }[];
+  const iso = (x?: string) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const from = prs.map((p) => iso(p.validFrom)).filter((x): x is string => !!x).sort()[0];
+  const to = prs.map((p) => iso(p.validUntil)).filter((x): x is string => !!x).sort().at(-1);
+  if (!from || !to || from > to) return;
+  ex.validFrom = from;
+  ex.validTo = to;
+  ex.warnings = ex.warnings.filter((w) => !/Gültigkeitszeitraum/.test(w));
+}
+
+/** Produktnamen, die in Firestore zum Prospekt gepflegt sind (DE, TR und Fundstellen-Beschriftungen). */
+export function firestoreProductNames(jobDir: string): string[] {
+  const f = join(jobDir, 'firestore-prospekt.json');
+  if (!existsSync(f)) return [];
+  const raw = JSON.parse(readFileSync(f, 'utf8'));
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { products?: { name_de?: string; name_tr?: string; locations?: { label?: { de?: string; tr?: string } }[] }[] }[];
+  return prs.flatMap((p) => (p.products ?? []).flatMap((x) => [x.name_de, x.name_tr, ...(x.locations ?? []).flatMap((l) => [l.label?.de, l.label?.tr])])).filter((x): x is string => !!x);
 }
 
 /**
@@ -50,6 +78,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
       if (page) onProgress({ step: 'extract', message: `Seite ${page[1]} von ${pagesTotal}: ${page[2].replace(/ …$/, '')}`, fraction: 0.05 + 0.45 * ((Number(page[1]) - (page[2].includes('Angebot') ? 0 : 0.5)) / pagesTotal) });
     },
   });
+  applyFirestoreDates(ex, jobDir);
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));
@@ -57,7 +86,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   }
 
   onProgress({ step: 'images', message: `${ex.offers.length} Angebote erkannt – Auswahl und Produktbilder …`, fraction: 0.5 });
-  const sel = selectOffers(ex.offers, { topic, count: s.count });
+  const sel = selectOffers(ex.offers, { topic, count: s.count, boost: offerBoosts(ex, firestoreProductNames(jobDir)) });
   let done = 0;
   const { notes } = await resolveImages(sel.offers, {
     jobDir,

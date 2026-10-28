@@ -201,3 +201,6 @@ a.download.big { background: var(--red); color: #fff; border-radius: 8px; text-d
 .row.tight { gap: 6px; align-items: center; }
 .phone iframe { transform-origin: 0 0; }
 label.check { flex-direction: row; align-items: center; color: var(--nut); font-size: 14px; font-weight: 600; }
+.prospect { position: relative; }
+.prospect .tick { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 800; z-index: 1; }
+.prospect.on .tick { background: var(--red); border-color: var(--red); color: #fff; }

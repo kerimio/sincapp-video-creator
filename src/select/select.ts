@@ -41,8 +41,30 @@ export function offerScore(o: ExtractedOffer) {
   return s;
 }
 
+const norm = (s: string) => s.toLocaleLowerCase('de').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * "Beste Angebote": Was im Prospekt groß abgebildet ist, ist meist ein Hauptangebot (bis +1,5);
+ * was in Firestore als Produkt gepflegt ist, ist bewusst ausgewählt (+1).
+ */
+export function offerBoosts(ex: Pick<Extraction, 'offers' | 'pages'>, firestoreNames: string[] = []): Map<string, number> {
+  const names = firestoreNames.map(norm).filter((n) => n.length >= 3);
+  const out = new Map<string, number>();
+  for (const o of ex.offers) {
+    const pg = ex.pages[o.page - 1];
+    const area = pg ? ((o.bbox[2] - o.bbox[0]) * (o.bbox[3] - o.bbox[1])) / (pg.width * pg.height) : 0;
+    let b = Math.min(1.5, area * 10);
+    const mine = norm(`${o.brand ?? ''} ${o.name.de} ${o.name.tr}`);
+    if (names.some((n) => mine.includes(n) || n.includes(norm(o.name.de)))) b += 1;
+    out.set(o.id, b);
+  }
+  return out;
+}
+
 export interface SelectOptions {
   topic?: Topic | null;
+  /** Zusatzpunkte je Angebot (id → Punkte), z. B. groß im Prospekt oder in Firestore gepflegt. */
+  boost?: Map<string, number>;
   /** Standard: 8 (wenn so viele da sind), mindestens 2. */
   count?: number;
 }
@@ -66,14 +88,15 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
   const want = Math.max(2, Math.min(opts.count ?? 8, 15, pool.length));
   if (want < 5 && pool.length < 5) warnings.push(`Nur ${pool.length} Angebote verfügbar – Story wird kürzer als üblich.`);
 
+  const score = (o: ExtractedOffer) => offerScore(o) + (opts.boost?.get(o.id) ?? 0);
   const byCat = new Map<string, ExtractedOffer[]>();
-  for (const o of [...pool].sort((a, b) => offerScore(b) - offerScore(a))) {
+  for (const o of [...pool].sort((a, b) => score(b) - score(a))) {
     const list = byCat.get(o.category) ?? [];
     list.push(o);
     byCat.set(o.category, list);
   }
   // Warengruppen nach ihrem besten Angebot ordnen
-  const queues = [...byCat.values()].sort((a, b) => offerScore(b[0]) - offerScore(a[0]));
+  const queues = [...byCat.values()].sort((a, b) => score(b[0]) - score(a[0]));
   const picked: ExtractedOffer[] = [];
   while (picked.length < want) {
     for (const q of queues) {

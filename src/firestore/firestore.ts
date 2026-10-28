@@ -105,6 +105,20 @@ export async function listProspects(fetchImpl: Fetch = fetch): Promise<FsProspec
     .sort((a, b) => b.validUntil.localeCompare(a.validUntil));
 }
 
+/**
+ * Seiten, die gelesen werden müssen (1-basiert). Haben alle Produkte des Prospekts Fundstellen,
+ * werden Seiten ohne Produkte (Titelblatt, Rückseite mit Adressen …) übersprungen – das spart KI-Kosten.
+ * Sonst (keine oder unvollständige Fundstellen) alle Seiten.
+ */
+export function pagesToRead(pr: Pick<FsProspect, 'imageUrls' | 'products'>): number[] {
+  const all = pr.imageUrls.map((_, i) => i + 1);
+  const prods = pr.products ?? [];
+  if (!prods.length || prods.some((p) => !p.locations?.length)) return all;
+  const used = new Set(prods.flatMap((p) => p.locations!.map((l) => l.page)));
+  const pages = all.filter((n) => used.has(n));
+  return pages.length ? pages : all;
+}
+
 /** Heute in Berlin als YYYY-MM-DD (Gültigkeit wechselt um Mitternacht deutscher Zeit). */
 export const todayBerlin = (d = new Date()) => d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 

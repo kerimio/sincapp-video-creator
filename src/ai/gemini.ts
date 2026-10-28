@@ -6,8 +6,11 @@ import { PAGE_PROMPT, PRICE_PROMPT, type PageReader } from '../extract/claude';
 import { PageOffer, PageResult, PriceCheck } from '../extract/schema';
 import { MATCH_PROMPT, MatchResult, type ProductMatcher } from '../images/match';
 
-/** Modell änderbar mit GEMINI_MODEL, z. B. gemini-3.8-flash (schneller, günstiger). */
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-4-argon';
+/** Modell fürs Lesen der Seiten; änderbar mit GEMINI_MODEL, z. B. gemini-3.8-flash (schneller, günstiger). */
+export const geminiModel = () => process.env.GEMINI_MODEL || 'gemini-4-argon';
+export const GEMINI_MODEL = geminiModel();
+/** Günstigeres Modell für einfache Aufgaben: Preisschilder gegenlesen, Produktfotos vergleichen. */
+export const geminiCheckModel = () => process.env.GEMINI_CHECK_MODEL || 'gemini-3.8-flash';
 
 async function imagePart(file: string): Promise<Part> {
   const ext = extname(file).toLowerCase();
@@ -23,12 +26,12 @@ export class GeminiClient {
     this.ai = new GoogleGenAI({ apiKey, httpOptions: baseUrl ? { baseUrl } : undefined });
   }
 
-  async json<S extends z.ZodType>(schema: S, parts: Part[]): Promise<z.infer<S>> {
+  async json<S extends z.ZodType>(schema: S, parts: Part[], model = geminiModel()): Promise<z.infer<S>> {
     let last: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await this.ai.models.generateContent({
-          model: GEMINI_MODEL,
+          model,
           contents: [{ role: 'user', parts }],
           config: { responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(schema, { target: 'draft-2020-12' }), maxOutputTokens: 32000 },
         });
@@ -72,7 +75,7 @@ export function toPixels(b: number[], size: { width: number; height: number }): 
 }
 
 export class GeminiReader implements PageReader {
-  name = GEMINI_MODEL;
+  name = geminiModel();
   private client: GeminiClient;
   constructor(apiKey?: string, baseUrl?: string) {
     this.client = new GeminiClient(apiKey, baseUrl);
@@ -91,7 +94,7 @@ export class GeminiReader implements PageReader {
     const parts: Part[] = [];
     for (const [i, c] of crops.entries()) parts.push({ text: `Ausschnitt ${i + 1}:` }, await imagePart(c));
     parts.push({ text: `${PRICE_PROMPT} Nummeriere die Ausschnitte mit id 1 bis ${crops.length}.` });
-    const out = await this.client.json(PriceCheck, parts);
+    const out = await this.client.json(PriceCheck, parts, geminiCheckModel());
     const byId = new Map(out.prices.map((p) => [p.id, p.price]));
     return crops.map((_, i) => byId.get(i + 1) ?? null);
   }
@@ -108,7 +111,7 @@ export class GeminiMatcher implements ProductMatcher {
     const parts: Part[] = [{ text: 'Bild 0 (Prospekt):' }, await imagePart(prospektCrop)];
     for (const [i, c] of candidates.entries()) parts.push({ text: `Bild ${i + 1}:` }, await imagePart(c));
     parts.push({ text: MATCH_PROMPT(product, candidates.length) });
-    const out = await this.client.json(MatchResult, parts);
+    const out = await this.client.json(MatchResult, parts, geminiCheckModel());
     const byId = new Map(out.candidates.map((c) => [c.id, c]));
     return candidates.map((_, i) => byId.get(i + 1) ?? { id: i + 1, same_product: false, same_variant: false, clean_shot: false, note: 'keine Bewertung' });
   }

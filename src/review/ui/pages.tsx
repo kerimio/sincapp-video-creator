@@ -110,7 +110,7 @@ export function NewJob() {
   const [q, setQ] = useState('');
   const [marketId, setMarketId] = useState('');
   const [prospects, setProspects] = useState<FsProspect[] | null>(null);
-  const [prospectId, setProspectId] = useState('');
+  const [prospectIds, setProspectIds] = useState<string[]>([]);
   const [upload, setUpload] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [topic, setTopic] = useState('');
@@ -130,12 +130,12 @@ export function NewJob() {
 
   useEffect(() => {
     setProspects(null);
-    setProspectId('');
+    setProspectIds([]);
     if (!marketId) return;
     call<FsProspect[]>('GET', `/api/firestore/markets/${encodeURIComponent(marketId)}/prospects`).then((list) => {
       setProspects(list);
-      const cur = list.filter((x) => x.current);
-      if (cur.length === 1) setProspectId(cur[0].id);
+      // alle aktuellen Prospekte vorauswählen – die besten Angebote aus allen kommen ins Video
+      setProspectIds(list.filter((x) => x.current).map((x) => x.id));
       if (!list.length) setUpload(true);
     }, (e) => setErr(e.message));
   }, [marketId]);
@@ -156,7 +156,7 @@ export function NewJob() {
     setErr('');
     try {
       setBusy(upload ? 'Job wird angelegt …' : 'Prospektseiten werden aus Firestore geladen …');
-      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectId: upload ? undefined : prospectId, topic: topic || null, count });
+      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectIds: upload ? [] : prospectIds, topic: topic || null, count });
       if (upload) {
         for (const [i, f] of files.entries()) {
           setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
@@ -173,7 +173,9 @@ export function NewJob() {
   };
 
   const noKey = settings && !settings.ai;
-  const ready = !!marketId && (upload ? files.length > 0 : !!prospectId);
+  const ready = !!marketId && (upload ? files.length > 0 : prospectIds.length > 0);
+  const toggle = (id: string) => setProspectIds((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
+  const pagesChosen = (prospects ?? []).filter((x) => prospectIds.includes(x.id)).reduce((a, x) => a + x.pages, 0);
   return (
     <Shell>
       <Steps current={0} />
@@ -200,7 +202,7 @@ export function NewJob() {
         {marketId && (
           <section className="card">
             <div className="row">
-              <h3 className="grow">2. Prospekt von {market?.name}</h3>
+              <h3 className="grow">2. Prospekte von {market?.name}</h3>
               <button className="ghost" onClick={() => setUpload(!upload)}>{upload ? 'Prospekt aus Firestore nehmen' : 'Eigene Dateien hochladen'}</button>
             </div>
             {!upload && (
@@ -209,7 +211,8 @@ export function NewJob() {
                 {prospects && !prospects.length && <p className="muted">Für diesen Markt ist kein Prospekt in Firestore.</p>}
                 <div className="prospects">
                   {prospects?.map((x) => (
-                    <button key={x.id} className={`prospect ${prospectId === x.id ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => setProspectId(x.id)}>
+                    <button key={x.id} className={`prospect ${prospectIds.includes(x.id) ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => toggle(x.id)}>
+                      <span className="tick">{prospectIds.includes(x.id) ? '✓' : ''}</span>
                       <img src={fsImg(x.thumb)} loading="lazy" />
                       <b>{x.title}</b>
                       <small>{formatDateRange(x.validFrom, x.validUntil)} · {x.pages} Seite{x.pages === 1 ? '' : 'n'}</small>
@@ -217,6 +220,12 @@ export function NewJob() {
                     </button>
                   ))}
                 </div>
+                {prospects && prospects.length > 1 && (
+                  <p className="muted small">
+                    Du kannst mehrere Prospekte wählen – die App nimmt automatisch die besten Angebote aus allen (große Angebote im Prospekt und deine Firestore-Produkte zuerst).
+                    {prospectIds.length > 0 && ` Ausgewählt: ${prospectIds.length} Prospekt${prospectIds.length === 1 ? '' : 'e'}, bis zu ${pagesChosen} Seiten; Seiten ohne Produkte und schon gelesene Seiten kosten nichts.`}
+                  </p>
+                )}
               </>
             )}
             {upload && (

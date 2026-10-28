@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { cacheMarket, listMarkets, listProspects, marketDirs, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { cacheMarket, listMarkets, listProspects, marketDirs, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
 import { existsSync } from 'node:fs';
 import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -126,28 +126,38 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       return sendJson(res, [...current, ...past].map((x) => ({ id: x.id, title: x.title, validFrom: x.validFrom, validUntil: x.validUntil, pages: x.imageUrls.length, thumb: x.thumbnailUrls[0] ?? x.imageUrls[0], current: x.validUntil >= today })));
     }
     if (method === 'POST' && p === '/api/jobs/from-firestore') {
-      // ohne prospectId: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch
-      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; topic?: string | null; count?: number };
+      // ohne Prospekt: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch.
+      // Mehrere Prospekte desselben Markts werden zusammen gelesen; die besten Angebote kommen in die Story.
+      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; prospectIds?: string[]; topic?: string | null; count?: number };
       const { markets, prospects } = await firestore();
       const m = markets.find((x) => x.id === b.marketId);
-      const pr = b.prospectId ? prospects.find((x) => x.id === b.prospectId) : undefined;
-      if (!m || (b.prospectId && !pr)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const ids = [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])];
+      const prs = ids.map((id) => prospects.find((x) => x.id === id));
+      if (!m || prs.some((x) => !x)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const chosen = prs as FsProspect[];
       const market = await cacheMarket(m, fetchImpl);
-      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, pr ? `${m.name} – ${pr.title}` : m.name);
-      if (!pr) return sendJson(res, meta, 201);
-      meta.source = { firestoreProspect: pr.id, marketId: m.id };
+      const title = chosen.length ? `${m.name} – ${chosen.map((x) => x.title).join(' + ')}` : m.name;
+      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, title);
+      if (!chosen.length) return sendJson(res, meta, 201);
+      meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: m.id };
       await saveJob(meta);
-      // Seiten in Reihenfolge laden (1200 px aus dem Admin-Tool)
+      // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind
       const dir = jobPath(meta.id);
+      const skipped: string[] = [];
       await Promise.all(
-        pr.imageUrls.map(async (u, i) => {
-          const r = await fetchImpl(u, { signal: AbortSignal.timeout(30000) });
-          if (!r.ok) throw new Error(`Seite ${i + 1} nicht ladbar (HTTP ${r.status})`);
-          await writeFile(join(dir, 'input', `seite-${String(i + 1).padStart(2, '0')}.jpg`), Buffer.from(await r.arrayBuffer()));
+        chosen.flatMap((pr, k) => {
+          const read = pagesToRead(pr);
+          if (read.length < pr.imageUrls.length) skipped.push(`${pr.title}: ${pr.imageUrls.length - read.length} von ${pr.imageUrls.length} Seiten ohne Produkte übersprungen`);
+          return read.map(async (n) => {
+            const r = await fetchImpl(pr.imageUrls[n - 1], { signal: AbortSignal.timeout(30000) });
+            if (!r.ok) throw new Error(`${pr.title}, Seite ${n} nicht ladbar (HTTP ${r.status})`);
+            const name = `${chosen.length > 1 ? `p${k + 1}-` : ''}seite-${String(n).padStart(2, '0')}.jpg`;
+            await writeFile(join(dir, 'input', name), Buffer.from(await r.arrayBuffer()));
+          });
         }),
       );
-      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(pr, null, 2) + '\n');
-      return sendJson(res, meta, 201);
+      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(chosen.length === 1 ? chosen[0] : chosen, null, 2) + '\n');
+      return sendJson(res, { ...meta, notes: skipped }, 201);
     }
 
     if (p === '/api/settings') {
