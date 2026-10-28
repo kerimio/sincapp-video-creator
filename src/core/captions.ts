@@ -19,7 +19,8 @@ export function caption(story: Story, lang: Lang): string {
   const unitOf = (u: Story['offers'][number]['unit']) => (typeof u === 'string' ? u : u?.[lang]);
   const offers = story.offers.map((o) => {
     const unit = unitOf(o.unit);
-    return `– ${lineName(o.name[lang])}: ${o.price} €${unit ? ` (${unit})` : ''}${o.badge ? ` · ${badgeText(o, lang)}` : ''}`;
+    const where = o.market ? (lang === 'de' ? ` bei ${o.market}` : ` – ${turkishLocative(o.market)}`) : '';
+    return `– ${lineName(o.name[lang])}: ${o.price} €${unit ? ` (${unit})` : ''}${where}${o.badge ? ` · ${badgeText(o, lang)}` : ''}`;
   });
   const city = cityOf(m.addresses[0] ?? '');
   const head = story.headline[lang].join(' ').replace(/- /g, '');
@@ -32,6 +33,7 @@ export function caption(story: Story, lang: Lang): string {
     ['indirim', 'kampanya', 'firsat', 'turkmarket'].forEach(add);
   }
   add(m.name);
+  for (const o of story.offers) add(o.market ?? null);
   add(city);
   add('sincapp');
   const handle = m.instagram ? ` @${m.instagram}` : '';

@@ -39,7 +39,7 @@ export async function enrichFromJobs(lib: Library, dir = jobsDir()): Promise<boo
       const before = JSON.stringify([e.category, e.variant, e.seen]);
       if (o.category && (!e.category || e.category === 'sonstiges')) e.category = o.category;
       if (o.note && e.variant === undefined) e.variant = o.note;
-      lib.sighted(e, { market, price: o.price, from: story.dates?.from ?? ex.validFrom, to: story.dates?.to ?? ex.validTo, job: d.name });
+      lib.sighted(e, { market: o.market ?? market, price: o.price, from: story.dates?.from ?? ex.validFrom, to: story.dates?.to ?? ex.validTo, job: d.name });
       if (JSON.stringify([e.category, e.variant, e.seen]) !== before) changed = true;
     }
   }

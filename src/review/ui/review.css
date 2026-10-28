@@ -297,3 +297,11 @@ h2.cat-group small { font-size: 13px; }
 .camp-item .best { font-size: 12px; font-weight: 700; color: var(--red); }
 .camp-item label.price { display: flex; flex-direction: row; align-items: center; color: var(--nut); font-size: 14px; gap: 4px; font-weight: 700; flex: none; }
 .camp-item .price input { width: 76px; text-align: right; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+
+/* Prospekte aus mehreren Märkten */
+.market.picked { border-color: var(--red); }
+.market .badge.on { background: var(--red); }
+.picked { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; display: flex; flex-direction: column; gap: 8px; }
+.picked .chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 4px 4px 4px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--paper); }
+.picked .chip button { border: none; padding: 2px 8px; border-radius: 999px; font-size: 16px; line-height: 1; }
+.picked p { margin: 0; }

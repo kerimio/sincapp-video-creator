@@ -1,7 +1,7 @@
 // Ablauf Prospekt → Story: lesen, Angebote wählen, Bilder holen, Bestpreis markieren, Bericht schreiben.
 import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { RecordedReader, type PageReader } from '../extract/claude';
 import { makeMatcher, makeReader } from '../ai/provider';
 import { extractJob } from '../extract/extract';
@@ -52,6 +52,23 @@ export function applyFirestoreDates(ex: { validFrom: string | null; validTo: str
   ex.warnings = ex.warnings.filter((w) => !/Gültigkeitszeitraum/.test(w));
 }
 
+/**
+ * Video aus Prospekten mehrerer Märkte: jedes Angebot bekommt den Markt seines Prospekts.
+ * Die Seiten heißen "p<k>-seite-NN" (k = Nummer des Prospekts in firestore-prospekt.json).
+ */
+export function applyFirestoreMarkets(ex: { offers: { pageFile: string; market?: string }[] }, jobDir: string) {
+  const f = join(jobDir, 'firestore-prospekt.json');
+  if (!existsSync(f)) return;
+  const raw = JSON.parse(readFileSync(f, 'utf8'));
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string }[];
+  if (new Set(prs.map((p) => p.marketName).filter(Boolean)).size < 2) return;
+  for (const o of ex.offers) {
+    const k = Number(basename(o.pageFile).match(/^p(\d+)-/)?.[1]);
+    const name = prs[k - 1]?.marketName;
+    if (name) o.market = name;
+  }
+}
+
 /** Produktnamen, die in Firestore zum Prospekt gepflegt sind (DE, TR und Fundstellen-Beschriftungen). */
 export function firestoreProductNames(jobDir: string): string[] {
   const f = join(jobDir, 'firestore-prospekt.json');
@@ -83,6 +100,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
     },
   });
   applyFirestoreDates(ex, jobDir);
+  applyFirestoreMarkets(ex, jobDir);
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));

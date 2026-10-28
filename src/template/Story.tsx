@@ -5,7 +5,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { Lang, Offer, Story } from '../core/schema';
 import { pagesFor } from '../core/pages';
-import { formatDateRange, defaultEyebrow } from '../core/format';
+import { formatDateRange, defaultEyebrow, turkishLocative } from '../core/format';
 import { pageMode, resolveDesign, rgba, textOn, type Palette, type PageMode, type ResolvedDesign } from '../core/design';
 import { LAYOUTS, type Format, type Layout } from '../core/layout';
 import { BADGE_TEXT } from '../core/badges';
@@ -291,6 +291,8 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
     </div>
   );
   const tag = <PriceTag o={o} lang={lang} theme={theme} p={tagP} look={look} />;
+  // nur bei Videos aus mehreren Märkten: wo es das Angebot gibt
+  const where = o.market ? <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1, letterSpacing: '0.02em', textTransform: 'uppercase', color: c.accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lang === 'tr' ? turkishLocative(o.market) : `bei ${o.market}`}</div> : null;
   const transform = D.enter === 'wischen' ? `translate(${x}px, ${bob}px) rotate(${rot + wob}deg)` : `translate(0px, ${y + bob}px) rotate(${wob}deg) scale(${sc})`;
   return (
     <div style={abs({ left: 90, top: P.rowTop + k * (rh + P.rowGap), width: 900, height: rh, transform, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
@@ -300,6 +302,7 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
             <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: `scale(${kb * o.imgZoom * 1.3})`, ...imgBase }} />
           </div>
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, padding: '0 20px 14px' }}>
+            {where}
             {nameLines(1.0)}
             <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
             {!circle && <div style={{ position: 'absolute', right: 10, top: -120 }}>{tag}</div>}
@@ -311,6 +314,7 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
             <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: `scale(${kb * o.imgZoom})`, ...imgBase }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, minWidth: 0, ...(circle ? { paddingRight: P.circle * 0.55 } : {}) }}>
+            {where}
             {nameLines(1.04)}
             <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
             {!circle && tag}
@@ -587,7 +591,8 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
   const cardH = H - cardTop - cardBottom;
   const fs = fitSize(name, 860, { weight: 900, size: square ? 72 : 84, tracking: -0.035, upper: true, lang });
   const textH = name.length * fs * 1.02 + 44 + 40;
-  const addr = story.market.addresses[0];
+  // Video aus mehreren Märkten: der Markt dieses Angebots statt der Märkte-Liste
+  const addr = o.market ?? story.market.addresses[0];
   return (
     <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: theme.bg, fontFamily: 'Archivo, system-ui, sans-serif' }}>
       <Backdrop look={look} T={0} urls={urls} mode={theme.mode} />
@@ -660,7 +665,8 @@ export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryP
   const badgeP = tw(T, 2.3, 2.8, 0, 1, MOTION.pop);
   const infoIn = tw(T, 2.6, 3.2, 0, 1, MOTION.enter);
   const wob = d.wobble ? Math.sin(T * 1.4) * 0.8 * tw(T, 1.7, 2.3, 0, 1, Easing.easeInOutSine) : 0;
-  const atSize = fitSize([R.at(story.market.name)], 900, { weight: 800, size: 40, lang });
+  const at = R.at(o.market ?? story.market.name);
+  const atSize = fitSize([at], 900, { weight: 800, size: 40, lang });
   const priceNode =
     d.price === 'kreis' ? (
       <PriceCircle o={o} lang={lang} theme={theme} p={priceP * pulse} size={300} />
@@ -695,9 +701,9 @@ export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryP
         <div style={abs(d.price === 'kreis' ? { right: -40, top: 360 } : { right: 20, top: 470 })}>{priceNode}</div>
       </div>
       <div style={abs({ left: 0, width: W, top: 1550, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
-        <div style={{ fontSize: atSize, fontWeight: 800, color: fg }}>{R.at(story.market.name)}</div>
+        <div style={{ fontSize: atSize, fontWeight: 800, color: fg }}>{at}</div>
         <Pill light={light} white={theme.white} value={dates} urls={urls} c={c} />
-        <div style={{ fontSize: 26, fontWeight: 600, color: light ? 'rgba(255,255,255,.85)' : c.ink2 }}>{story.market.addresses[0]}</div>
+        {!o.market && <div style={{ fontSize: 26, fontWeight: 600, color: light ? 'rgba(255,255,255,.85)' : c.ink2 }}>{story.market.addresses[0]}</div>}
       </div>
       {story.banner?.[lang] && <Banner text={story.banner[lang]} T={T} look={look} theme={theme} hd={1 - infoIn} />}
     </div>
