@@ -32,7 +32,7 @@ export function jobClient(base: string) {
     state: () => call<State>('GET', `${base}/state`),
     saveStory: (story: unknown) => call<{ story: Story }>('PUT', `${base}/story`, story),
     auto: (id: string) => call<OfferRes & { story: StoryOffer; notes: string[] }>('POST', `${base}/offer/${id}/auto`),
-    crop: (id: string, bbox: number[]) => call<OfferRes>('POST', `${base}/offer/${id}/crop`, { bbox }),
+    crop: (id: string, sel: { bbox: number[]; polygon?: number[][]; removeBackground?: boolean }) => call<OfferRes>('POST', `${base}/offer/${id}/crop`, sel),
     alternative: (id: string, index: number) => call<OfferRes>('POST', `${base}/offer/${id}/alternative`, { index }),
     search: (id: string, query: string) => call<OfferRes & { query: string; errors: string[] }>('POST', `${base}/offer/${id}/search`, { query }),
     upload: (id: string, file: File) => call<OfferRes>('POST', `${base}/offer/${id}/upload`, undefined, file),

@@ -593,9 +593,9 @@ function ImageDialog(p: {
           <CropTool
             offer={o}
             busy={!!p.busy}
-            onCrop={(bbox) =>
-              p.run('Wird freigestellt …', async () => {
-                const r = await api.crop(o.id, bbox);
+            onCrop={(sel) =>
+              p.run(sel.removeBackground ? 'Wird freigestellt …' : 'Wird ausgeschnitten …', async () => {
+                const r = await api.crop(o.id, sel);
                 p.onImage(r.offer, r.warnings);
                 p.onClose();
               })
@@ -640,49 +640,123 @@ function ImageDialog(p: {
   );
 }
 
-/** Seite anzeigen, Rechteck ziehen, ausschneiden. Koordinaten in Pixeln des Seitenbilds. */
-function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolean; onCrop: (bbox: number[]) => void }) {
+type CropSel = { bbox: number[]; polygon?: number[][]; removeBackground?: boolean };
+
+/**
+ * Seite anzeigen und das Produkt auswählen: Rechteck ziehen oder mit dem Pen umranden
+ * (klicken setzt Punkte, ziehen zeichnet frei). Koordinaten in Pixeln des Seitenbilds.
+ * Der Ausschnitt bleibt wie gewählt; der Hintergrund wird nur auf Wunsch entfernt.
+ */
+function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolean; onCrop: (sel: CropSel) => void }) {
   const { base } = useContext(JobCtx);
   const img = useRef<HTMLImageElement>(null);
+  const [tool, setTool] = useState<'rect' | 'pen'>('rect');
   const [box, setBox] = useState<number[]>(offer.bbox);
+  const [pts, setPts] = useState<number[][]>([]);
+  const [closed, setClosed] = useState(false);
+  const [removeBg, setRemoveBg] = useState(false);
   const [scale, setScale] = useState(1);
-  const start = useRef<[number, number] | null>(null);
-  const pos = (e: React.MouseEvent) => {
+  const drag = useRef<{ start: [number, number]; moved: boolean } | null>(null);
+  const pos = (e: React.PointerEvent) => {
     const r = img.current!.getBoundingClientRect();
     const k = r.width / img.current!.naturalWidth;
     if (k !== scale) setScale(k);
-    return [Math.max(0, (e.clientX - r.left) / k), Math.max(0, (e.clientY - r.top) / k)] as [number, number];
+    const W = img.current!.naturalWidth;
+    const H = img.current!.naturalHeight;
+    return [Math.min(W, Math.max(0, (e.clientX - r.left) / k)), Math.min(H, Math.max(0, (e.clientY - r.top) / k))] as [number, number];
   };
+  const near = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * scale, (a[1] - b[1]) * scale) < 12;
+  const resetPen = () => {
+    setPts([]);
+    setClosed(false);
+  };
+
+  const down = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = pos(e);
+    drag.current = { start: p, moved: false };
+    if (tool === 'rect') return setBox([...p, ...p]);
+    if (closed) {
+      setPts([p]);
+      setClosed(false);
+    } else if (pts.length >= 3 && near(p, pts[0])) {
+      setClosed(true);
+      drag.current = null;
+    } else setPts((x) => [...x, p]);
+  };
+  const move = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const p = pos(e);
+    if (tool === 'rect') {
+      const [a, b] = drag.current.start;
+      return setBox([Math.min(a, p[0]), Math.min(b, p[1]), Math.max(a, p[0]), Math.max(b, p[1])]);
+    }
+    // Freihand: Punkte im Abstand von ein paar Bildschirmpixeln mitnehmen
+    setPts((x) => (x.length && Math.hypot((x[x.length - 1][0] - p[0]) * scale, (x[x.length - 1][1] - p[1]) * scale) < 5 ? x : [...x, p]));
+    drag.current.moved = true;
+  };
+  const up = () => {
+    if (tool === 'pen' && drag.current?.moved && pts.length >= 8) setClosed(true);
+    drag.current = null;
+  };
+
   const [x0, y0, x1, y1] = box;
   const tag = offer.priceTagBbox;
+  const penReady = closed && pts.length >= 3;
+  const rectReady = x1 - x0 >= 20 && y1 - y0 >= 20;
+  const ready = tool === 'rect' ? rectReady : penReady;
   return (
     <div>
-      <p className="muted">Rechteck um das Produkt ziehen – ohne Preisschild und ohne Text. Das Preisschild (gestrichelt) wird automatisch entfernt.</p>
-      <div className="cropwrap">
-        <img
-          ref={img}
-          src={`${base}${offer.pageFile}`}
-          draggable={false}
-          onLoad={(e) => setScale(e.currentTarget.clientWidth / e.currentTarget.naturalWidth)}
-          onMouseDown={(e) => {
-            start.current = pos(e);
-            setBox([...start.current, ...start.current]);
-          }}
-          onMouseMove={(e) => {
-            if (!start.current) return;
-            const [a, b] = start.current;
-            const [c, d] = pos(e);
-            setBox([Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)]);
-          }}
-          onMouseUp={() => (start.current = null)}
-        />
-        <div className="sel" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />
-        {tag && <div className="tag" style={{ left: tag[0] * scale, top: tag[1] * scale, width: (tag[2] - tag[0]) * scale, height: (tag[3] - tag[1]) * scale }} />}
+      <div className="row">
+        <div className="seg small">
+          <button className={tool === 'rect' ? 'on' : ''} onClick={() => setTool('rect')}>▭ Rechteck</button>
+          <button className={tool === 'pen' ? 'on' : ''} onClick={() => setTool('pen')}>✎ Pen (umranden)</button>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} /> Hintergrund zusätzlich entfernen
+        </label>
+      </div>
+      <p className="muted">
+        {tool === 'rect'
+          ? 'Rechteck um das Produkt ziehen. Der Ausschnitt wird genau so übernommen.'
+          : penReady
+            ? 'Form geschlossen. Mit „Ausschneiden“ übernehmen oder neu zeichnen.'
+            : 'Punkte um das Produkt setzen oder mit gedrückter Maustaste frei umranden. Zum Schließen auf den ersten Punkt klicken.'}
+      </p>
+      <div className="cropwrap" onPointerDown={down} onPointerMove={move} onPointerUp={up} onDoubleClick={() => tool === 'pen' && pts.length >= 3 && setClosed(true)}>
+        <img ref={img} src={`${base}${offer.pageFile}`} draggable={false} onLoad={(e) => setScale(e.currentTarget.clientWidth / e.currentTarget.naturalWidth)} />
+        {tool === 'rect' && <div className="sel" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />}
+        {tool === 'pen' && pts.length > 0 && (
+          <svg className="pen">
+            {penReady && <path d={`M${pts.map((p) => `${p[0] * scale},${p[1] * scale}`).join('L')}Z`} className="shade" fillRule="evenodd" />}
+            <polyline points={pts.map((p) => `${p[0] * scale},${p[1] * scale}`).join(' ') + (penReady ? ` ${pts[0][0] * scale},${pts[0][1] * scale}` : '')} />
+            {!penReady && pts.length < 60 && pts.map((p, i) => <circle key={i} cx={p[0] * scale} cy={p[1] * scale} r={i === 0 ? 7 : 4} className={i === 0 ? 'first' : ''} />)}
+          </svg>
+        )}
+        {removeBg && tag && <div className="tag" style={{ left: tag[0] * scale, top: tag[1] * scale, width: (tag[2] - tag[0]) * scale, height: (tag[3] - tag[1]) * scale }} />}
       </div>
       <div className="row">
-        <button className="ghost" onClick={() => setBox(offer.bbox)}>Zurücksetzen</button>
+        {tool === 'rect' ? (
+          <button className="ghost" onClick={() => setBox(offer.bbox)}>Zurücksetzen</button>
+        ) : (
+          <>
+            <button className="ghost" disabled={!pts.length} onClick={() => (closed ? setClosed(false) : setPts((x) => x.slice(0, -1)))}>Letzten Punkt weg</button>
+            <button className="ghost" disabled={!pts.length} onClick={resetPen}>Neu zeichnen</button>
+            {!closed && pts.length >= 3 && <button className="ghost" onClick={() => setClosed(true)}>Form schließen</button>}
+          </>
+        )}
         <div className="spacer" />
-        <button className="primary" disabled={busy || x1 - x0 < 20 || y1 - y0 < 20} onClick={() => onCrop(box.map(Math.round))}>
+        <button
+          className="primary"
+          disabled={busy || !ready}
+          onClick={() =>
+            onCrop(
+              tool === 'rect'
+                ? { bbox: box.map(Math.round), removeBackground: removeBg }
+                : { bbox: [], polygon: pts.map((p) => p.map(Math.round)), removeBackground: removeBg },
+            )
+          }
+        >
           Ausschneiden
         </button>
       </div>

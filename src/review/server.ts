@@ -66,9 +66,9 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   const clearImgWarnings = (o: ExtractedOffer, w: string[]) => (o.warnings = o.warnings.filter((x) => !x.startsWith('Bild:')).concat(w.map((x) => `Bild: ${x}`)));
 
   /** Freistellen einer Datei (ganzes Bild) oder eines Prospekt-Ausschnitts nach images/<id>.png */
-  async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = []) {
+  async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = [], extra: { keep?: boolean; polygon?: number[][] } = {}) {
     const out = join(jobDir, 'images', `${o.id}.png`);
-    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase }]);
+    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase, ...extra }]);
     const r = JSON.parse(line) as { ok: boolean; width?: number; warnings: string[] };
     if (!r.width) throw new Error(`Freistellen fehlgeschlagen: ${r.warnings.join('; ')}`);
     return { out, warnings: r.warnings };
@@ -154,8 +154,16 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
       }
 
       if (action === 'crop') {
-        const { bbox } = JSON.parse((await readBody(req)).toString('utf8')) as { bbox: number[] };
-        const r = await cutout(o, join(jobDir, o.pageFile), bbox, o.priceTagBbox ? [o.priceTagBbox] : []);
+        // Standard: der gewählte Ausschnitt bleibt wie er ist (Rechteck oder Pen-Form);
+        // nur auf Wunsch wird zusätzlich der Hintergrund entfernt.
+        const body = JSON.parse((await readBody(req)).toString('utf8')) as { bbox: number[]; polygon?: number[][]; removeBackground?: boolean };
+        const polygon = body.polygon && body.polygon.length >= 3 ? body.polygon : undefined;
+        const bbox = polygon
+          ? [Math.min(...polygon.map((p) => p[0])), Math.min(...polygon.map((p) => p[1])), Math.max(...polygon.map((p) => p[0])), Math.max(...polygon.map((p) => p[1]))]
+          : body.bbox;
+        const r = body.removeBackground
+          ? await cutout(o, join(jobDir, o.pageFile), bbox, o.priceTagBbox ? [o.priceTagBbox] : [])
+          : await cutout(o, join(jobDir, o.pageFile), bbox, [], { keep: true, polygon });
         o.bbox = bbox.map(Math.round) as ExtractedOffer['bbox'];
         await adoptImage(o, jobDir, r.out, await library(), { type: 'prospekt' });
         clearImgWarnings(o, r.warnings);
