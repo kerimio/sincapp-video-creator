@@ -25,6 +25,9 @@ const COPY = {
   },
 } as const;
 
+/** Button ohne Imperativ (Design System) */
+const BRAND_BTN = { de: 'Kostenlos', tr: 'Ücretsiz' } as const;
+
 interface PageTheme {
   bg: string;
   mode: PageMode;
@@ -280,7 +283,7 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
     ? fitSize(name, 820, { ...nameStyle, size: P.bigName })
     : fitSize(name, textW, { ...nameStyle, size: Math.min(P.nameMax, Math.round(textW / (maxLen * 0.72))) });
   const imgBase: CSSProperties = { objectFit: 'contain', mixBlendMode: 'multiply', display: 'block' };
-  const note = o.note ? o.note[lang] : alt;
+  const note = o.note ? o.note[lang] : D.preset === 'marke' ? '' : alt;
   const card: CSSProperties = { position: 'absolute', inset: 0, background: '#fff', borderRadius: 40, border: '2px solid rgba(41,32,25,.08)', boxShadow: theme.shadow, boxSizing: 'border-box', overflow: 'hidden' };
   const nameLines = (lh: number) => (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -520,7 +523,7 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
             ))}
           </div>
           <div style={abs({ left: (W - Cta.btnW) / 2, top: btnTop, width: Cta.btnW, height: Cta.btnH, transform: `scale(${btnPop * pulse})`, transformOrigin: '50% 50%', borderRadius: 999, background: c.accent, boxShadow: `0 12px 28px ${rgba(c.accent, 0.32)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 22 })}>
-            <span style={{ fontSize: Cta.btnFont, fontWeight: 800, letterSpacing: '.12em', color: btnTx, textTransform: 'uppercase' }}>{L.btn}</span>
+            <span style={{ fontSize: Cta.btnFont, fontWeight: 800, letterSpacing: '.12em', color: btnTx, textTransform: 'uppercase' }}>{d.preset === 'marke' ? BRAND_BTN[lang] : L.btn}</span>
             <img src={urls.asset('icons/arrow_right-white.svg')} alt="" style={{ width: 48, height: 48, display: 'block', ...(btnTx === '#ffffff' ? {} : { filter: 'invert(1)' }) }} />
           </div>
           <div style={abs({ left: 0, width: W, top: badgesTop, display: 'flex', justifyContent: 'center', gap: 24, opacity: ctaFade(0.6) })}>
@@ -576,7 +579,8 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
   const light = theme.mode !== 'light';
   const dates = formatDateRange(story.dates.from, story.dates.to);
   const name = o.name[lang];
-  const note = o.note ? o.note[lang] : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
+  // Vorlage "marke": eine Sprache pro Layout (Design System), sonst Name in der anderen Sprache
+  const note = o.note ? o.note[lang] : d.preset === 'marke' ? '' : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
   const square = format === 'quadrat';
   const cardTop = square ? 150 : 170;
   const cardBottom = square ? 190 : 230;
@@ -641,7 +645,8 @@ export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryP
   const R = REEL_COPY[lang];
   const dates = formatDateRange(story.dates.from, story.dates.to);
   const name = o.name[lang];
-  const note = o.note ? o.note[lang] : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
+  // Vorlage "marke": eine Sprache pro Layout (Design System), sonst Name in der anderen Sprache
+  const note = o.note ? o.note[lang] : d.preset === 'marke' ? '' : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
   const fs = fitSize(name, 800, { weight: 900, size: 84, tracking: -0.035, upper: true, lang });
   const topSize = fitSize([...R.top], 960, { weight: 900, size: 150, tracking: -0.045, upper: true, lang });
 

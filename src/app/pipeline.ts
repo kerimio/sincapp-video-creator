@@ -109,7 +109,8 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const { story, warnings } = buildStory(ex, marketRaw, usable, topic);
   // Gespeichertes Design des Markts übernehmen
   const design = await readMarketDesign(story.market.slug).catch(() => null);
-  if (design) story.design = Design.parse(design);
+  // ohne gespeichertes Design: die Vorlage nach dem sincapp Design System
+  story.design = Design.parse(design ?? { preset: 'marke' });
   await writeFile(join(jobDir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] }));

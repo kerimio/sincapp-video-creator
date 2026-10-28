@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Farbe als #RRGGBB');
 
-export const PRESETS = ['klassik', 'frisch', 'premium', 'knallig', 'minimal', 'blackweek', 'bayram', 'sommer'] as const;
+export const PRESETS = ['marke', 'klassik', 'frisch', 'premium', 'knallig', 'minimal', 'blackweek', 'bayram', 'sommer'] as const;
 export const BACKGROUNDS = ['logo', 'punkte', 'verlauf', 'sterne', 'streifen', 'ohne'] as const;
 export const PRICE_STYLES = ['etikett', 'kreis', 'flach'] as const;
 export const ENTERS = ['wischen', 'hoch', 'blende', 'pop'] as const;
@@ -66,6 +66,12 @@ export interface ResolvedDesign {
 type PresetDef = Omit<ResolvedDesign, 'preset' | 'qr' | 'qrLink'> & { label: string; hint: string };
 
 export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
+  marke: {
+    label: 'sincapp Marke',
+    hint: 'Genau nach dem Design System: Papier und Nuss, Rot und Amber nur als Akzent, eine Sprache pro Bild',
+    colors: { paper: '#FAF6F1', ink: '#292019', ink2: '#6E6259', accent: '#C24A18', accent2: '#E9A02A', pages: ['#FAF6F1', '#292019'] },
+    background: 'logo', price: 'etikett', enter: 'wischen', speed: 'normal', wobble: true, transition: 'kreis',
+  },
   klassik: {
     label: 'Klassik',
     hint: 'sincapp-Rot und Nussbraun, Karten wischen herein',
