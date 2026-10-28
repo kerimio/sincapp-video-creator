@@ -25,7 +25,7 @@ MIN_VOTES = 25  # so viele Merkmale müssen denselben Versatz zeigen
 
 
 def find_shift(rgba):
-    """Versatz zwischen zwei gleichen Packungen im Bild: (Mittel-Versatz, Affin-Abbildung Kopie 1 → Kopie 2) oder None."""
+    """Versatz (dx, dy) von der einen zur anderen gleichen Packung im Bild (dx ≥ 0), oder None."""
     h, w = rgba.shape[:2]
     sc = 600 / max(h, w)
     size = (max(1, round(w * sc)), max(1, round(h * sc)))
@@ -55,12 +55,7 @@ def find_shift(rgba):
     best = max(near, key=lambda n: n.sum())
     if best.sum() < MIN_VOTES:
         return None
-    s1, d1 = src[best] / sc, dst[best] / sc
-    affine, _ = cv2.estimateAffinePartial2D(s1.astype(np.float32), d1.astype(np.float32), method=cv2.RANSAC, ransacReprojThreshold=3)
-    if affine is None:
-        affine = np.float32([[1, 0, 0], [0, 1, 0]])
-        affine[:, 2] = (d1 - s1).mean(axis=0)
-    return (d1 - s1).mean(axis=0), affine
+    return vecs[best].mean(axis=0) / sc
 
 
 def boxes(w, h, dx, dy):
@@ -94,9 +89,8 @@ def sharpness(rgb, alpha, box):
     return float(np.percentile(local[m], 10)) if m.sum() > 50 else 0.0
 
 
-def single_copy(rgba, found):
-    """Vordere Packung ausschneiden; Reste der hinteren Packung an den Rändern weg."""
-    shift, affine = found
+def single_copy(rgba, shift):
+    """Vordere Packung ausschneiden; Reste der hinteren Packung am Rand weg."""
     rgb, alpha = rgba[..., :3], rgba[..., 3]
     h, w = alpha.shape
     dx, dy = int(round(shift[0])), int(round(shift[1]))
@@ -114,31 +108,26 @@ def single_copy(rgba, found):
     x0, y0, x1, y1 = front
     out = np.dstack([rgb, alpha])[y0:y1, x0:x1].copy()
     # Reststreifen der hinteren Packung: hinter der Packungskante (gerade Linie) abschneiden
-    out = cut_at_edge(out, "left" if b_front else "right")
-    return out
+    return cut_at_edge(out, "left" if b_front else "right")
 
 
 def cut_at_edge(rgba, side):
-    """Sucht im äußeren Fünftel der Seite eine durchgehende Kante und schneidet davor ab."""
-    img = rgba if side in ("left", "right") else rgba.transpose(1, 0, 2)
-    flip = side in ("right", "bottom")
-    if flip:
-        img = img[:, ::-1]
+    """Sucht im äußeren Fünftel der Seite ("left"/"right") eine durchgehende senkrechte
+    Kante (die Packungskante) und schneidet alles davor ab."""
+    flip = side == "right"
+    img = rgba[:, ::-1] if flip else rgba
     g = cv2.cvtColor(np.ascontiguousarray(img[..., :3]), cv2.COLOR_RGB2GRAY).astype(np.float32)
     gx = np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3))
     opaque = img[..., 3] > 200
     h, w = g.shape
     band = max(3, int(0.2 * w))
-    rows = np.maximum(opaque[:, :band].sum(axis=0), 1)
     share = ((gx[:, :band] > 60) & opaque[:, :band]).sum(axis=0) / max(1, opaque.any(axis=1).sum())
     share[:2] = 0
     c = int(np.argmax(share))
     if share[c] < 0.35:
         return rgba
     img = img[:, c + 1:]
-    if flip:
-        img = img[:, ::-1]
-    return np.ascontiguousarray(img if side in ("left", "right") else img.transpose(1, 0, 2))
+    return np.ascontiguousarray(img[:, ::-1] if flip else img)
 
 
 _SESSION = None
@@ -210,17 +199,14 @@ def run(job):
     if len(xs) == 0:
         return {"out": job["out"], "ok": False, "error": "leer"}
     rgba = rgba[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    # Nur eine Runde: Muster innerhalb einer Packung sind keine zweite Packung
     copies, shift = 1, None
-    for _ in range(1):  # eine Runde: Muster innerhalb einer Packung sind keine zweite Packung
-        found = find_shift(rgba)
-        if found is None or found[0][0] >= rgba.shape[1] - 8 or abs(found[0][1]) >= rgba.shape[0] - 8:
-            break
-        s = found[0]
-        shift = shift if shift is not None else [round(float(s[0]), 1), round(float(s[1]), 1)]
+    found = find_shift(rgba)
+    if found is not None and found[0] < rgba.shape[1] - 8 and abs(found[1]) < rgba.shape[0] - 8:
+        shift = [round(float(found[0]), 1), round(float(found[1]), 1)]
         rgba = single_copy(rgba, found)
-        copies += 1
-    if copies > 1:
         rgba[..., 3] = np.minimum(rgba[..., 3], salient_mask(rgba))
+        copies = 2
     w, h = trim_save(clean_edge(rgba), job["out"])
     return {"out": job["out"], "ok": True, "copies": copies, "shift": shift, "width": w, "height": h}
 

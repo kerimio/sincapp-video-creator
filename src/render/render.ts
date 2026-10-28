@@ -1,3 +1,4 @@
+// Story mit Playwright Bild für Bild rendern und mit ffmpeg zu MP4/PNG zusammensetzen.
 import { marketDirs } from '../firestore/firestore';
 import { chromium, type Browser } from 'playwright';
 import { spawn } from 'node:child_process';

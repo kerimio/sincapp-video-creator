@@ -5,7 +5,7 @@ import {
   BACKGROUNDS, ENTERS, PRESET_DEFS, PRESETS, PRICE_STYLES, QR_TARGETS, SPEEDS, TRANSITIONS, resolveDesign,
   type DesignInput, type Palette,
 } from '../../core/design';
-import { LAYOUTS, type Format } from '../../core/layout';
+import { FORMATS, LAYOUTS, type Format } from '../../core/layout';
 import { caption } from '../../core/captions';
 import { bannerSuggestions } from '../../core/badges';
 import type { ExportOptions, JobClient, RenderState } from './api';
@@ -409,7 +409,7 @@ export function ExportPanel(p: { story: Story; base: string; api: JobClient; ren
         ))}
       </div>
       <div className="card exportopts">
-        <div className="field"><span>Videos</span><div className="checks">{(['story', 'feed', 'quadrat'] as Format[]).map((f) => box('videos', f))}</div></div>
+        <div className="field"><span>Videos</span><div className="checks">{FORMATS.map((f) => box('videos', f))}</div></div>
         <div className="field"><span>Kurz-Reels (7 s) für die Top-Angebote – Reihenfolge wie im Schritt Angebote</span>
           <div className="chips">{[0, 1, 3, 5].map((n) => <button key={n} className={c.reels === n ? 'on' : ''} onClick={() => setC((x) => ({ ...x, reels: n }))}>{n === 0 ? 'keine' : `${n} Reel${n === 1 ? '' : 's'}`}</button>)}</div>
         </div>
@@ -429,7 +429,7 @@ export function ExportPanel(p: { story: Story; base: string; api: JobClient; ren
             ))}
           </div>
         )}
-        <div className="field"><span>Seiten als Bilder (Karussell)</span><div className="checks">{(['story', 'feed', 'quadrat'] as Format[]).map((f) => box('pageImages', f))}</div></div>
+        <div className="field"><span>Seiten als Bilder (Karussell)</span><div className="checks">{FORMATS.map((f) => box('pageImages', f))}</div></div>
         <div className="field"><span>Jedes Angebot einzeln als Bild</span><div className="checks">{box('offerImages', 'feed')}{box('offerImages', 'quadrat')}</div></div>
         <div className="field"><span>Sprachen</span><div className="checks">
           {(['de', 'tr'] as const).map((l) => <label className="check" key={l}><input type="checkbox" checked={c.langs.includes(l)} onChange={() => toggleLang(l)} /> {l === 'de' ? 'Deutsch' : 'Türkisch'}</label>)}

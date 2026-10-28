@@ -1,6 +1,6 @@
 import type { Lang, Story } from './schema';
 import { resolveDesign } from './design';
-import { formatDateRange, turkishLocative } from './format';
+import { formatDateRange, hashtag as tag, joinLines as lineName, turkishLocative, weekday } from './format';
 import { badgeText } from './badges';
 import { cityOf } from './captions';
 
@@ -30,13 +30,9 @@ export function qrTarget(story: Story, lang: Lang): { url: string; label: string
 
 // ---------- Datum ----------
 
-const WEEKDAY = {
-  de: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
-  tr: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
-};
 const day = (iso: string) => new Date(`${iso}T12:00:00Z`);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-export const weekday = (isoDate: string, lang: Lang) => WEEKDAY[lang][day(isoDate).getUTCDay()];
+export { weekday };
 /** "2026-10-29" → "29.10." */
 export const shortDate = (isoDate: string) => `${isoDate.slice(8, 10)}.${isoDate.slice(5, 7)}.`;
 /** Tage von a bis b (b − a), ganze Kalendertage */
@@ -108,9 +104,6 @@ export function planDir(d: PlanDay) {
   return `${String(d.n).padStart(2, '0')}-${wd}-${d.date.slice(8, 10)}-${d.date.slice(5, 7)}`;
 }
 
-const lineName = (lines: string[]) =>
-  lines.reduce((acc, l) => (!acc ? l : acc.endsWith('-') ? (/^\p{Lu}/u.test(l) ? acc + l : acc.slice(0, -1) + l.toLowerCase()) : `${acc} ${l}`), '');
-const tag = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss').replace(/ı/g, 'i').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
 
 /** Instagram-Text für ein einzelnes Angebot (Reel oder Bild des Tages). */
 export function offerCaption(story: Story, index: number, lang: Lang, opts: { countdown?: number | null } = {}): string {

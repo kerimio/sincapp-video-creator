@@ -738,7 +738,6 @@ export function CountdownView({ story, lang, T, logoSize, urls, daysLeft }: Omit
 
   const R = 250;
   const sw = 36;
-  const circ = 2 * Math.PI * R;
   const ring = (r: number, w: number, a: number, numSize: number, unitSize: number) => (
     <svg width={2 * (r + w)} height={2 * (r + w)} style={{ display: 'block', overflow: 'visible' }}>
       <circle cx={r + w} cy={r + w} r={r} fill="none" stroke={light ? 'rgba(255,255,255,.18)' : rgba(c.ink, 0.1)} strokeWidth={w} />

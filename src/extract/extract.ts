@@ -1,3 +1,4 @@
+// Prospekt lesen: Seiten vorbereiten, an die KI geben (gecacht), Preise gegenprüfen, extraction.json schreiben.
 import { readdir } from 'node:fs/promises';
 import { extname, join, relative } from 'node:path';
 import { runPython } from '../python';

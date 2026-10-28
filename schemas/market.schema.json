@@ -79,7 +79,6 @@
         "name",
         "slug",
         "logo",
-        "instagram",
         "addresses"
       ],
       "additionalProperties": false

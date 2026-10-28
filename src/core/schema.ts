@@ -1,3 +1,4 @@
+// zod-Schemas für story.json und Markt – die eine Datenquelle für Server, Template und UI (pnpm schemas erzeugt daraus schemas/*.json).
 import { z } from 'zod';
 import { Design } from './design';
 
@@ -93,7 +94,6 @@ export const Story = z
       ctx.addIssue({ code: 'custom', path: ['dates'], message: 'Startdatum liegt nach dem Enddatum' });
     }
   });
-export type StoryInput = z.input<typeof Story>;
 export type Story = z.infer<typeof Story>;
 
 export function parseStory(data: unknown): Story {

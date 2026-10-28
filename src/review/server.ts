@@ -1,3 +1,4 @@
+// Job-API (Story lesen/ändern, Bilder tauschen, Export) und Auslieferung der React-App.
 import { marketDirs, readMarketDesign, saveMarketDesign, saveOwnLogo } from '../firestore/firestore';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';

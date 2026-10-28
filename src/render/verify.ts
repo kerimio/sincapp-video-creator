@@ -1,3 +1,4 @@
+// Fertige Videos mit ffprobe prüfen (Länge, Auflösung, fps, Codec), damit kaputte Dateien nicht beim Nutzer landen.
 import { spawn } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import { ffmpegBin } from './render';

@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category } from '../extract/schema';
+import { priceValue } from './format';
 
 // Bausteine für den Produkt-Katalog: Warengruppen-Namen und Mengenangaben verstehen.
 
@@ -40,7 +41,7 @@ const UNITS: Record<string, { base: Size['base']; f: number }> = {
   st: { base: 'stk', f: 1 }, stk: { base: 'stk', f: 1 }, stück: { base: 'stk', f: 1 }, stck: { base: 'stk', f: 1 }, adet: { base: 'stk', f: 1 }, pck: { base: 'stk', f: 1 }, packung: { base: 'stk', f: 1 }, rolle: { base: 'stk', f: 1 }, rollen: { base: 'stk', f: 1 },
 };
 
-const num = (s: string) => Number(s.replace(',', '.'));
+const num = priceValue;
 
 /** Grundeinheit lesbar: 1500 g → "1,5 kg", 330 ml → "330 ml" */
 export function formatAmount(v: number, base: Size['base']): string {
@@ -86,11 +87,11 @@ export function unitPrice(price: string | null | undefined, size: Size | null): 
  * ältesten Vorkommen. Erst ab 4 Wochen Verlauf, sonst null.
  */
 export function bestPriceWeeks(price: string | null | undefined, seen: { price: string | null; from: string | null; job?: string }[] | undefined, from: string, job?: string): number | null {
-  const p = Number((price ?? '').replace(',', '.'));
+  const p = priceValue(price);
   if (!p || !seen?.length) return null;
   const before = seen.filter((s) => s.from && s.from < from && s.price && (!job || s.job !== job));
   if (!before.length) return null;
-  const min = Math.min(...before.map((s) => Number(s.price!.replace(',', '.'))).filter((x) => x > 0));
+  const min = Math.min(...before.map((s) => priceValue(s.price)).filter((x) => x > 0));
   if (!(p <= min)) return null;
   const oldest = before.map((s) => s.from!).sort()[0];
   const weeks = Math.floor((Date.parse(from) - Date.parse(oldest)) / (7 * 86_400_000));

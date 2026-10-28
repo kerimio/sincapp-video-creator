@@ -1,3 +1,4 @@
+// Fetch-Hilfen und Typen der Web-App für die Job-API.
 import type { Story } from '../../core/schema';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
 import type { RenderState } from '../server';

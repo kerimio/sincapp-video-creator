@@ -13,7 +13,6 @@ export const PRICE_STYLES = ['etikett', 'kreis', 'flach'] as const;
 export const ENTERS = ['wischen', 'hoch', 'blende', 'pop'] as const;
 export const SPEEDS = ['ruhig', 'normal', 'schnell'] as const;
 export const TRANSITIONS = ['kreis', 'schieben', 'blende'] as const;
-export const FORMATS = ['story', 'feed', 'quadrat'] as const;
 /** Ziel des QR-Codes am Schluss */
 export const QR_TARGETS = ['aus', 'route', 'instagram', 'link'] as const;
 

@@ -1,4 +1,6 @@
+// Sticker auf Angeboten (z. B. „Bester Preis seit 6 Wochen“) als Text in DE und TR.
 import type { BADGES, Lang } from './schema';
+import { weekday } from './format';
 
 export type Badge = (typeof BADGES)[number];
 
@@ -23,16 +25,10 @@ export function badgeText(o: { badge?: Badge; bestWeeks?: number }, lang: Lang):
   return BADGE_TEXT[o.badge][lang];
 }
 
-const WEEKDAY = {
-  de: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
-  tr: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
-};
-
 /** Vorschläge fürs Laufband; der erste nennt den letzten Gültigkeitstag. */
 export function bannerSuggestions(to: string): { de: string; tr: string }[] {
-  const d = new Date(`${to}T12:00:00Z`).getUTCDay();
   return [
-    { de: `Nur bis ${WEEKDAY.de[d]}!`, tr: `Sadece ${WEEKDAY.tr[d]} gününe kadar!` },
+    { de: `Nur bis ${weekday(to, 'de')}!`, tr: `Sadece ${weekday(to, 'tr')} gününe kadar!` },
     { de: 'Solange der Vorrat reicht', tr: 'Stoklarla sınırlı' },
     { de: 'Diese Woche günstig', tr: 'Bu hafta ucuz' },
     { de: 'Neue Woche – neue Angebote', tr: 'Yeni hafta – yeni fırsatlar' },

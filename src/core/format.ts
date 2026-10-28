@@ -26,3 +26,22 @@ export function turkishLocative(name: string): string {
 export function defaultEyebrow(marketName: string): Record<Lang, string> {
   return { de: `Jetzt bei ${marketName}`, tr: `Şimdi ${turkishLocative(marketName)}` };
 }
+
+const WEEKDAY: Record<Lang, string[]> = {
+  de: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
+  tr: ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'],
+};
+
+/** Wochentag eines Datums (YYYY-MM-DD), z. B. "Samstag" / "Cumartesi". */
+export const weekday = (isoDate: string, lang: Lang) => WEEKDAY[lang][new Date(`${isoDate}T12:00:00Z`).getUTCDay()];
+
+/** Namenszeilen fürs Template wieder zu einem Text: ["Knoblauch-", "wurst"] → "Knoblauchwurst". */
+export const joinLines = (lines: string[]) =>
+  lines.reduce((acc, l) => (!acc ? l : acc.endsWith('-') ? (/^\p{Lu}/u.test(l) ? acc + l : acc.slice(0, -1) + l.toLowerCase()) : `${acc} ${l}`), '');
+
+/** Hashtag-tauglich: ohne Akzente, Leer- und Sonderzeichen ("Saray Market" → "saraymarket"). */
+export const hashtag = (s: string) =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/ı/g, 'i').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+
+/** Preis als Zahl: "13,99" und "13.99" → 13.99; leer oder unlesbar → NaN. */
+export const priceValue = (p: string | null | undefined) => (p ? Number(p.replace(',', '.')) : NaN);

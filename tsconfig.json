@@ -11,7 +11,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node"],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src", "tools", "test", "vite.config.ts", "vite.review.config.ts", "vitest.config.ts"]
 }
