@@ -7,7 +7,9 @@ Auftrag:
   {"image": "seite-1.png", "out": "images/o1.png",
    "bbox": [x0, y0, x1, y1],          # Pixel im Seitenbild
    "erase": [[x0, y0, x1, y1], ...],  # Preisschilder u. ä., werden transparent
-   "pad": 0.06}
+   "pad": 0.06,
+   "keep": true,                      # Hintergrund behalten: nur ausschneiden
+   "polygon": [[x, y], ...]}          # optional mit keep: Form statt Rechteck (Pixel im Seitenbild)
 
 Ergebnis:
   {"out": ..., "ok": true, "width": .., "height": .., "edgeTransparent": 0.97,
@@ -192,9 +194,47 @@ def save_trimmed(rgba, out, extra):
     return dict(extra, out=out, width=img.width, height=img.height, coverage=round(float((rgba[..., 3] > 128).mean()), 4))
 
 
+def keep_cutout(job):
+    """Vom Nutzer gewählter Ausschnitt, Hintergrund bleibt. Rechteck mit leicht runden
+    Ecken oder – mit "polygon" – genau die umrandete Form (kantengeglättet)."""
+    from PIL import ImageDraw, ImageFilter
+
+    page = Image.open(job["image"]).convert("RGB")
+    W, H = page.size
+    poly = job.get("polygon")
+    if poly and len(poly) >= 3:
+        xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+        box = clamp_box([min(xs), min(ys), max(xs) + 1, max(ys) + 1], W, H)
+    else:
+        poly = None
+        box = clamp_box(job["bbox"], W, H)
+    if box[2] - box[0] < 12 or box[3] - box[1] < 12:
+        return {"out": job["out"], "ok": False, "warnings": ["Ausschnitt zu klein"]}
+    crop = page.crop(box)
+    w, h = crop.size
+    S = 4  # Supersampling für glatte Kanten
+    mask = Image.new("L", (w * S, h * S), 0)
+    d = ImageDraw.Draw(mask)
+    if poly:
+        d.polygon([((x - box[0]) * S, (y - box[1]) * S) for x, y in poly], fill=255)
+    else:
+        d.rounded_rectangle([0, 0, w * S - 1, h * S - 1], radius=max(2, round(min(w, h) * 0.03)) * S, fill=255)
+    mask = mask.resize((w, h), Image.LANCZOS)
+    if poly:
+        mask = mask.filter(ImageFilter.GaussianBlur(0.6))
+    rgba = np.dstack([np.array(crop, dtype=np.uint8), np.array(mask, dtype=np.uint8)])
+    res = save_trimmed(rgba, job["out"], {"ok": True, "model": "ausschnitt", "warnings": []})
+    if not res:
+        return {"out": job["out"], "ok": False, "warnings": ["leere Form"]}
+    res["cropBox"] = box
+    return res
+
+
 def process(job, sessions, cache):
     warnings = []
     path = job["image"]
+    if job.get("keep") and (job.get("bbox") or job.get("polygon")):
+        return keep_cutout(job)
     if job.get("bbox") is None:
         # Ganzes Bild (z. B. Produktfoto aus dem Internet). Ist es schon freigestellt, nur zuschneiden.
         src = Image.open(path)

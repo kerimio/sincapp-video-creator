@@ -4,7 +4,7 @@ import { call, jobClient } from './api';
 import { ReviewPage } from './App';
 
 // ---------- Typen der App-API ----------
-interface Run { running: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
+interface Run { running: boolean; auto?: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
 interface Job {
   id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string };
   inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
@@ -110,7 +110,7 @@ export function NewJob() {
   const [q, setQ] = useState('');
   const [marketId, setMarketId] = useState('');
   const [prospects, setProspects] = useState<FsProspect[] | null>(null);
-  const [prospectId, setProspectId] = useState('');
+  const [prospectIds, setProspectIds] = useState<string[]>([]);
   const [upload, setUpload] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [topic, setTopic] = useState('');
@@ -130,12 +130,12 @@ export function NewJob() {
 
   useEffect(() => {
     setProspects(null);
-    setProspectId('');
+    setProspectIds([]);
     if (!marketId) return;
     call<FsProspect[]>('GET', `/api/firestore/markets/${encodeURIComponent(marketId)}/prospects`).then((list) => {
       setProspects(list);
-      const cur = list.filter((x) => x.current);
-      if (cur.length === 1) setProspectId(cur[0].id);
+      // alle aktuellen Prospekte vorauswählen – die besten Angebote aus allen kommen ins Video
+      setProspectIds(list.filter((x) => x.current).map((x) => x.id));
       if (!list.length) setUpload(true);
     }, (e) => setErr(e.message));
   }, [marketId]);
@@ -152,19 +152,19 @@ export function NewJob() {
     .filter((m) => `${m.name} ${m.address ?? ''}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))
     .sort((a, b) => Number(b.current > 0) - Number(a.current > 0) || a.name.localeCompare(b.name, 'de'));
 
-  const start = async () => {
+  const start = async (auto = false) => {
     setErr('');
     try {
       setBusy(upload ? 'Job wird angelegt …' : 'Prospektseiten werden aus Firestore geladen …');
-      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectId: upload ? undefined : prospectId, topic: topic || null, count });
+      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectIds: upload ? [] : prospectIds, topic: topic || null, count });
       if (upload) {
         for (const [i, f] of files.entries()) {
           setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
           await call('POST', `/api/jobs/${job.id}/files?name=${encodeURIComponent(f.name)}`, undefined, f);
         }
       }
-      setBusy('Auslesen startet …');
-      await call('POST', `/api/jobs/${job.id}/process`);
+      setBusy(auto ? '✨ Es wird gezaubert …' : 'Auslesen startet …');
+      await call('POST', `/api/jobs/${job.id}/process`, { auto });
       go(`#/job/${job.id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -173,7 +173,9 @@ export function NewJob() {
   };
 
   const noKey = settings && !settings.ai;
-  const ready = !!marketId && (upload ? files.length > 0 : !!prospectId);
+  const ready = !!marketId && (upload ? files.length > 0 : prospectIds.length > 0);
+  const toggle = (id: string) => setProspectIds((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
+  const pagesChosen = (prospects ?? []).filter((x) => prospectIds.includes(x.id)).reduce((a, x) => a + x.pages, 0);
   return (
     <Shell>
       <Steps current={0} />
@@ -182,6 +184,11 @@ export function NewJob() {
           <div className="row">
             <h3 className="grow">1. Markt</h3>
             {fsMarkets && <input placeholder="Markt suchen …" value={q} onChange={(e) => setQ(e.target.value)} />}
+            {fsMarkets && (
+              <button className="ghost" title="Märkte und Prospekte neu aus Firestore laden (sonst alle 15 Minuten)" onClick={() => call<FsMarket[]>('GET', '/api/firestore/markets?fresh').then((m) => { setFsMarkets(m); const id = marketId; setMarketId(''); setTimeout(() => setMarketId(id), 0); }, (e) => setErr(e.message))}>
+                ↻
+              </button>
+            )}
           </div>
           {fsError && <div className="errors">Firestore ist gerade nicht erreichbar ({fsError}).</div>}
           {!fsMarkets && !fsError && <p className="muted">Lade Märkte aus Firestore …</p>}
@@ -200,7 +207,7 @@ export function NewJob() {
         {marketId && (
           <section className="card">
             <div className="row">
-              <h3 className="grow">2. Prospekt von {market?.name}</h3>
+              <h3 className="grow">2. Prospekte von {market?.name}</h3>
               <button className="ghost" onClick={() => setUpload(!upload)}>{upload ? 'Prospekt aus Firestore nehmen' : 'Eigene Dateien hochladen'}</button>
             </div>
             {!upload && (
@@ -209,7 +216,8 @@ export function NewJob() {
                 {prospects && !prospects.length && <p className="muted">Für diesen Markt ist kein Prospekt in Firestore.</p>}
                 <div className="prospects">
                   {prospects?.map((x) => (
-                    <button key={x.id} className={`prospect ${prospectId === x.id ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => setProspectId(x.id)}>
+                    <button key={x.id} className={`prospect ${prospectIds.includes(x.id) ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => toggle(x.id)}>
+                      <span className="tick">{prospectIds.includes(x.id) ? '✓' : ''}</span>
                       <img src={fsImg(x.thumb)} loading="lazy" />
                       <b>{x.title}</b>
                       <small>{formatDateRange(x.validFrom, x.validUntil)} · {x.pages} Seite{x.pages === 1 ? '' : 'n'}</small>
@@ -217,6 +225,12 @@ export function NewJob() {
                     </button>
                   ))}
                 </div>
+                {prospects && prospects.length > 1 && (
+                  <p className="muted small">
+                    Du kannst mehrere Prospekte wählen – die App nimmt automatisch die besten Angebote aus allen (große Angebote im Prospekt und deine Firestore-Produkte zuerst).
+                    {prospectIds.length > 0 && ` Ausgewählt: ${prospectIds.length} Prospekt${prospectIds.length === 1 ? '' : 'e'}, bis zu ${pagesChosen} Seiten; Seiten ohne Produkte und schon gelesene Seiten kosten nichts.`}
+                  </p>
+                )}
               </>
             )}
             {upload && (
@@ -268,6 +282,7 @@ export function NewJob() {
               </label>
             </div>
             <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>
+            <p className="muted small"><b>✨ Zaubern</b> erledigt alles in einem Rutsch: Prospekt lesen, beste Angebote wählen, Produktbilder freistellen und das komplette Paket erstellen (Story- und Feed-Video, 7-Tage-Plan mit Reels, Bildern und Texten, „Letzte Chance“-Videos). Es nutzt dein gespeichertes Design für den Markt. Danach kannst du trotzdem noch alles ändern und neu exportieren.</p>
           </section>
         )}
 
@@ -279,8 +294,11 @@ export function NewJob() {
         {err && <div className="errors">{err}</div>}
         <div className="row end">
           <button className="ghost" onClick={() => go('#/')}>Abbrechen</button>
-          <button className="primary big" disabled={!ready || !!busy || !!noKey} onClick={start}>
-            {busy || 'Weiter: Prospekt auslesen →'}
+          <button className="ghost big" disabled={!ready || !!busy || !!noKey} onClick={() => start(false)} title="Erst die Angebote prüfen, dann Design und Export wählen">
+            Angebote erst prüfen →
+          </button>
+          <button className="primary big magic" disabled={!ready || !!busy || !!noKey} onClick={() => start(true)} title="Liest den Prospekt, wählt die besten Angebote und erstellt das komplette Wochenpaket – ohne Zwischenschritte">
+            {busy || '✨ Zaubern: alles automatisch'}
           </button>
         </div>
       </div>
@@ -362,7 +380,11 @@ export function JobPage({ id }: { id: string }) {
             <>
               <div className="progressbar big"><div style={{ width: `${(f * 100).toFixed(1)}%` }} /></div>
               <p>{run.progress.message}</p>
-              <p className="muted small">Claude liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.</p>
+              <p className="muted small">
+                {run.auto
+                  ? '✨ Zauberknopf: Die KI liest die Seiten und prüft jeden Preis doppelt, dann entstehen Videos, Reels, Bilder und Texte. Das dauert etwa 10–20 Minuten – hol dir einen Kaffee, das Fenster kann offen bleiben.'
+                  : 'Die KI liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.'}
+              </p>
             </>
           ) : (
             <>
@@ -394,7 +416,7 @@ export function JobPage({ id }: { id: string }) {
   return (
     <>
       {run?.notes && run.notes.length > 0 && <Notes notes={run.notes} />}
-      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} />
+      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} initialTab={run?.auto && !run.error ? 'export' : 'angebote'} />
     </>
   );
 }
@@ -427,15 +449,15 @@ export function SettingsPage() {
     setMsg('Gespeichert. Die Keys liegen nur auf diesem Rechner (Datei .env).');
   };
   const rows: [KeyName, string, string][] = [
-    ['ANTHROPIC_API_KEY', 'Anthropic Claude', 'Liest die Prospekte und vergleicht Internet-Bilder mit dem Prospekt. Key unter console.anthropic.com anlegen.'],
-    ['GEMINI_API_KEY', 'Google Gemini', 'Alternative zu Claude – es reicht einer der beiden. Key unter aistudio.google.com anlegen.'],
-    ['BRAVE_API_KEY', 'Brave Search (empfohlen)', 'Bildersuche im Internet für saubere Produktfotos. Key unter api-dashboard.search.brave.com anlegen.'],
+    ['GEMINI_API_KEY', 'Google Gemini (empfohlen, am günstigsten)', 'Liest die Prospekte mit dem Flash-Modell und vergleicht Internet-Bilder mit dem Prospekt. Key unter aistudio.google.com anlegen.'],
+    ['ANTHROPIC_API_KEY', 'Anthropic Claude', 'Alternative zu Gemini – es reicht einer der beiden. Key unter console.anthropic.com anlegen.'],
+    ['BRAVE_API_KEY', 'Brave Search (optional)', 'Bildersuche im Internet für saubere Produktfotos. Jede Suche wird 30 Tage gemerkt, gleiche Produkte kosten nichts mehr. Key unter api-dashboard.search.brave.com anlegen.'],
     ['REMOVEBG_API_KEY', 'remove.bg (optional)', 'Nur als Ausweichlösung, wenn das lokale Freistellen nicht sauber klappt.'],
   ];
   return (
     <Shell active="set">
       <h1>Einstellungen</h1>
-      {s && <p className="muted">KI zum Auslesen: <b>{s.ai === 'claude' ? 'Anthropic Claude' : s.ai === 'gemini' ? 'Google Gemini' : 'noch keine – einen der beiden Keys eintragen'}</b>{s.ANTHROPIC_API_KEY && s.GEMINI_API_KEY ? ' (beide Keys da – Claude wird genommen)' : ''}</p>}
+      {s && <p className="muted">KI zum Auslesen: <b>{s.ai === 'claude' ? 'Anthropic Claude' : s.ai === 'gemini' ? 'Google Gemini' : 'noch keine – einen der beiden Keys eintragen'}</b>{s.ANTHROPIC_API_KEY && s.GEMINI_API_KEY ? ' (beide Keys da – Gemini wird genommen, weil es günstiger ist)' : ''}</p>}
       <div className="card settings">
         {rows.map(([k, label, help]) => (
           <div key={k} className="setting">
@@ -451,7 +473,39 @@ export function SettingsPage() {
           <button className="primary" onClick={save} disabled={!Object.values(vals).some((v) => v.trim())}>Speichern</button>
         </div>
       </div>
+      <Usage />
     </Shell>
+  );
+}
+
+interface UsageSum { month: string; calls: number; cachedCalls: number; input: number; output: number; thinking: number; byModel: Record<string, { calls: number; input: number; output: number; thinking: number }>; byTask: Record<string, number>; models: { read: string; check: string } | null }
+const TASK_LABEL: Record<string, string> = { seite: 'Seiten gelesen', preise: 'Preise gegengecheckt', bilder: 'Fotos verglichen' };
+const fmt = (n: number) => n.toLocaleString('de-DE');
+
+/** KI-Verbrauch dieses Monats – damit man sieht, was das Tool kostet. */
+function Usage() {
+  const [u, setU] = useState<UsageSum | null>(null);
+  useEffect(() => {
+    call<UsageSum>('GET', '/api/usage').then(setU, () => {});
+  }, []);
+  if (!u) return null;
+  const [y, m] = u.month.split('-');
+  return (
+    <>
+      <h2>KI-Verbrauch im {new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })}</h2>
+      <div className="card settings">
+        {u.models && <p className="muted small">Modelle: <b>{u.models.read}</b> liest die Seiten, <b>{u.models.check}</b> prüft Preise und Fotos (das günstigste).</p>}
+        <p>
+          <b>{fmt(u.calls)}</b> bezahlte KI-Aufrufe ({Object.entries(u.byTask).map(([k, n]) => `${fmt(n)} ${TASK_LABEL[k] ?? k}`).join(', ') || 'noch keine'}) ·{' '}
+          <b>{fmt(u.cachedCalls)}</b> aus dem Speicher (gratis)
+        </p>
+        <p className="muted small">Tokens: {fmt(u.input)} Eingabe · {fmt(u.output + u.thinking)} Ausgabe{u.thinking ? ` (davon ${fmt(u.thinking)} Nachdenken)` : ''}. Den genauen Betrag in Euro zeigt die Abrechnung bei Google bzw. Anthropic.</p>
+        {Object.keys(u.byModel).length > 1 && (
+          <ul className="small muted">{Object.entries(u.byModel).map(([k, v]) => <li key={k}>{k}: {fmt(v.calls)} Aufrufe, {fmt(v.input)} / {fmt(v.output + v.thinking)} Tokens</li>)}</ul>
+        )}
+        <p className="muted small">So bleibt es günstig: Jede Seite wird nur einmal bezahlt, Seiten ohne Produkte werden übersprungen, der Export (Videos, Bilder, Texte) kostet keine KI.</p>
+      </div>
+    </>
   );
 }
 

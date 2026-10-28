@@ -1,13 +1,20 @@
-import { GoogleGenAI, createPartFromBase64, type Part } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, createPartFromBase64, type Part } from '@google/genai';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { z } from 'zod/v4';
 import { PAGE_PROMPT, PRICE_PROMPT, type PageReader } from '../extract/claude';
 import { PageOffer, PageResult, PriceCheck } from '../extract/schema';
 import { MATCH_PROMPT, MatchResult, type ProductMatcher } from '../images/match';
+import { logUsage } from './usage';
 
-/** Modell änderbar mit GEMINI_MODEL, z. B. gemini-3.8-flash (schneller, günstiger). */
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-4-argon';
+/**
+ * Modell fürs Lesen der Seiten. Standard ist das günstige Flash-Modell (der Preis-Gegencheck
+ * fängt Lesefehler ab); für schwierige Prospekte GEMINI_MODEL=gemini-4-argon setzen.
+ */
+export const geminiModel = () => process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+export const GEMINI_MODEL = geminiModel();
+/** Günstigeres Modell für einfache Aufgaben: Preisschilder gegenlesen, Produktfotos vergleichen. */
+export const geminiCheckModel = () => process.env.GEMINI_CHECK_MODEL || 'gemini-3.8-flash';
 
 async function imagePart(file: string): Promise<Part> {
   const ext = extname(file).toLowerCase();
@@ -23,15 +30,28 @@ export class GeminiClient {
     this.ai = new GoogleGenAI({ apiKey, httpOptions: baseUrl ? { baseUrl } : undefined });
   }
 
-  async json<S extends z.ZodType>(schema: S, parts: Part[]): Promise<z.infer<S>> {
+  /**
+   * Kosten sparen: wenig "Nachdenken" (Denk-Tokens kosten wie Ausgabe), und bei kaputter Antwort
+   * nur einmal neu fragen. Überlast (429/503, wird nicht berechnet) darf öfter wiederholt werden.
+   */
+  async json<S extends z.ZodType>(schema: S, parts: Part[], model = geminiModel(), opts: { task?: string; thinking?: ThinkingLevel } = {}): Promise<z.infer<S>> {
     let last: Error | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let thinking: ThinkingLevel | undefined = opts.thinking ?? ThinkingLevel.LOW;
+    let paidRetries = 0;
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const res = await this.ai.models.generateContent({
-          model: GEMINI_MODEL,
+          model,
           contents: [{ role: 'user', parts }],
-          config: { responseMimeType: 'application/json', responseJsonSchema: z.toJSONSchema(schema, { target: 'draft-2020-12' }), maxOutputTokens: 32000 },
+          config: {
+            responseMimeType: 'application/json',
+            responseJsonSchema: z.toJSONSchema(schema, { target: 'draft-2020-12' }),
+            maxOutputTokens: 32000,
+            ...(thinking ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
+          },
         });
+        const u = res.usageMetadata;
+        await logUsage({ model, task: opts.task ?? 'ki', input: u?.promptTokenCount ?? 0, output: u?.candidatesTokenCount ?? 0, thinking: u?.thoughtsTokenCount ?? 0 });
         const reason = res.candidates?.[0]?.finishReason;
         if (reason === 'MAX_TOKENS') throw new Error('Antwort abgeschnitten (MAX_TOKENS).');
         if (reason && reason !== 'STOP') throw new Error(`Gemini hat abgebrochen (${reason}).`);
@@ -40,8 +60,15 @@ export class GeminiClient {
         return schema.parse(JSON.parse(text));
       } catch (e) {
         last = e as Error;
-        // nur bei Überlast/Netz/kaputtem JSON nochmal versuchen
-        if (!/429|500|503|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed|JSON|Expected|Invalid/i.test(last.message)) break;
+        const msg = last.message;
+        // Modell kennt die Denk-Einstellung nicht (400, kostet nichts) → ohne sie noch einmal
+        if (thinking && /thinking/i.test(msg) && /400|INVALID_ARGUMENT/i.test(msg)) {
+          thinking = undefined;
+          continue;
+        }
+        const transient = /429|500|503|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed/i.test(msg);
+        const broken = /JSON|Expected|Invalid|abgeschnitten|keine Antwort/i.test(msg);
+        if (!transient && !(broken && paidRetries++ < 1)) break;
         await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
       }
     }
@@ -72,14 +99,14 @@ export function toPixels(b: number[], size: { width: number; height: number }): 
 }
 
 export class GeminiReader implements PageReader {
-  name = GEMINI_MODEL;
+  name = geminiModel();
   private client: GeminiClient;
   constructor(apiKey?: string, baseUrl?: string) {
     this.client = new GeminiClient(apiKey, baseUrl);
   }
 
   async readPage(file: string, size: { width: number; height: number }) {
-    const r = await this.client.json(GeminiPage, [await imagePart(file), { text: `${PAGE_PROMPT(size.width, size.height)}\n\n${BOX_NOTE}` }]);
+    const r = await this.client.json(GeminiPage, [await imagePart(file), { text: `${PAGE_PROMPT(size.width, size.height)}\n\n${BOX_NOTE}` }], geminiModel(), { task: 'seite' });
     return PageResult.parse({
       ...r,
       offers: r.offers.map((o) => ({ ...o, bbox: toPixels(o.bbox, size), price_tag_bbox: o.price_tag_bbox ? toPixels(o.price_tag_bbox, size) : null })),
@@ -91,7 +118,7 @@ export class GeminiReader implements PageReader {
     const parts: Part[] = [];
     for (const [i, c] of crops.entries()) parts.push({ text: `Ausschnitt ${i + 1}:` }, await imagePart(c));
     parts.push({ text: `${PRICE_PROMPT} Nummeriere die Ausschnitte mit id 1 bis ${crops.length}.` });
-    const out = await this.client.json(PriceCheck, parts);
+    const out = await this.client.json(PriceCheck, parts, geminiCheckModel(), { task: 'preise', thinking: ThinkingLevel.MINIMAL });
     const byId = new Map(out.prices.map((p) => [p.id, p.price]));
     return crops.map((_, i) => byId.get(i + 1) ?? null);
   }
@@ -108,7 +135,7 @@ export class GeminiMatcher implements ProductMatcher {
     const parts: Part[] = [{ text: 'Bild 0 (Prospekt):' }, await imagePart(prospektCrop)];
     for (const [i, c] of candidates.entries()) parts.push({ text: `Bild ${i + 1}:` }, await imagePart(c));
     parts.push({ text: MATCH_PROMPT(product, candidates.length) });
-    const out = await this.client.json(MatchResult, parts);
+    const out = await this.client.json(MatchResult, parts, geminiCheckModel(), { task: 'bilder', thinking: ThinkingLevel.MINIMAL });
     const byId = new Map(out.candidates.map((c) => [c.id, c]));
     return candidates.map((_, i) => byId.get(i + 1) ?? { id: i + 1, same_product: false, same_variant: false, clean_shot: false, note: 'keine Bewertung' });
   }

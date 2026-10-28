@@ -1,9 +1,10 @@
-import { marketDirs } from '../firestore/firestore';
+import { marketDirs, readMarketDesign, saveMarketDesign, saveOwnLogo } from '../firestore/firestore';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { parseStory } from '../core/schema';
+import { Design } from '../core/design';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
 import { adoptImage, resolveImages } from '../images/resolve';
 import { downloadImage, providersFromEnv, searchAll, searchQuery } from '../images/search';
@@ -11,8 +12,8 @@ import { aiProvider, makeMatcher } from '../ai/provider';
 import { Library } from '../library/library';
 import { ROOT } from '../paths';
 import { runPython } from '../python';
-import { renderStory } from '../render/render';
-import { verifyVideo } from '../render/verify';
+import { exportJob, type ExportOptions, type ExportResult } from '../render/export';
+import { LAYOUTS, type Format } from '../core/layout';
 import { startStaticServer } from '../server/static';
 import { offerToStory } from '../select/select';
 
@@ -37,12 +38,8 @@ export interface RenderState {
   fraction: number;
   message: string;
   error?: string;
-  result?: {
-    seconds: number;
-    videos: Record<string, string>;
-    poster: string | null;
-    checks: { file: string; ok: boolean; problems: string[]; sizeMB: number; duration: number }[];
-  };
+  /** letzter Export, Pfade als URLs */
+  result?: ExportResult & { urlBase: string };
 }
 
 /**
@@ -66,42 +63,30 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   const clearImgWarnings = (o: ExtractedOffer, w: string[]) => (o.warnings = o.warnings.filter((x) => !x.startsWith('Bild:')).concat(w.map((x) => `Bild: ${x}`)));
 
   /** Freistellen einer Datei (ganzes Bild) oder eines Prospekt-Ausschnitts nach images/<id>.png */
-  async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = []) {
+  async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = [], extra: { keep?: boolean; polygon?: number[][] } = {}) {
     const out = join(jobDir, 'images', `${o.id}.png`);
-    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase }]);
+    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase, ...extra }]);
     const r = JSON.parse(line) as { ok: boolean; width?: number; warnings: string[] };
     if (!r.width) throw new Error(`Freistellen fehlgeschlagen: ${r.warnings.join('; ')}`);
     return { out, warnings: r.warnings };
   }
 
-  async function startRender() {
-    const story = parseStory(JSON.parse(await readFile(storyFile, 'utf8')));
-    Object.assign(render, { running: true, fraction: 0, message: 'Video wird vorbereitet …', error: undefined, result: undefined });
-    const langs = story.lang;
-    let langIdx = 0;
-    (async () => {
+  const exportFile = join(jobDir, 'output', 'export.json');
+  const lastExport = async (): Promise<RenderState['result'] | undefined> =>
+    existsSync(exportFile) ? { ...(JSON.parse(await readFile(exportFile, 'utf8')) as ExportResult), urlBase } : undefined;
+
+  /** Startet den Export im Hintergrund; das Promise endet, wenn er fertig ist (Fehler stehen in `render.error`). */
+  function startRender(opts: ExportOptions, onProgress: (fraction: number, message: string) => void = () => {}): Promise<void> {
+    Object.assign(render, { running: true, fraction: 0, message: 'Wird vorbereitet …', error: undefined, result: undefined });
+    return (async () => {
       try {
-        const r = await renderStory({
-          jobDir,
-          outDir: join(jobDir, 'output'),
-          langs,
-          log: (m) => {
-            log(m);
-            const start = m.match(/^(\w+): (\d+) Frames/);
-            if (start) langIdx = langs.indexOf(start[1] as never);
-            const prog = m.match(/^(\w+): (\d+)\/(\d+)/);
-            const per = prog ? Number(prog[2]) / Number(prog[3]) : start ? 0 : 0.97;
-            render.fraction = Math.min(0.99, (langIdx + per) / langs.length);
-            render.message = `${langs[langIdx]?.toUpperCase()}-Video: ${Math.round(per * 100)} %`;
-          },
+        const r = await exportJob(jobDir, opts, (fraction, message) => {
+          log(message);
+          Object.assign(render, { fraction, message });
+          onProgress(fraction, message);
         });
-        const checks = await Promise.all(Object.values(r.videos).map((f) => verifyVideo(f, r.duration)));
-        render.result = {
-          seconds: r.seconds,
-          videos: Object.fromEntries(Object.entries(r.videos).map(([k, v]) => [k, `${urlBase}${relative(jobDir, v)}`])),
-          poster: r.poster ? `${urlBase}${relative(jobDir, r.poster)}` : null,
-          checks: checks.map((c) => ({ file: relative(jobDir, c.file), ok: c.ok, problems: c.problems, sizeMB: c.info.sizeMB, duration: c.info.duration })),
-        };
+        await writeFile(exportFile, JSON.stringify(r, null, 2) + '\n');
+        render.result = { ...r, urlBase };
         Object.assign(render, { fraction: 1, message: 'Fertig' });
       } catch (e) {
         render.error = (e as Error).message;
@@ -112,7 +97,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   }
 
   /** Bearbeitet `sub` (Pfad nach dem API-Präfix, z. B. "state", "offer/s1-1/crop"). */
-  return async function handle(method: string, sub: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  const handle = async function handle(method: string, sub: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const m = sub.match(/^offer\/([\w-]+)\/(\w+)$/);
 
     if (method === 'GET' && sub === 'state') {
@@ -121,7 +106,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
         extraction: await readEx(),
         search: { brave: !!process.env.BRAVE_API_KEY, matcher: !!aiProvider() },
         urlBase,
-        render: { ...render },
+        render: { ...render, result: render.result ?? (render.running ? undefined : await lastExport()) },
         videos: existsSync(join(jobDir, 'output/story-de.mp4')) || existsSync(join(jobDir, 'output/story-tr.mp4')),
       });
     }
@@ -132,6 +117,27 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
       const story = parseStory(data);
       await writeFile(storyFile, JSON.stringify(story, null, 2) + '\n');
       return sendJson(res, { ok: true, story });
+    }
+
+    if (sub === 'market-design') {
+      const story = parseStory(JSON.parse(await readFile(storyFile, 'utf8')));
+      if (method === 'GET') return sendJson(res, { design: await readMarketDesign(story.market.slug) });
+      if (method === 'PUT') {
+        const design = Design.parse(JSON.parse((await readBody(req)).toString('utf8')));
+        await saveMarketDesign(story.market.slug, design);
+        return sendJson(res, { ok: true, design });
+      }
+    }
+
+    if (method === 'POST' && sub === 'market-logo') {
+      const buf = await readBody(req, 10 * 1024 * 1024);
+      if (!(buf[0] === 0x89 || (buf[0] === 0xff && buf[1] === 0xd8))) return sendJson(res, { error: 'Bitte ein PNG- oder JPG-Bild hochladen' }, 400);
+      const data = JSON.parse(await readFile(storyFile, 'utf8'));
+      data.market.logo = await saveOwnLogo(data.market.slug, buf);
+      delete data.market.logoCrop;
+      const story = parseStory(data);
+      await writeFile(storyFile, JSON.stringify(story, null, 2) + '\n');
+      return sendJson(res, { story });
     }
 
     if (method === 'POST' && m) {
@@ -154,8 +160,16 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
       }
 
       if (action === 'crop') {
-        const { bbox } = JSON.parse((await readBody(req)).toString('utf8')) as { bbox: number[] };
-        const r = await cutout(o, join(jobDir, o.pageFile), bbox, o.priceTagBbox ? [o.priceTagBbox] : []);
+        // Standard: der gewählte Ausschnitt bleibt wie er ist (Rechteck oder Pen-Form);
+        // nur auf Wunsch wird zusätzlich der Hintergrund entfernt.
+        const body = JSON.parse((await readBody(req)).toString('utf8')) as { bbox: number[]; polygon?: number[][]; removeBackground?: boolean };
+        const polygon = body.polygon && body.polygon.length >= 3 ? body.polygon : undefined;
+        const bbox = polygon
+          ? [Math.min(...polygon.map((p) => p[0])), Math.min(...polygon.map((p) => p[1])), Math.max(...polygon.map((p) => p[0])), Math.max(...polygon.map((p) => p[1]))]
+          : body.bbox;
+        const r = body.removeBackground
+          ? await cutout(o, join(jobDir, o.pageFile), bbox, o.priceTagBbox ? [o.priceTagBbox] : [])
+          : await cutout(o, join(jobDir, o.pageFile), bbox, [], { keep: true, polygon });
         o.bbox = bbox.map(Math.round) as ExtractedOffer['bbox'];
         await adoptImage(o, jobDir, r.out, await library(), { type: 'prospekt' });
         clearImgWarnings(o, r.warnings);
@@ -211,14 +225,29 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
     if (sub === 'render') {
       if (method === 'GET') return sendJson(res, render);
       if (method === 'POST') {
-        if (render.running) return sendJson(res, { error: 'Das Video wird schon erstellt' }, 409);
-        await startRender();
+        if (render.running) return sendJson(res, { error: 'Der Export läuft schon' }, 409);
+        const body = (await readBody(req)).toString('utf8');
+        const o = (body ? JSON.parse(body) : {}) as Partial<ExportOptions>;
+        const fmts = (x: unknown) => (Array.isArray(x) ? x.filter((f): f is Format => f in LAYOUTS) : []);
+        const opts: ExportOptions = {
+          videos: o.videos ? fmts(o.videos) : ['story'],
+          pageImages: fmts(o.pageImages),
+          offerImages: fmts(o.offerImages),
+          langs: Array.isArray(o.langs) && o.langs.length ? o.langs.filter((l) => l === 'de' || l === 'tr') : undefined,
+          captions: o.captions !== false,
+          reels: typeof o.reels === 'number' ? Math.max(0, Math.min(15, Math.floor(o.reels))) : 0,
+          countdown: o.countdown === true,
+          plan: o.plan === true,
+        };
+        if (!opts.videos.length && !opts.reels && !opts.pageImages.length && !opts.offerImages.length && !opts.captions && !opts.countdown && !opts.plan) return sendJson(res, { error: 'Bitte mindestens etwas zum Exportieren auswählen' }, 400);
+        void startRender(opts);
         return sendJson(res, render, 202);
       }
     }
 
     return false;
   };
+  return Object.assign(handle, { startRender, render });
 }
 
 /** Review-Server für einen einzelnen Job (`sincapp-story review <job>`). */

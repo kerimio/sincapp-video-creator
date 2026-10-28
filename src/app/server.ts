@@ -1,16 +1,19 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { cacheMarket, listMarkets, listProspects, marketDirs, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { cacheMarket, listMarkets, listProspects, marketDirs, marketsCacheDir, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
-import { aiProvider, NO_AI_KEY } from '../ai/provider';
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
+import { aiProvider, currentModels, NO_AI_KEY } from '../ai/provider';
+import { usageSummary } from '../ai/usage';
 import { Library, libraryDir } from '../library/library';
 import { ROOT } from '../paths';
 import { readBody, sendJson, jobApi } from '../review/server';
 import { startStaticServer } from '../server/static';
 import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summarize } from './jobs';
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
+import { MAGIC_PACK } from '../core/packs';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
 const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
@@ -18,6 +21,8 @@ const SAMPLES = join(ROOT, 'reference/samples/saray-2026-10-28');
 
 interface Run {
   running: boolean;
+  /** Zauberknopf: nach dem Auslesen direkt alles exportieren */
+  auto?: boolean;
   progress: Progress;
   error?: string;
   notes?: string[];
@@ -47,14 +52,26 @@ export function appVersion() {
 
 export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch) {
   const runs = new Map<string, Run>();
-  // Firestore-Listen kurz zwischenspeichern, damit Klicken im Assistenten nicht jedes Mal lädt
-  let fsCache: { at: number; markets: FsMarket[]; prospects: FsProspect[] } | null = null;
+  // Firestore kostet pro gelesenem Dokument: Listen zwischenspeichern (auch über Neustarts),
+  // Märkte 6 h, Prospekte 15 min; nur Prospekte der letzten 3 Wochen lesen. "Neu laden" holt sofort frisch.
+  const listFile = join(marketsCacheDir(), 'firestore-listen.json');
+  let fsCache: { marketsAt: number; prospectsAt: number; markets: FsMarket[]; prospects: FsProspect[] } | null = null;
   const firestore = async (fresh = false) => {
-    if (!fsCache || fresh || Date.now() - fsCache.at > 60_000) {
-      const [markets, prospects] = await Promise.all([listMarkets(fetchImpl), listProspects(fetchImpl)]);
-      fsCache = { at: Date.now(), markets, prospects };
+    if (!fsCache && existsSync(listFile)) fsCache = JSON.parse(await readFile(listFile, 'utf8').catch(() => 'null'));
+    const now = Date.now();
+    const oldMarkets = !fsCache || fresh || now - fsCache.marketsAt > 6 * 3600_000;
+    const oldProspects = !fsCache || fresh || now - fsCache.prospectsAt > 15 * 60_000;
+    if (oldMarkets || oldProspects) {
+      const since = todayBerlin(new Date(now - 21 * 86_400_000));
+      const [markets, prospects] = await Promise.all([
+        oldMarkets ? listMarkets(fetchImpl) : fsCache!.markets,
+        oldProspects ? listProspects(fetchImpl, since) : fsCache!.prospects,
+      ]);
+      fsCache = { marketsAt: oldMarkets ? now : fsCache!.marketsAt, prospectsAt: oldProspects ? now : fsCache!.prospectsAt, markets, prospects };
+      await mkdir(dirname(listFile), { recursive: true });
+      await writeFile(listFile, JSON.stringify(fsCache));
     }
-    return fsCache;
+    return fsCache!;
   };
   const apis = new Map<string, ReturnType<typeof jobApi>>();
   const apiFor = (id: string) => {
@@ -63,11 +80,20 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     return a;
   };
 
-  function process_(id: string, settings: JobSettings) {
-    const run: Run = { running: true, progress: { step: 'extract', message: 'Startet …', fraction: 0 } };
+  function process_(id: string, settings: JobSettings, auto = false) {
+    const run: Run = { running: true, auto, progress: { step: 'extract', message: 'Startet …', fraction: 0 } };
     runs.set(id, run);
-    prepareStory(jobPath(id), settings, (p) => (run.progress = p))
-      .then((r) => (run.notes = r.notes))
+    // Beim Zauberknopf zählt das Auslesen bis 50 %, der Export die zweite Hälfte.
+    const k = auto ? 0.5 : 1;
+    (async () => {
+      const r = await prepareStory(jobPath(id), settings, (p) => (run.progress = { ...p, fraction: p.fraction * k }));
+      run.notes = r.notes;
+      if (!auto) return;
+      const api = apiFor(id);
+      run.progress = { step: 'render', message: 'Videos, Reels und Bilder werden erstellt …', fraction: 0.5 };
+      await api.startRender({ ...MAGIC_PACK, langs: r.story.lang }, (f, m) => (run.progress = { step: 'render', message: m, fraction: 0.5 + f * 0.5 }));
+      if (api.render.error) throw new Error(`Export: ${api.render.error}`);
+    })()
       .catch((e) => (run.error = (e as Error).message))
       .finally(() => (run.running = false));
   }
@@ -109,9 +135,18 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       // Logos/Seitenvorschauen über den eigenen Server laden (nur Firebase Storage)
       const src = new URL(url.searchParams.get('url') ?? '', 'http://x');
       if (src.protocol !== 'https:' || src.hostname !== 'firebasestorage.googleapis.com') return sendJson(res, { error: 'Nur Firebase-Storage-Bilder' }, 400);
+      // auf der Platte merken: jedes Vorschaubild wird nur einmal aus dem Storage geladen
+      const cached = join(marketsCacheDir(), 'vorschau', createHash('sha256').update(src.href).digest('hex').slice(0, 32));
+      if (existsSync(cached)) {
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'max-age=604800' }).end(await readFile(cached));
+        return true;
+      }
       const r = await fetchImpl(src.href, { signal: AbortSignal.timeout(20000) });
       if (!r.ok) return sendJson(res, { error: `HTTP ${r.status}` }, 502);
-      res.writeHead(200, { 'content-type': r.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'max-age=86400' }).end(Buffer.from(await r.arrayBuffer()));
+      const buf = Buffer.from(await r.arrayBuffer());
+      await mkdir(dirname(cached), { recursive: true });
+      await writeFile(cached, buf);
+      res.writeHead(200, { 'content-type': r.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'max-age=604800' }).end(buf);
       return true;
     }
     const fsm = p.match(/^\/api\/firestore\/markets\/([^/]+)\/prospects$/);
@@ -126,33 +161,51 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       return sendJson(res, [...current, ...past].map((x) => ({ id: x.id, title: x.title, validFrom: x.validFrom, validUntil: x.validUntil, pages: x.imageUrls.length, thumb: x.thumbnailUrls[0] ?? x.imageUrls[0], current: x.validUntil >= today })));
     }
     if (method === 'POST' && p === '/api/jobs/from-firestore') {
-      // ohne prospectId: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch
-      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; topic?: string | null; count?: number };
-      const { markets, prospects } = await firestore();
+      // ohne Prospekt: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch.
+      // Mehrere Prospekte desselben Markts werden zusammen gelesen; die besten Angebote kommen in die Story.
+      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; prospectIds?: string[]; topic?: string | null; count?: number };
+      let { markets, prospects } = await firestore();
+      const known = (id: string) => prospects.some((x) => x.id === id);
+      // gerade erst in Firestore angelegt? Dann einmal frisch laden
+      if (!markets.some((x) => x.id === b.marketId) || [...(b.prospectIds ?? []), ...(b.prospectId ? [b.prospectId] : [])].some((id) => !known(id))) ({ markets, prospects } = await firestore(true));
       const m = markets.find((x) => x.id === b.marketId);
-      const pr = b.prospectId ? prospects.find((x) => x.id === b.prospectId) : undefined;
-      if (!m || (b.prospectId && !pr)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const ids = [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])];
+      const prs = ids.map((id) => prospects.find((x) => x.id === id));
+      if (!m || prs.some((x) => !x)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const chosen = prs as FsProspect[];
       const market = await cacheMarket(m, fetchImpl);
-      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, pr ? `${m.name} – ${pr.title}` : m.name);
-      if (!pr) return sendJson(res, meta, 201);
-      meta.source = { firestoreProspect: pr.id, marketId: m.id };
+      const title = chosen.length ? `${m.name} – ${chosen.map((x) => x.title).join(' + ')}` : m.name;
+      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, title);
+      if (!chosen.length) return sendJson(res, meta, 201);
+      meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: m.id };
       await saveJob(meta);
-      // Seiten in Reihenfolge laden (1200 px aus dem Admin-Tool)
+      // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind
       const dir = jobPath(meta.id);
+      const skipped: string[] = [];
       await Promise.all(
-        pr.imageUrls.map(async (u, i) => {
-          const r = await fetchImpl(u, { signal: AbortSignal.timeout(30000) });
-          if (!r.ok) throw new Error(`Seite ${i + 1} nicht ladbar (HTTP ${r.status})`);
-          await writeFile(join(dir, 'input', `seite-${String(i + 1).padStart(2, '0')}.jpg`), Buffer.from(await r.arrayBuffer()));
+        chosen.flatMap((pr, k) => {
+          const read = pagesToRead(pr);
+          if (read.length < pr.imageUrls.length) skipped.push(`${pr.title}: ${pr.imageUrls.length - read.length} von ${pr.imageUrls.length} Seiten ohne Produkte übersprungen`);
+          return read.map(async (n) => {
+            const r = await fetchImpl(pr.imageUrls[n - 1], { signal: AbortSignal.timeout(30000) });
+            if (!r.ok) throw new Error(`${pr.title}, Seite ${n} nicht ladbar (HTTP ${r.status})`);
+            const name = `${chosen.length > 1 ? `p${k + 1}-` : ''}seite-${String(n).padStart(2, '0')}.jpg`;
+            await writeFile(join(dir, 'input', name), Buffer.from(await r.arrayBuffer()));
+          });
         }),
       );
-      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(pr, null, 2) + '\n');
-      return sendJson(res, meta, 201);
+      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(chosen.length === 1 ? chosen[0] : chosen, null, 2) + '\n');
+      return sendJson(res, { ...meta, notes: skipped }, 201);
     }
 
     if (p === '/api/settings') {
       if (method === 'PUT') await writeEnv(JSON.parse((await readBody(req)).toString('utf8')));
       return sendJson(res, { ...Object.fromEntries(KEYS.map((k) => [k, !!process.env[k]])), ai: aiProvider() });
+    }
+
+    if (method === 'GET' && p === '/api/usage') {
+      const month = url.searchParams.get('month') ?? undefined;
+      return sendJson(res, { ...(await usageSummary(month && /^\d{4}-\d{2}$/.test(month) ? month : undefined)), models: currentModels() });
     }
 
     if (p === '/api/library') {
@@ -224,7 +277,8 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
         if (runs.get(id)?.running) return sendJson(res, { error: 'Läuft bereits' }, 409);
         const meta = await readJob(id);
         if (!meta.settings.recorded && !aiProvider()) throw new Error(NO_AI_KEY);
-        process_(id, meta.settings);
+        const body = (await readBody(req)).toString('utf8');
+        process_(id, meta.settings, !!(body && JSON.parse(body).auto));
         return sendJson(res, runs.get(id), 202);
       }
       if (sub === 'progress' && method === 'GET') return sendJson(res, runs.get(id) ?? null);

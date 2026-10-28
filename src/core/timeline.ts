@@ -71,3 +71,9 @@ export function warp(tl: Timeline, t: number): number {
   const T = s.authStart + (s.dur > 0 ? local * (s.nat / s.dur) : 0);
   return Math.min(T, tl.authoredTotal);
 }
+
+/** Szenenlängen einer Story inkl. Tempo aus dem Design. */
+export function storyDurations(scenes: Durations, speedFactor = 1): Durations {
+  if (speedFactor === 1) return scenes;
+  return { intro: scenes.intro * speedFactor, page: scenes.page * speedFactor, cta: scenes.cta * speedFactor };
+}

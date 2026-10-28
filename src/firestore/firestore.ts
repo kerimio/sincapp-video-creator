@@ -4,7 +4,7 @@
  * Geschrieben wird hier nie etwas.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ROOT } from '../paths';
 
@@ -40,6 +40,27 @@ async function collection(name: string, fetchImpl: Fetch): Promise<Record<string
     token = data.nextPageToken ?? '';
   } while (token);
   return out;
+}
+
+/**
+ * Nur Dokumente mit `field >= value` lesen (Firestore berechnet pro gelesenem Dokument –
+ * so werden alte Prospekte gar nicht erst geladen). Klappt die Abfrage nicht, null.
+ */
+async function queryFrom(name: string, field: string, min: string, fetchImpl: Fetch): Promise<Record<string, any>[] | null> {
+  try {
+    const res = await fetchImpl(`${base().replace(/\/$/, '')}:runQuery`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: { from: [{ collectionId: name }], where: { fieldFilter: { field: { fieldPath: field }, op: 'GREATER_THAN_OR_EQUAL', value: { stringValue: min } } } } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, FsValue> } }[];
+    if (!Array.isArray(rows)) return null;
+    return rows.filter((r) => r.document).map((r) => ({ _id: r.document!.name.split('/').pop()!, ...fields(r.document!.fields ?? {}) }));
+  } catch {
+    return null;
+  }
 }
 
 // ---------- Märkte ----------
@@ -84,8 +105,9 @@ export interface FsProspect {
   products: { name_de: string; name_tr?: string; locations?: { page: number; box: number[]; label?: { de?: string; tr?: string } }[] }[];
 }
 
-export async function listProspects(fetchImpl: Fetch = fetch): Promise<FsProspect[]> {
-  const docs = await collection('prospects', fetchImpl);
+/** Prospekte; mit `since` (YYYY-MM-DD) nur die, die bis mindestens dahin gültig sind. */
+export async function listProspects(fetchImpl: Fetch = fetch, since?: string): Promise<FsProspect[]> {
+  const docs = (since ? await queryFrom('prospects', 'validUntil', since, fetchImpl) : null) ?? (await collection('prospects', fetchImpl));
   return docs
     .map((d) => {
       // tolerant wie die App: marketIds, sonst [marketId]; leere/doppelte Einträge raus
@@ -105,6 +127,20 @@ export async function listProspects(fetchImpl: Fetch = fetch): Promise<FsProspec
     .sort((a, b) => b.validUntil.localeCompare(a.validUntil));
 }
 
+/**
+ * Seiten, die gelesen werden müssen (1-basiert). Haben alle Produkte des Prospekts Fundstellen,
+ * werden Seiten ohne Produkte (Titelblatt, Rückseite mit Adressen …) übersprungen – das spart KI-Kosten.
+ * Sonst (keine oder unvollständige Fundstellen) alle Seiten.
+ */
+export function pagesToRead(pr: Pick<FsProspect, 'imageUrls' | 'products'>): number[] {
+  const all = pr.imageUrls.map((_, i) => i + 1);
+  const prods = pr.products ?? [];
+  if (!prods.length || prods.some((p) => !p.locations?.length)) return all;
+  const used = new Set(prods.flatMap((p) => p.locations!.map((l) => l.page)));
+  const pages = all.filter((n) => used.has(n));
+  return pages.length ? pages : all;
+}
+
 /** Heute in Berlin als YYYY-MM-DD (Gültigkeit wechselt um Mitternacht deutscher Zeit). */
 export const todayBerlin = (d = new Date()) => d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 
@@ -122,7 +158,9 @@ export async function cacheMarket(m: FsMarket, fetchImpl: Fetch = fetch) {
   const dir = marketsCacheDir();
   await mkdir(join(dir, slug), { recursive: true });
   let logo = `${slug}/logo.jpg`;
-  if (m.logoUrl) {
+  const own = ownLogo(slug);
+  if (own) logo = own;
+  else if (m.logoUrl) {
     const res = await fetchImpl(m.logoUrl, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`Logo von ${m.name} nicht ladbar (HTTP ${res.status})`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -141,6 +179,39 @@ export async function cacheMarket(m: FsMarket, fetchImpl: Fetch = fetch) {
   };
   await writeFile(join(dir, `${slug}.json`), JSON.stringify(market, null, 2) + '\n');
   return market;
+}
+
+/** Eigenes Logo (in der App hochgeladen) hat Vorrang vor dem Firestore-Bild. */
+export function ownLogo(slug: string): string | null {
+  for (const ext of ['png', 'jpg']) if (existsSync(join(marketsCacheDir(), slug, `logo-eigenes.${ext}`))) return `${slug}/logo-eigenes.${ext}`;
+  return null;
+}
+
+export async function saveOwnLogo(slug: string, buf: Buffer) {
+  const dir = join(marketsCacheDir(), slug);
+  await mkdir(dir, { recursive: true });
+  const ext = buf[0] === 0x89 ? 'png' : 'jpg';
+  for (const e of ['png', 'jpg']) await rm(join(dir, `logo-eigenes.${e}`), { force: true });
+  await writeFile(join(dir, `logo-eigenes.${ext}`), buf);
+  const f = marketFile(slug);
+  if (f && f.startsWith(marketsCacheDir())) {
+    const market = JSON.parse(await readFile(f, 'utf8'));
+    market.logo = `${slug}/logo-eigenes.${ext}`;
+    delete market.logoCrop;
+    await writeFile(f, JSON.stringify(market, null, 2) + '\n');
+  }
+  return `${slug}/logo-eigenes.${ext}`;
+}
+
+/** Gespeichertes Standard-Design eines Markts (oder null). */
+export async function readMarketDesign(slug: string): Promise<unknown | null> {
+  const f = join(marketsCacheDir(), `${slug}.design.json`);
+  return existsSync(f) ? JSON.parse(await readFile(f, 'utf8')) : null;
+}
+
+export async function saveMarketDesign(slug: string, design: unknown) {
+  await mkdir(marketsCacheDir(), { recursive: true });
+  await writeFile(join(marketsCacheDir(), `${slug}.design.json`), JSON.stringify(design, null, 2) + '\n');
 }
 
 /** Markt-Datei suchen: erst markets/ im Repo, dann der Firestore-Cache. */

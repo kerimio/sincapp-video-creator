@@ -1,4 +1,9 @@
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { findProductImages } from './openfoodfacts';
+import { aiCacheDir } from '../ai/cache';
 
 /** Ein Bildtreffer aus dem Internet. */
 export interface WebImage {
@@ -22,7 +27,24 @@ type Fetch = typeof fetch;
 export class BraveImages implements ImageSearchProvider {
   name = 'brave';
   constructor(private key: string, private fetchImpl: Fetch = fetch) {}
-  async search(query: string, opts: { limit?: number } = {}) {
+  async search(query: string, opts: { limit?: number } = {}): Promise<WebImage[]> {
+    // Jede Suche kostet: Ergebnisse 30 Tage merken (gleiches Produkt nächste Woche = gratis)
+    if (process.env.VITEST && !process.env.SINCAPP_AI_CACHE) return this.fetchSearch(query, opts);
+    const f = join(aiCacheDir(), '..', 'suche', `${createHash('sha256').update(`${query}|${opts.limit ?? 8}`).digest('hex').slice(0, 32)}.json`);
+    if (existsSync(f) && Date.now() - (await stat(f)).mtimeMs < 30 * 86_400_000) {
+      try {
+        return JSON.parse(await readFile(f, 'utf8'));
+      } catch {
+        /* neu suchen */
+      }
+    }
+    const found = await this.fetchSearch(query, opts);
+    await mkdir(join(f, '..'), { recursive: true });
+    await writeFile(f, JSON.stringify(found));
+    return found;
+  }
+
+  private async fetchSearch(query: string, opts: { limit?: number }) {
     const url = `https://api.search.brave.com/res/v1/images/search?${new URLSearchParams({ q: query, count: String(Math.min(50, (opts.limit ?? 8) * 2)), country: 'de', safesearch: 'strict' })}`;
     const res = await this.fetchImpl(url, { headers: { Accept: 'application/json', 'X-Subscription-Token': this.key }, signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw new Error(`Brave: HTTP ${res.status}`);

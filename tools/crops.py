@@ -1,6 +1,6 @@
 """Schneidet Rechtecke aus Seitenbildern (für den Preis-Gegencheck).
 
-stdin: [{"image": ..., "box": [x0, y0, x1, y1], "out": ..., "pad": 0.15}]
+stdin: [{"image": ..., "box": [x0, y0, x1, y1] | null (ganzes Bild), "out": ..., "pad": 0.15, "maxSide": 512 (optional, verkleinert – spart KI-Tokens)}]
 stdout: eine Zeile JSON pro Ausschnitt: {"out": ..., "ok": true}
 """
 
@@ -17,13 +17,17 @@ for job in json.load(sys.stdin):
             cache.clear()
             cache[job["image"]] = Image.open(job["image"]).convert("RGB")
         img = cache[job["image"]]
-        x0, y0, x1, y1 = job["box"]
-        pad = float(job.get("pad", 0.15))
+        x0, y0, x1, y1 = job.get("box") or (0, 0, img.width, img.height)
+        pad = float(job.get("pad", 0.15)) if job.get("box") else 0.0
         pw, ph = (x1 - x0) * pad, (y1 - y0) * pad
         box = (max(0, int(x0 - pw)), max(0, int(y0 - ph)), min(img.width, int(x1 + pw)), min(img.height, int(y1 + ph)))
         crop = img.crop(box)
         if max(crop.size) < 400:  # kleine Schilder hochskalieren, damit die Ziffern gut lesbar sind
             s = 400 / max(crop.size)
+            crop = crop.resize((round(crop.width * s), round(crop.height * s)), Image.LANCZOS)
+        ms = job.get("maxSide")
+        if ms and max(crop.size) > ms:
+            s = ms / max(crop.size)
             crop = crop.resize((round(crop.width * s), round(crop.height * s)), Image.LANCZOS)
         os.makedirs(os.path.dirname(os.path.abspath(job["out"])), exist_ok=True)
         crop.save(job["out"])

@@ -4,8 +4,15 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { PageResult, PriceCheck } from './schema';
+import { logUsage } from '../ai/usage';
 
-export const MODEL = process.env.SINCAPP_MODEL || 'claude-opus-5-5';
+/** Seiten lesen: Sonnet ist deutlich günstiger als Opus und liest Prospekte zuverlässig (SINCAPP_MODEL zum Ändern). */
+export const MODEL = process.env.SINCAPP_MODEL || 'claude-sonnet-5-5';
+/** Einfache Aufgaben (Preisschilder gegenlesen, Fotos vergleichen): das günstigste Modell. */
+export const CHECK_MODEL = process.env.SINCAPP_CHECK_MODEL || 'claude-haiku-5-5';
+
+/** Server-seitiger Ausweich-Modus nur für Opus (Haiku lehnt den Parameter ab). */
+export const fallbackParams = (model: string) => (model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {});
 
 /** Liest Prospektseiten. Echte Implementierung: Claude; für Tests: aufgezeichnete Antworten. */
 export interface PageReader {
@@ -55,16 +62,16 @@ export class ClaudeReader implements PageReader {
     this.client = new Anthropic({ apiKey, baseURL, maxRetries: 4 });
   }
 
-  private async parse<T>(content: Anthropic.Beta.BetaContentBlockParam[], format: ReturnType<typeof betaZodOutputFormat<any>>, effort: 'medium' | 'high'): Promise<T> {
+  private async parse<T>(content: Anthropic.Beta.BetaContentBlockParam[], format: ReturnType<typeof betaZodOutputFormat<any>>, effort: 'low' | 'medium' | 'high', model: string, task: string): Promise<T> {
     const res = await this.client.beta.messages.parse({
-      model: MODEL,
+      model,
       max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...fallbackParams(model),
       thinking: { type: 'adaptive' },
       output_config: { effort, format },
       messages: [{ role: 'user', content }],
     });
+    await logUsage({ model, task, input: res.usage.input_tokens, output: res.usage.output_tokens });
     if (res.stop_reason === 'refusal') throw new Error('Claude hat die Seite abgelehnt (refusal).');
     if (res.stop_reason === 'max_tokens') throw new Error('Antwort abgeschnitten (max_tokens).');
     if (!res.parsed_output) throw new Error('Antwort ließ sich nicht als JSON lesen.');
@@ -72,7 +79,7 @@ export class ClaudeReader implements PageReader {
   }
 
   async readPage(file: string, size: { width: number; height: number }) {
-    return this.parse<PageResult>([await imageBlock(file), { type: 'text', text: PAGE_PROMPT(size.width, size.height) }], betaZodOutputFormat(PageResult), 'high');
+    return this.parse<PageResult>([await imageBlock(file), { type: 'text', text: PAGE_PROMPT(size.width, size.height) }], betaZodOutputFormat(PageResult), 'medium', MODEL, 'seite');
   }
 
   async readPrices(crops: string[], _pageFile?: string) {
@@ -82,7 +89,7 @@ export class ClaudeReader implements PageReader {
       content.push({ type: 'text', text: `Ausschnitt ${i + 1}:` }, await imageBlock(c));
     }
     content.push({ type: 'text', text: PRICE_PROMPT });
-    const out = await this.parse<PriceCheck>(content, betaZodOutputFormat(PriceCheck), 'medium');
+    const out = await this.parse<PriceCheck>(content, betaZodOutputFormat(PriceCheck), 'low', CHECK_MODEL, 'preise');
     const byId = new Map(out.prices.map((p) => [p.id, p.price]));
     return crops.map((_, i) => byId.get(i + 1) ?? null);
   }

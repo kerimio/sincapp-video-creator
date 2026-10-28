@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Design } from './design';
 
 export const LANGS = ['de', 'tr'] as const;
 export const Lang = z.enum(LANGS);
@@ -38,6 +39,9 @@ export const Market = z.object({
 });
 export type Market = z.infer<typeof Market>;
 
+/** Sticker auf einer Angebotskarte (Texte in core/badges.ts). */
+export const BADGES = ['knaller', 'woche', 'neu', 'halal', 'bio', 'bestpreis', 'frisch', 'aktion', 'vorrat', 'xxl'] as const;
+
 export const Offer = z.object({
   id: z.string().optional(),
   /** Pfad relativ zum Job-Ordner, z. B. "images/offer-1.png". */
@@ -47,6 +51,7 @@ export const Offer = z.object({
   name: z.object({ de: Lines, tr: Lines }),
   note: Localized.optional(),
   imgZoom: z.number().positive().max(3).default(1),
+  badge: z.enum(BADGES).optional(),
 });
 export type Offer = z.infer<typeof Offer>;
 
@@ -70,6 +75,10 @@ export const Story = z
     /** Pfad relativ zum Job-Ordner. */
     appScreenshot: z.string().optional(),
     scenes: SceneDurations.default({}),
+    /** Laufband auf den Angebotsseiten, z. B. "Nur bis Samstag!" */
+    banner: Localized.optional(),
+    /** Gestaltung (Vorlage, Farben, Effekte); ohne Angabe "klassik". */
+    design: Design.optional(),
   })
   .superRefine((s, ctx) => {
     if (s.pages) {

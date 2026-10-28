@@ -21,6 +21,35 @@ Ohne Doppelklick: `pnpm cli app` (Port mit `--port`, Browser nicht öffnen mit `
 
 Märkte (Name, Adresse, Logo, Instagram) und Prospekte (Seiten, Gültigkeit) kommen direkt aus der sincapp-Firestore-Datenbank (Projekt `trprosp`, änderbar mit `SINCAPP_FIREBASE_PROJECT`, z. B. `sincapp-dev`). `markets` und `prospects` sind öffentlich lesbar – es braucht weder Login noch Key, und das Tool schreibt nie etwas zurück. Ein gewählter Markt wird unter `.cache/markets/` abgelegt, damit Story und Video ihn wie eine lokale Markt-Datei nutzen.
 
+## Studio: Design, Formate, Export (Meilenstein 5)
+
+Ein Video entsteht in drei Schritten: **Angebote** prüfen → **Design** wählen → **Export**.
+
+- **Neues Video:** Markt wählen, ein oder mehrere Prospekte anhaken. Aus allen Prospekten kommen automatisch die besten Angebote ins Video (groß abgebildete Angebote und in Firestore gepflegte Produkte zuerst).
+- **Design:** 9 Vorlagen (sincapp Marke – Standard für neue Videos, genau nach dem Design System; Klassik, Frisch, Premium, Knallig, Minimal, Black Week, Bayram, Sommer), Sticker pro Angebot, Laufband, alle Farben einzeln oder „Farben aus dem Markt-Logo“, Hintergrund (Logo, Punkte, Verlauf, schlicht), Preis (Etikett, Kreis, flach), Effekte (Einflug, Seitenwechsel, Tempo, Wippen). „Als Standard für <Markt> speichern“ – neue Videos dieses Markts starten dann damit. Eigenes Logo pro Markt hochladbar.
+- **Formate:** Story 9:16, Feed 4:5, Quadrat 1:1, jedes Angebot einzeln als Bild. Die Vorschau rechts schaltet zwischen allen um.
+- **Export:** Pakete („Wochenpaket“, „Nur Story“, „Feed-Beitrag“, „Nur Bilder“) oder frei wählbar; Instagram-Texte mit Hashtags (DE/TR); alles als ZIP. Der Export kostet keine KI-Tokens.
+- **Bild aus dem Prospekt:** Rechteck ziehen oder mit dem Pen umranden – der Ausschnitt wird so übernommen, wie er ist. Hintergrund nur auf Wunsch entfernen.
+
+**Zaubern (ohne Zwischenschritte):**
+
+- **✨ Zauberknopf** beim neuen Video: Prospekt lesen → beste Angebote → Produktbilder → komplettes Paket, in einem Klick. Nutzt das gespeicherte Design des Markts. Danach lässt sich trotzdem alles ändern und neu exportieren.
+- **📅 7-Tage-Plan:** Jeden Tag ein Top-Angebot als Reel, Bild (4:5) und Text, im ZIP nach Tagen sortiert (`plan/01-mittwoch-29-10/…`) mit `wochenplan.txt` als Übersicht.
+- **⏰ „Letzte Chance“-Videos** (8 s, 9:16): „Noch 2 Tage!“ und „Nur noch heute!“ mit Countdown-Ring und den drei Top-Angeboten; im Plan liegen sie auf den passenden Tagen.
+- **QR-Code am Schluss** (Design → QR-Code): Route zum Markt (Google Maps), Instagram oder eigener Link – für Laden-Bildschirm, Schaufenster und Ausdrucke.
+
+**Kosten sparen** (alles Standard, nichts einzustellen):
+
+- Günstigste Modelle: Gemini Flash liest die Seiten (`GEMINI_MODEL`), Preis-Gegencheck und Fotovergleich mit minimalem „Nachdenken“; bei Claude Sonnet statt Opus und Haiku für die Checks. Sind beide Keys da, wird Gemini genommen.
+- Jede Seite wird nur einmal bezahlt (`.cache/ki`, auch nach einem Modellwechsel). Seiten ohne Produkte (laut Firestore-Fundstellen) werden übersprungen, der Zeitraum kommt aus Firestore.
+- Kaputte KI-Antworten werden höchstens einmal neu angefragt; Fotos werden vor dem Vergleich auf 512 px verkleinert.
+- Bildersuche (Brave) 30 Tage gemerkt; die Produkt-Bibliothek verhindert doppelte Suchen.
+- Firestore: nur Prospekte der letzten 3 Wochen werden gelesen, Listen (15 min / 6 h) und Vorschaubilder liegen auf der Platte. „↻“ beim neuen Video lädt sofort frisch.
+- Einstellungen → „KI-Verbrauch“ zeigt die bezahlten Aufrufe und Tokens des Monats (`.cache/ki/verbrauch.jsonl`).
+- Der Export (Videos, Reels, Bilder, Texte) kostet keine KI.
+
+Vorschau aller Vorlagen und Formate: `pnpm tsx tools/preview-designs.ts` (Bilder in `tmp/designs`; `--extras` für Sticker/Laufband/Reels, `--magic` für Countdown und QR-Code).
+
 ## Alles in einem Befehl
 
 ```bash

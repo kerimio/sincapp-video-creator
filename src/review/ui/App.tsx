@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Story as StorySchema } from '../../core/schema';
+import { BADGES, Story as StorySchema } from '../../core/schema';
+import { BADGE_TEXT } from '../../core/badges';
 import { formatDateRange } from '../../core/format';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
-import { type JobClient, type RenderState, type State, type StoryOffer } from './api';
+import { type ExportOptions, type JobClient, type RenderState, type State, type StoryOffer } from './api';
+import { DesignPanel, ExportPanel, Preview, type View } from './studio';
 import type { Story } from '../../core/schema';
 
 const TR_MAX = 14;
@@ -11,7 +13,7 @@ const TR_MAX = 14;
 const JobCtx = createContext<{ api: JobClient; base: string }>(null!);
 type Busy = Record<string, string | undefined>;
 
-export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: string; onBack?: () => void }) {
+export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { api: JobClient; title?: string; onBack?: () => void; initialTab?: 'angebote' | 'design' | 'export' }) {
   const [state, setState] = useState<State | null>(null);
   const [story, setStory] = useState<Story | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -21,6 +23,8 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
   const [dialog, setDialog] = useState<string | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'angebote' | 'design' | 'export'>(initialTab);
+  const [view, setView] = useState<View>('story');
 
   useEffect(() => {
     api.state().then((s) => {
@@ -125,10 +129,10 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
     }
   };
 
-  const doRender = async () => {
-    if (!(await save())) return;
+  const doExport = async (opts: ExportOptions) => {
+    if (dirty && !(await save())) return;
     try {
-      setRender(await api.startRender());
+      setRender(await api.startRender(opts));
     } catch (e) {
       say((e as Error).message, true);
     }
@@ -151,16 +155,22 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
         </div>
         <div className="spacer" />
         {dirty && <span className="hint">ungespeichert</span>}
-        <button onClick={save} disabled={!!validation || rendering}>Speichern</button>
-        <button className="primary" onClick={doRender} disabled={!!validation || rendering}>
-          {rendering ? `Video wird erstellt … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Video erstellen'}
-        </button>
+        <button onClick={save} disabled={!!validation || rendering || !dirty}>{dirty ? 'Speichern' : '✓ Gespeichert'}</button>
+        {tab !== 'export' && (
+          <button className="primary" onClick={() => setTab('export')} disabled={!!validation}>
+            {rendering ? `Export läuft … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Weiter zum Export →'}
+          </button>
+        )}
       </header>
       {rendering && <div className="progressbar"><div style={{ width: `${(render!.fraction * 100).toFixed(1)}%` }} /></div>}
 
       <main>
         <section className="edit">
-          <StoryHeader story={story} update={update} />
+          <div className="tabs">
+            <button className={tab === 'angebote' ? 'on' : ''} onClick={() => setTab('angebote')}><i>1</i> Angebote</button>
+            <button className={tab === 'design' ? 'on' : ''} onClick={() => setTab('design')}><i>2</i> Design</button>
+            <button className={tab === 'export' ? 'on' : ''} onClick={() => setTab('export')}><i>3</i> Export</button>
+          </div>
           {validation && (
             <div className="errors">
               {validation.map((v) => (
@@ -168,6 +178,10 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
               ))}
             </div>
           )}
+          {tab === 'design' && <DesignPanel story={story} update={update} api={api} say={say} onStory={(s) => { setStory(s); setDirty(false); }} />}
+          {tab === 'export' && <ExportPanel story={story} base={state.urlBase} api={api} render={render} start={doExport} dirty={dirty} disabled={!!validation} />}
+          {tab === 'angebote' && <>
+          <StoryHeader story={story} update={update} />
           <OfferCount n={story.offers.length} />
           <OfferList
             story={story}
@@ -193,10 +207,11 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
               </div>
             ))}
           </div>
+          <div className="next"><button className="primary" onClick={() => setTab('design')}>Weiter zum Design →</button></div>
+          </>}
         </section>
         <aside>
-          <Preview story={previewStory} />
-          {render?.result && !rendering && <RenderResult r={render.result} />}
+          <Preview story={previewStory} base={state.urlBase} view={view} setView={setView} />
         </aside>
       </main>
 
@@ -394,6 +409,15 @@ function OfferList(p: {
                   Zusatz TR
                   <input value={o.note?.tr ?? ''} onChange={(e) => p.setOffer(i, (x) => (x.note = e.target.value || x.note?.de ? { de: x.note?.de ?? '', tr: e.target.value } : undefined))} />
                 </label>
+                <label>
+                  Sticker
+                  <select value={o.badge ?? ''} onChange={(e) => p.setOffer(i, (x) => (x.badge = (e.target.value || undefined) as StoryOffer['badge']))}>
+                    <option value="">– keiner –</option>
+                    {BADGES.map((b) => (
+                      <option key={b} value={b}>{BADGE_TEXT[b].de}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
               {(priceWarn || imgWarn.length > 0) && (
                 <div className="warnings">
@@ -413,106 +437,6 @@ function OfferList(p: {
 
 function sourceLabel(s?: string) {
   return s === 'library' ? 'Bibliothek' : s === 'web' ? 'Internet' : s === 'manual' ? 'eigenes Bild' : s === 'removebg' ? 'remove.bg' : 'Prospekt';
-}
-
-function Preview({ story }: { story: unknown }) {
-  const { base } = useContext(JobCtx);
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [lang, setLang] = useState<'de' | 'tr'>('de');
-  const [duration, setDuration] = useState(0);
-  const [t, setT] = useState(4.5);
-  const [playing, setPlaying] = useState(false);
-  const [ready, setReady] = useState(false);
-  const win = () => frame.current?.contentWindow as (Window & { sincapp?: Window['sincapp'] }) | null;
-
-  const onLoad = useCallback(async () => {
-    setReady(false);
-    const s = win()?.sincapp;
-    if (!s) return;
-    try {
-      let r = await s.ready;
-      if (story) r = await s.setStory(story);
-      setDuration(r.duration);
-      s.seek(t);
-      setReady(true);
-    } catch (e) {
-      console.error('Vorschau:', e);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang]);
-
-  // Live-Daten übernehmen (leicht verzögert, damit Tippen flüssig bleibt)
-  useEffect(() => {
-    if (!story || !ready) return;
-    const h = setTimeout(async () => {
-      const s = win()?.sincapp;
-      if (!s) return;
-      const r = await s.setStory(story).catch(() => null);
-      if (r) setDuration(r.duration);
-      s.seek(t);
-    }, 250);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [story, ready]);
-
-  useEffect(() => {
-    win()?.sincapp?.seek(t);
-  }, [t]);
-
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      setT((x) => {
-        const n = x + (now - last) / 1000;
-        return n >= duration ? 0 : n;
-      });
-      last = now;
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, duration]);
-
-  return (
-    <div className="preview">
-      <div className="row">
-        <div className="seg">
-          {(['de', 'tr'] as const).map((l) => (
-            <button key={l} className={lang === l ? 'on' : ''} onClick={() => setLang(l)}>
-              {l.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <button className="ghost" onClick={() => setPlaying((p) => !p)}>{playing ? 'Pause' : 'Abspielen'}</button>
-        <span className="muted">
-          {t.toFixed(1)} / {duration.toFixed(1)} s
-        </span>
-      </div>
-      <div className="phone">
-        <iframe ref={frame} key={lang} src={`/index.html?lang=${lang}&story=${encodeURIComponent(`${base}story.json`)}`} onLoad={onLoad} title="Vorschau" />
-      </div>
-      <input type="range" min={0} max={duration || 1} step={0.033} value={t} onChange={(e) => (setPlaying(false), setT(Number(e.target.value)))} />
-    </div>
-  );
-}
-
-function RenderResult({ r }: { r: NonNullable<RenderState['result']> }) {
-  return (
-    <div className="card render">
-      <b>Videos fertig ({r.seconds.toFixed(0)} s)</b>
-      {Object.entries(r.videos).map(([lang, url]) => {
-        const c = r.checks.find((x) => url.endsWith(x.file));
-        return (
-          <div key={lang}>
-            <a className="download" href={url} download>⬇ Video {lang.toUpperCase()} herunterladen</a> {c && <span className={c.ok ? 'ok' : 'warn'}>{c.ok ? `✓ ${c.sizeMB.toFixed(1)} MB, ${c.duration.toFixed(1)} s` : `⚠ ${c.problems.join('; ')}`}</span>}
-          </div>
-        );
-      })}
-      {r.poster && <a href={r.poster} download>⬇ Vorschaubild</a>}
-    </div>
-  );
 }
 
 function ImageDialog(p: {
@@ -593,9 +517,9 @@ function ImageDialog(p: {
           <CropTool
             offer={o}
             busy={!!p.busy}
-            onCrop={(bbox) =>
-              p.run('Wird freigestellt …', async () => {
-                const r = await api.crop(o.id, bbox);
+            onCrop={(sel) =>
+              p.run(sel.removeBackground ? 'Wird freigestellt …' : 'Wird ausgeschnitten …', async () => {
+                const r = await api.crop(o.id, sel);
                 p.onImage(r.offer, r.warnings);
                 p.onClose();
               })
@@ -640,49 +564,123 @@ function ImageDialog(p: {
   );
 }
 
-/** Seite anzeigen, Rechteck ziehen, ausschneiden. Koordinaten in Pixeln des Seitenbilds. */
-function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolean; onCrop: (bbox: number[]) => void }) {
+type CropSel = { bbox: number[]; polygon?: number[][]; removeBackground?: boolean };
+
+/**
+ * Seite anzeigen und das Produkt auswählen: Rechteck ziehen oder mit dem Pen umranden
+ * (klicken setzt Punkte, ziehen zeichnet frei). Koordinaten in Pixeln des Seitenbilds.
+ * Der Ausschnitt bleibt wie gewählt; der Hintergrund wird nur auf Wunsch entfernt.
+ */
+function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolean; onCrop: (sel: CropSel) => void }) {
   const { base } = useContext(JobCtx);
   const img = useRef<HTMLImageElement>(null);
+  const [tool, setTool] = useState<'rect' | 'pen'>('rect');
   const [box, setBox] = useState<number[]>(offer.bbox);
+  const [pts, setPts] = useState<number[][]>([]);
+  const [closed, setClosed] = useState(false);
+  const [removeBg, setRemoveBg] = useState(false);
   const [scale, setScale] = useState(1);
-  const start = useRef<[number, number] | null>(null);
-  const pos = (e: React.MouseEvent) => {
+  const drag = useRef<{ start: [number, number]; moved: boolean } | null>(null);
+  const pos = (e: React.PointerEvent) => {
     const r = img.current!.getBoundingClientRect();
     const k = r.width / img.current!.naturalWidth;
     if (k !== scale) setScale(k);
-    return [Math.max(0, (e.clientX - r.left) / k), Math.max(0, (e.clientY - r.top) / k)] as [number, number];
+    const W = img.current!.naturalWidth;
+    const H = img.current!.naturalHeight;
+    return [Math.min(W, Math.max(0, (e.clientX - r.left) / k)), Math.min(H, Math.max(0, (e.clientY - r.top) / k))] as [number, number];
   };
+  const near = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * scale, (a[1] - b[1]) * scale) < 12;
+  const resetPen = () => {
+    setPts([]);
+    setClosed(false);
+  };
+
+  const down = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = pos(e);
+    drag.current = { start: p, moved: false };
+    if (tool === 'rect') return setBox([...p, ...p]);
+    if (closed) {
+      setPts([p]);
+      setClosed(false);
+    } else if (pts.length >= 3 && near(p, pts[0])) {
+      setClosed(true);
+      drag.current = null;
+    } else setPts((x) => [...x, p]);
+  };
+  const move = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const p = pos(e);
+    if (tool === 'rect') {
+      const [a, b] = drag.current.start;
+      return setBox([Math.min(a, p[0]), Math.min(b, p[1]), Math.max(a, p[0]), Math.max(b, p[1])]);
+    }
+    // Freihand: Punkte im Abstand von ein paar Bildschirmpixeln mitnehmen
+    setPts((x) => (x.length && Math.hypot((x[x.length - 1][0] - p[0]) * scale, (x[x.length - 1][1] - p[1]) * scale) < 5 ? x : [...x, p]));
+    drag.current.moved = true;
+  };
+  const up = () => {
+    if (tool === 'pen' && drag.current?.moved && pts.length >= 8) setClosed(true);
+    drag.current = null;
+  };
+
   const [x0, y0, x1, y1] = box;
   const tag = offer.priceTagBbox;
+  const penReady = closed && pts.length >= 3;
+  const rectReady = x1 - x0 >= 20 && y1 - y0 >= 20;
+  const ready = tool === 'rect' ? rectReady : penReady;
   return (
     <div>
-      <p className="muted">Rechteck um das Produkt ziehen – ohne Preisschild und ohne Text. Das Preisschild (gestrichelt) wird automatisch entfernt.</p>
-      <div className="cropwrap">
-        <img
-          ref={img}
-          src={`${base}${offer.pageFile}`}
-          draggable={false}
-          onLoad={(e) => setScale(e.currentTarget.clientWidth / e.currentTarget.naturalWidth)}
-          onMouseDown={(e) => {
-            start.current = pos(e);
-            setBox([...start.current, ...start.current]);
-          }}
-          onMouseMove={(e) => {
-            if (!start.current) return;
-            const [a, b] = start.current;
-            const [c, d] = pos(e);
-            setBox([Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)]);
-          }}
-          onMouseUp={() => (start.current = null)}
-        />
-        <div className="sel" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />
-        {tag && <div className="tag" style={{ left: tag[0] * scale, top: tag[1] * scale, width: (tag[2] - tag[0]) * scale, height: (tag[3] - tag[1]) * scale }} />}
+      <div className="row">
+        <div className="seg small">
+          <button className={tool === 'rect' ? 'on' : ''} onClick={() => setTool('rect')}>▭ Rechteck</button>
+          <button className={tool === 'pen' ? 'on' : ''} onClick={() => setTool('pen')}>✎ Pen (umranden)</button>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} /> Hintergrund zusätzlich entfernen
+        </label>
+      </div>
+      <p className="muted">
+        {tool === 'rect'
+          ? 'Rechteck um das Produkt ziehen. Der Ausschnitt wird genau so übernommen.'
+          : penReady
+            ? 'Form geschlossen. Mit „Ausschneiden“ übernehmen oder neu zeichnen.'
+            : 'Punkte um das Produkt setzen oder mit gedrückter Maustaste frei umranden. Zum Schließen auf den ersten Punkt klicken.'}
+      </p>
+      <div className="cropwrap" onPointerDown={down} onPointerMove={move} onPointerUp={up} onDoubleClick={() => tool === 'pen' && pts.length >= 3 && setClosed(true)}>
+        <img ref={img} src={`${base}${offer.pageFile}`} draggable={false} onLoad={(e) => setScale(e.currentTarget.clientWidth / e.currentTarget.naturalWidth)} />
+        {tool === 'rect' && <div className="sel" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />}
+        {tool === 'pen' && pts.length > 0 && (
+          <svg className="pen">
+            {penReady && <path d={`M${pts.map((p) => `${p[0] * scale},${p[1] * scale}`).join('L')}Z`} className="shade" fillRule="evenodd" />}
+            <polyline points={pts.map((p) => `${p[0] * scale},${p[1] * scale}`).join(' ') + (penReady ? ` ${pts[0][0] * scale},${pts[0][1] * scale}` : '')} />
+            {!penReady && pts.length < 60 && pts.map((p, i) => <circle key={i} cx={p[0] * scale} cy={p[1] * scale} r={i === 0 ? 7 : 4} className={i === 0 ? 'first' : ''} />)}
+          </svg>
+        )}
+        {removeBg && tag && <div className="tag" style={{ left: tag[0] * scale, top: tag[1] * scale, width: (tag[2] - tag[0]) * scale, height: (tag[3] - tag[1]) * scale }} />}
       </div>
       <div className="row">
-        <button className="ghost" onClick={() => setBox(offer.bbox)}>Zurücksetzen</button>
+        {tool === 'rect' ? (
+          <button className="ghost" onClick={() => setBox(offer.bbox)}>Zurücksetzen</button>
+        ) : (
+          <>
+            <button className="ghost" disabled={!pts.length} onClick={() => (closed ? setClosed(false) : setPts((x) => x.slice(0, -1)))}>Letzten Punkt weg</button>
+            <button className="ghost" disabled={!pts.length} onClick={resetPen}>Neu zeichnen</button>
+            {!closed && pts.length >= 3 && <button className="ghost" onClick={() => setClosed(true)}>Form schließen</button>}
+          </>
+        )}
         <div className="spacer" />
-        <button className="primary" disabled={busy || x1 - x0 < 20 || y1 - y0 < 20} onClick={() => onCrop(box.map(Math.round))}>
+        <button
+          className="primary"
+          disabled={busy || !ready}
+          onClick={() =>
+            onCrop(
+              tool === 'rect'
+                ? { bbox: box.map(Math.round), removeBackground: removeBg }
+                : { bbox: [], polygon: pts.map((p) => p.map(Math.round)), removeBackground: removeBg },
+            )
+          }
+        >
           Ausschneiden
         </button>
       </div>

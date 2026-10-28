@@ -82,7 +82,14 @@ aside { position: sticky; top: 72px; align-self: start; display: flex; flex-dire
 .cand small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .noimg { height: 140px; display: grid; place-items: center; color: var(--ink2); }
 .cropwrap { position: relative; display: inline-block; max-width: 100%; user-select: none; }
-.cropwrap img { display: block; max-width: 100%; max-height: 64vh; cursor: crosshair; }
+.cropwrap img { display: block; max-width: 100%; max-height: 64vh; cursor: crosshair; touch-action: none; }
+.cropwrap svg.pen { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.pen polyline { fill: none; stroke: var(--red); stroke-width: 2.5; stroke-linejoin: round; }
+.pen .shade { fill: rgba(194, 74, 24, 0.14); }
+.pen circle { fill: #fff; stroke: var(--red); stroke-width: 2; }
+.pen circle.first { fill: var(--red); }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.seg.small button { padding: 6px 12px; font-size: 14px; }
 .sel { position: absolute; border: 2px solid var(--red); background: rgba(194, 74, 24, 0.12); pointer-events: none; }
 .tag { position: absolute; border: 2px dashed var(--amber); pointer-events: none; }
 .drop { border: 2px dashed var(--ink2); border-radius: 12px; padding: 50px; text-align: center; cursor: pointer; font-size: 15px; color: var(--ink2); }
@@ -155,3 +162,57 @@ header button.ghost { color: var(--paper); border-color: rgba(250, 246, 241, 0.4
 .prospect img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top; border-radius: 6px; }
 .prospect.on { border-color: var(--red); box-shadow: 0 0 0 2px rgba(194, 74, 24, 0.25); }
 .prospect.old { opacity: 0.6; }
+
+/* ---------- Studio ---------- */
+.tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; padding: 10px 14px; font-size: 15px; color: var(--ink2); }
+.tabs button.on { color: var(--nut); border-bottom-color: var(--red); }
+.tabs i { font-style: normal; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line); font-size: 12px; margin-right: 6px; }
+.tabs button.on i { background: var(--red); color: #fff; }
+.next { display: flex; justify-content: flex-end; margin-top: 18px; }
+.presets, .packs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.preset { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 12px; border: 2px solid var(--line); border-radius: 12px; background: #fff; font-weight: 500; }
+.preset b { font-size: 15px; }
+.preset small { color: var(--ink2); font-size: 12px; line-height: 1.3; }
+.preset.on { border-color: var(--red); box-shadow: 0 0 0 3px rgba(194, 74, 24, 0.15); }
+.swatches { display: flex; gap: 0; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.swatches span { width: 26px; height: 22px; }
+.colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; }
+.colors .row { grid-column: 1 / -1; }
+label.color { flex-direction: row; align-items: center; gap: 10px; font-size: 13px; color: var(--nut); cursor: pointer; }
+label.color input { width: 44px; height: 32px; padding: 2px; border-radius: 8px; cursor: pointer; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border-color: var(--line); border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+.chips button.on { background: var(--nut); border-color: var(--nut); color: var(--paper); }
+.effects { display: flex; flex-direction: column; gap: 12px; }
+.ghostbtn { display: inline-flex; flex-direction: row; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 14px; color: var(--nut); cursor: pointer; background: transparent; }
+.exportopts { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.export > .row { margin-top: 14px; align-items: center; }
+button.big, a.big { padding: 10px 18px; font-size: 15px; }
+a.download.big { background: var(--red); color: #fff; border-radius: 8px; text-decoration: none; }
+.progressbar.inline { position: static; margin-top: 10px; border-radius: 4px; overflow: hidden; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 6px; }
+.thumbs img { width: 100%; border-radius: 6px; border: 1px solid var(--line); display: block; }
+.captions { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.caption pre { white-space: pre-wrap; font: 500 13px/1.45 Archivo, system-ui, sans-serif; margin: 8px 0 0; }
+.preview .views { flex-wrap: wrap; }
+.preview .views button { padding: 6px 9px; font-size: 12px; }
+.row.tight { gap: 6px; align-items: center; }
+.phone iframe { transform-origin: 0 0; }
+label.check { flex-direction: row; align-items: center; color: var(--nut); font-size: 14px; font-weight: 600; }
+.prospect { position: relative; }
+.prospect .tick { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 800; z-index: 1; }
+.prospect.on .tick { background: var(--red); border-color: var(--red); color: #fff; }
+
+/* Zauber: 7-Tage-Plan, Zauberknopf */
+.checks.col { flex-direction: column; gap: 6px; }
+.plan { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.planday { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 0; }
+.planday b { font-size: 13px; }
+.planday img { width: 100%; aspect-ratio: 4 / 5; object-fit: contain; border-radius: 6px; background: #faf6f1; display: block; }
+.planday small { font-size: 11px; line-height: 1.25; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planday small.cd { color: var(--red); font-weight: 700; }
+.planday a.small, h3 a.small { font-size: 12px; font-weight: 600; }
+.plan.result img { aspect-ratio: 4 / 5; object-fit: cover; }
+button.primary.magic { box-shadow: 0 8px 20px rgba(194, 74, 24, .28); }

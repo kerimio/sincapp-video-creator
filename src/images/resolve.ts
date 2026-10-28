@@ -70,12 +70,13 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
       }
       try {
         const crop = join(opts.jobDir, 'work/crops', `${o.id}.png`);
-        await runPython('crops.py', [], [{ image: join(opts.jobDir, o.pageFile), box: o.bbox, out: crop, pad: 0.03 }]);
-        const rated = await opts.matcher.compare(
-          crop,
-          files.map((f) => f.file),
-          label(o),
-        );
+        // Für den KI-Vergleich verkleinert (512 px reichen zum Erkennen, kosten aber nur einen Bruchteil der Tokens)
+        const small = files.map((_, i) => join(opts.jobDir, 'work/match', o.id, `${i + 1}.jpg`));
+        await runPython('crops.py', [], [
+          { image: join(opts.jobDir, o.pageFile), box: o.bbox, out: crop, pad: 0.03, maxSide: 640 },
+          ...files.map((f, i) => ({ image: f.file, box: null, out: small[i], pad: 0, maxSide: 512 })),
+        ]);
+        const rated = await opts.matcher.compare(crop, small, label(o));
         rated.forEach((r, i) => Object.assign(o.imgAlternatives![i], { match: r.same_product && r.same_variant && r.clean_shot, verdict: r.note }));
         const best = pickBest(rated);
         if (best !== null) chosen.push({ o, ...files[best] });

@@ -1,3 +1,6 @@
+import type { Story } from './schema';
+import { LAYOUTS, type Format } from './layout';
+
 /**
  * Teilt n Angebote auf Seiten mit 3 oder 2 Angeboten auf, nie 1.
  * Dreierseiten zuerst: 5 = 3+2, 7 = 3+2+2, 8 = 3+3+2.
@@ -24,4 +27,13 @@ export function paginate<T>(items: T[], pages?: number[]): T[][] {
     i += c;
   }
   return out;
+}
+
+/** Seiten eines Formats: Story/Feed wie gespeichert (3/2-Regel), Quadrat mit höchstens 2 pro Seite. */
+export function pagesFor<T extends Pick<Story, 'offers' | 'pages'>>(story: T, format: Format = 'story'): T['offers'][] {
+  if (LAYOUTS[format].perPage === 3) return paginate(story.offers, story.pages);
+  const n = story.offers.length;
+  const counts = Array<number>(Math.floor(n / 2)).fill(2);
+  if (n % 2) counts.push(1);
+  return paginate(story.offers, counts);
 }

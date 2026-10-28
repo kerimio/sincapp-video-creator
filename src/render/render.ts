@@ -7,6 +7,8 @@ import { join, resolve } from 'node:path';
 import { startStaticServer } from '../server/static';
 import { parseStory, type Lang } from '../core/schema';
 import { ROOT } from '../paths';
+import { LAYOUTS, type Format } from '../core/layout';
+import { resolveDesign, SPEED_FACTOR } from '../core/design';
 
 export interface RenderOptions {
   /** Job-Ordner mit story.json und den Bildern. */
@@ -17,6 +19,12 @@ export interface RenderOptions {
   workers?: number;
   /** Nur Einzelbilder bei diesen Zeiten (Sekunden), kein Video. */
   stills?: number[];
+  /** Format (Standard: Story 9:16) */
+  format?: Format;
+  /** Zusätzliche URL-Parameter fürs Template, z. B. "&view=reel&offer=0" */
+  extra?: string;
+  /** Dateiname ohne Sprache, Standard: das Format ("story" → story-de.mp4) */
+  name?: string;
   log?: (msg: string) => void;
 }
 
@@ -28,9 +36,6 @@ export interface RenderResult {
   frames: number;
   seconds: number;
 }
-
-const W = 1080;
-const H = 1920;
 
 export function ffmpegBin() {
   return process.env.FFMPEG_PATH || 'ffmpeg';
@@ -53,11 +58,12 @@ export async function launchBrowser(): Promise<Browser> {
   });
 }
 
-export async function openStoryPage(browser: Browser, baseUrl: string, lang: Lang) {
+export async function openStoryPage(browser: Browser, baseUrl: string, lang: Lang, format: Format = 'story', extra = '') {
+  const { W, H } = LAYOUTS[format];
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${baseUrl}/?lang=${lang}`);
+  await page.goto(`${baseUrl}/?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${extra}`);
   try {
     const info = await page.evaluate(() => window.sincapp.ready);
     return { page, duration: info.duration };
@@ -81,6 +87,7 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
   const fps = opts.fps ?? 30;
   const workers = Math.max(1, opts.workers ?? Math.min(4, availableParallelism()));
   const log = opts.log ?? (() => {});
+  const format = opts.format ?? 'story';
   await mkdir(opts.outDir, { recursive: true });
   const story = parseStory(JSON.parse(await readFile(join(opts.jobDir, 'story.json'), 'utf8')));
   const server = await startStaticServer(templateMounts(opts.jobDir));
@@ -88,14 +95,14 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
   const result: RenderResult = { videos: {}, stills: {}, duration: 0, frames: 0, seconds: 0 };
   try {
     for (const lang of opts.langs) {
-      const pages = await Promise.all(Array.from({ length: workers }, () => openStoryPage(browser, server.url, lang)));
+      const pages = await Promise.all(Array.from({ length: workers }, () => openStoryPage(browser, server.url, lang, format, opts.extra ?? '')));
       const duration = pages[0].duration;
       result.duration = duration;
 
       if (opts.stills) {
         const files: string[] = [];
         for (const [i, t] of opts.stills.entries()) {
-          const file = join(opts.outDir, `still-${lang}-${String(i).padStart(2, '0')}.png`);
+          const file = join(opts.outDir, `still-${format === 'story' ? '' : `${format}-`}${lang}-${String(i).padStart(2, '0')}.png`);
           await pages[0].page.evaluate((tt) => window.sincapp.seek(tt), t);
           await pages[0].page.screenshot({ path: file, type: 'png' });
           files.push(file);
@@ -124,7 +131,7 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
       );
       await Promise.all(pages.map((p) => p.page.close()));
 
-      const out = join(opts.outDir, `story-${lang}.mp4`);
+      const out = join(opts.outDir, `${opts.name ?? format}-${lang}.mp4`);
       await run(ffmpegBin(), [
         '-y', '-loglevel', 'error',
         '-framerate', String(fps), '-i', join(tmp, '%05d.jpg'),
@@ -136,10 +143,11 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
       ]);
       result.videos[lang] = out;
       log(`${lang}: ${out}`);
-      if (!result.poster) {
+      if (!result.poster && !opts.extra) {
         // Poster: erste Angebotsseite, wenn alle Karten stehen.
-        const posterFrame = Math.min(total - 1, Math.round(fps * (story.scenes.intro + 2.6)));
-        result.poster = join(opts.outDir, 'preview.png');
+        const k = SPEED_FACTOR[resolveDesign(story.design).speed];
+        const posterFrame = Math.min(total - 1, Math.round(fps * k * (story.scenes.intro + 2.6)));
+        result.poster = join(opts.outDir, format === 'story' ? 'preview.png' : `preview-${format}.png`);
         await copyFrameAsPng(join(tmp, `${String(posterFrame).padStart(5, '0')}.jpg`), result.poster);
       }
       await rm(tmp, { recursive: true, force: true });
