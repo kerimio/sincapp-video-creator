@@ -9,3 +9,4 @@ tmp/
 .venv/
 /library/
 __pycache__/
+.tools/

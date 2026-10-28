@@ -108,7 +108,9 @@ export function planDir(d: PlanDay) {
 /** Instagram-Text für ein einzelnes Angebot (Reel oder Bild des Tages). */
 export function offerCaption(story: Story, index: number, lang: Lang, opts: { countdown?: number | null } = {}): string {
   const o = story.offers[index];
-  const m = story.market;
+  // Video aus mehreren Märkten: Text nennt den Markt dieses Angebots, nicht „sincapp“
+  const own = o.market ? story.markets?.find((x) => x.name === o.market) : undefined;
+  const m = own ? { name: own.name, instagram: own.instagram, addresses: own.address ? [own.address] : [own.name] } : story.market;
   const unit = typeof o.unit === 'string' ? o.unit : o.unit?.[lang];
   const name = lineName(o.name[lang]);
   const dates = formatDateRange(story.dates.from, story.dates.to);

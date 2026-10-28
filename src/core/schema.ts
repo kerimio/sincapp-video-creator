@@ -90,7 +90,15 @@ export const Story = z
      * Die Angebote nennen ihren Markt in `market` (= `name` hier); jede Seite zeigt einen Markt.
      */
     markets: z
-      .array(z.object({ name: z.string().min(1), logo: z.string().min(1).optional(), address: z.string().optional() }))
+      .array(
+        z.object({
+          name: z.string().min(1),
+          logo: z.string().min(1).optional(),
+          address: z.string().optional(),
+          /** Instagram-Name des Markts (ohne @), zum Markieren beim Teilen */
+          instagram: z.string().regex(/^[A-Za-z0-9._]+$/).optional(),
+        }),
+      )
       .optional(),
   })
   .superRefine((s, ctx) => {

@@ -434,7 +434,7 @@ export function JobPage({ id }: { id: string }) {
   return (
     <>
       {run?.notes && run.notes.length > 0 && <Notes notes={run.notes} />}
-      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} initialTab={run?.auto && !run.error ? 'export' : 'angebote'} />
+      <ReviewPage api={api} jobId={id} title={job.title} onBack={() => go('#/')} initialTab={run?.auto && !run.error ? 'export' : 'angebote'} />
     </>
   );
 }
@@ -491,8 +491,57 @@ export function SettingsPage() {
           <button className="primary" onClick={save} disabled={!Object.values(vals).some((v) => v.trim())}>Speichern</button>
         </div>
       </div>
+      <InstagramSettings />
       <Usage />
     </Shell>
+  );
+}
+
+/** Instagram-Zugang: Token eintragen, Verbindung prüfen, Anleitung für die einmalige Einrichtung bei Meta. */
+function InstagramSettings() {
+  const [st, setSt] = useState<{ configured: boolean; username: string | null; problem: string | null } | null>(null);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = (fresh = false) => call<NonNullable<typeof st>>('GET', `/api/instagram${fresh ? '?fresh' : ''}`).then(setSt, (e) => setSt({ configured: false, username: null, problem: e.message }));
+  useEffect(() => {
+    load();
+  }, []);
+  const save = async (value: string) => {
+    setBusy(true);
+    try {
+      await call('PUT', '/api/settings', { INSTAGRAM_ACCESS_TOKEN: value });
+      setToken('');
+      await load(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <h2>Instagram</h2>
+      <div className="card settings">
+        <p>
+          {!st ? 'Lädt …' : st.username ? <span className="ok">✓ Verbunden mit @{st.username}</span> : st.configured ? <span className="warn">⚠ {st.problem ?? 'Keine Verbindung'}</span> : <span className="warn">Noch nicht verbunden</span>}
+        </p>
+        <p className="muted small">Damit teilt die App Storys, Reels und Beiträge direkt und postet eingeplante Beiträge zum Termin. Der Zugang liegt nur auf diesem Rechner (Datei .env) und wird automatisch verlängert, solange die App regelmäßig läuft.</p>
+        <div className="row">
+          <input className="grow" type="password" placeholder={st?.configured ? 'neuen Zugangs-Token eintragen, um ihn zu ersetzen' : 'Zugangs-Token einfügen'} value={token} onChange={(e) => setToken(e.target.value)} />
+          <button className="primary" disabled={busy || !token.trim()} onClick={() => save(token.trim())}>Verbinden</button>
+          {st?.configured && <button className="ghost danger" disabled={busy} onClick={() => confirm('Instagram-Zugang von diesem Rechner entfernen?') && save('')}>Trennen</button>}
+        </div>
+        <details>
+          <summary>So bekommst du den Zugangs-Token (einmalig, ca. 10 Minuten)</summary>
+          <ol className="small">
+            <li>Das Instagram-Konto muss ein <b>Business- oder Creator-Konto</b> sein (Instagram-App → Einstellungen → Kontotyp und Tools).</li>
+            <li>Auf <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer">developers.facebook.com/apps</a> mit Facebook anmelden und <b>App erstellen</b>. Als Anwendungsfall „Nachrichten und Inhalte auf Instagram verwalten“ wählen.</li>
+            <li>In der App unter <b>App-Rollen → Rollen</b> dein Instagram-Konto als <b>Instagram-Tester</b> hinzufügen und die Einladung in Instagram annehmen (Einstellungen → Website-Berechtigungen → Apps und Websites → Testereinladungen).</li>
+            <li>In der App unter <b>Instagram → API-Einrichtung mit Instagram-Login</b> bei „Zugriffstoken generieren“ dein Konto hinzufügen, bei Instagram anmelden und alle Berechtigungen erlauben (wichtig: Inhalte veröffentlichen).</li>
+            <li>Den angezeigten Token kopieren, hier einfügen und <b>Verbinden</b> klicken.</li>
+          </ol>
+          <p className="muted small">Die App bleibt im Entwicklungsmodus – für das eigene Konto braucht es keine Prüfung durch Meta. Zum Teilen öffnet die App kurz einen sicheren Cloudflare-Tunnel, damit Instagram die Datei abholen kann (nur diese Datei, danach wird er geschlossen). Beim ersten Mal lädt sie dafür das kleine Programm cloudflared herunter.</p>
+        </details>
+      </div>
+    </>
   );
 }
 
