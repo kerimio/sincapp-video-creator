@@ -7,10 +7,11 @@ import {
 } from '../../core/design';
 import { LAYOUTS, type Format } from '../../core/layout';
 import { caption } from '../../core/captions';
+import { bannerSuggestions } from '../../core/badges';
 import type { ExportOptions, JobClient, RenderState } from './api';
 
-export type View = Format | 'angebot';
-const VIEW_LABEL: Record<View, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1', angebot: 'Einzelangebot' };
+export type View = Format | 'angebot' | 'reel';
+const VIEW_LABEL: Record<View, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1', angebot: 'Einzelbild', reel: 'Top-Reel' };
 
 // ---------- Vorschau ----------
 
@@ -23,11 +24,11 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
   const [playing, setPlaying] = useState(false);
   const [ready, setReady] = useState(false);
   const win = () => frame.current?.contentWindow as (Window & { sincapp?: Window['sincapp'] }) | null;
-  const format: Format = view === 'angebot' ? 'feed' : view;
+  const format: Format = view === 'angebot' ? 'feed' : view === 'reel' ? 'story' : view;
   const { W, H } = LAYOUTS[format];
   const scale = 360 / W;
   const offers = (story as Story | null)?.offers.length ?? 0;
-  const src = `/index.html?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${view === 'angebot' ? `&view=offer&offer=${Math.min(offer, Math.max(0, offers - 1))}` : ''}&story=${encodeURIComponent(`${base}story.json`)}`;
+  const src = `/index.html?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${view === 'angebot' || view === 'reel' ? `&view=${view === 'reel' ? 'reel' : 'offer'}&offer=${Math.min(offer, Math.max(0, offers - 1))}` : ''}&story=${encodeURIComponent(`${base}story.json`)}`;
 
   const onLoad = useCallback(async () => {
     setReady(false);
@@ -92,16 +93,17 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
             <button key={l} className={lang === l ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
           ))}
         </div>
-        {view === 'angebot' ? (
+        {(view === 'angebot' || view === 'reel') && (
           <div className="row tight">
             <button className="ghost" disabled={offer <= 0} onClick={() => setOffer((i) => i - 1)}>‹</button>
             <span className="muted">Angebot {Math.min(offer, offers - 1) + 1} / {offers}</span>
             <button className="ghost" disabled={offer >= offers - 1} onClick={() => setOffer((i) => i + 1)}>›</button>
           </div>
-        ) : (
+        )}
+        {view !== 'angebot' && (
           <>
             <button className="ghost" onClick={() => setPlaying((p) => !p)}>{playing ? '❚❚ Pause' : '▶ Abspielen'}</button>
-            <span className="muted">{t.toFixed(1)} / {duration.toFixed(1)} s</span>
+            <span className="muted">{Math.min(t, duration).toFixed(1)} / {duration.toFixed(1)} s</span>
           </>
         )}
       </div>
@@ -115,7 +117,7 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
 
 // ---------- Design ----------
 
-const BG_LABEL: Record<(typeof BACKGROUNDS)[number], string> = { logo: 'Logo-Wasserzeichen', punkte: 'Punkte', verlauf: 'Verlauf', ohne: 'Schlicht' };
+const BG_LABEL: Record<(typeof BACKGROUNDS)[number], string> = { logo: 'Logo-Wasserzeichen', punkte: 'Punkte', verlauf: 'Verlauf', sterne: 'Sterne & Mond', streifen: 'Streifen', ohne: 'Schlicht' };
 const PRICE_LABEL: Record<(typeof PRICE_STYLES)[number], string> = { etikett: 'Etikett (schräg)', kreis: 'Kreis-Sticker', flach: 'Flach' };
 const ENTER_LABEL: Record<(typeof ENTERS)[number], string> = { wischen: 'Reinwischen', hoch: 'Von unten', blende: 'Einblenden', pop: 'Aufploppen' };
 const TRANS_LABEL: Record<(typeof TRANSITIONS)[number], string> = { kreis: 'Kreis', schieben: 'Schieben', blende: 'Überblenden' };
@@ -263,6 +265,27 @@ export function DesignPanel(p: {
         </label>
       </div>
 
+      <h2>Laufband auf den Angebotsseiten</h2>
+      <div className="card banner-edit">
+        <div className="chips">
+          <button className={!p.story.banner ? 'on' : ''} onClick={() => p.update((s) => ((s.banner = undefined), s))}>Kein Laufband</button>
+          {bannerSuggestions(p.story.dates.to).map((b) => (
+            <button key={b.de} className={p.story.banner?.de === b.de ? 'on' : ''} onClick={() => p.update((s) => ((s.banner = b), s))}>{b.de}</button>
+          ))}
+        </div>
+        <div className="row">
+          <label className="grow">
+            Eigener Text DE
+            <input value={p.story.banner?.de ?? ''} maxLength={60} onChange={(e) => p.update((s) => ((s.banner = e.target.value || s.banner?.tr ? { de: e.target.value, tr: s.banner?.tr ?? '' } : undefined), s))} />
+          </label>
+          <label className="grow">
+            TR
+            <input value={p.story.banner?.tr ?? ''} maxLength={60} onChange={(e) => p.update((s) => ((s.banner = e.target.value || s.banner?.de ? { de: s.banner?.de ?? '', tr: e.target.value } : undefined), s))} />
+          </label>
+        </div>
+        <small className="muted">Sticker wie „Knaller!“ oder „Halal“ setzt du pro Angebot im Schritt Angebote.</small>
+      </div>
+
       <h2>{p.story.market.name}</h2>
       <div className="card row">
         <button
@@ -306,19 +329,20 @@ export function DesignPanel(p: {
 
 // ---------- Export ----------
 
-type ExportChoice = Required<Pick<ExportOptions, 'videos' | 'pageImages' | 'offerImages' | 'langs' | 'captions'>>;
+type ExportChoice = Required<Pick<ExportOptions, 'videos' | 'pageImages' | 'offerImages' | 'langs' | 'captions' | 'reels'>>;
 const PACKS: { key: string; label: string; hint: string; opts: Omit<ExportChoice, 'langs'> }[] = [
-  { key: 'woche', label: 'Wochenpaket', hint: 'Story-Video, Feed-Video, Seiten als Feed-Bilder, jedes Angebot als Bild, Texte', opts: { videos: ['story', 'feed'], pageImages: ['feed'], offerImages: ['feed'], captions: true } },
-  { key: 'story', label: 'Nur Story', hint: 'Das Video für die Instagram-Story', opts: { videos: ['story'], pageImages: [], offerImages: [], captions: false } },
-  { key: 'feed', label: 'Feed-Beitrag', hint: 'Video 4:5 und Karussell-Bilder für einen Beitrag, mit Text', opts: { videos: ['feed'], pageImages: ['feed'], offerImages: [], captions: true } },
-  { key: 'bilder', label: 'Nur Bilder', hint: 'Jedes Angebot einzeln (4:5 und 1:1), schnell fertig', opts: { videos: [], pageImages: [], offerImages: ['feed', 'quadrat'], captions: true } },
+  { key: 'woche', label: 'Wochenpaket', hint: 'Story- und Feed-Video, 3 Reels für die Top-Angebote, Karussell-Bilder, jedes Angebot als Bild, Texte', opts: { videos: ['story', 'feed'], reels: 3, pageImages: ['feed'], offerImages: ['feed'], captions: true } },
+  { key: 'story', label: 'Nur Story', hint: 'Das Video für die Instagram-Story', opts: { videos: ['story'], reels: 0, pageImages: [], offerImages: [], captions: false } },
+  { key: 'feed', label: 'Feed-Beitrag', hint: 'Video 4:5 und Karussell-Bilder für einen Beitrag, mit Text', opts: { videos: ['feed'], reels: 0, pageImages: ['feed'], offerImages: [], captions: true } },
+  { key: 'bilder', label: 'Nur Bilder', hint: 'Jedes Angebot einzeln (4:5 und 1:1), schnell fertig', opts: { videos: [], reels: 0, pageImages: [], offerImages: ['feed', 'quadrat'], captions: true } },
+  { key: 'reels', label: 'Top-Reels', hint: 'Ein 7-Sekunden-Reel pro Top-Angebot (die ersten 3), mit Text', opts: { videos: [], reels: 3, pageImages: [], offerImages: [], captions: true } },
 ];
 const STORE = 'sincapp.export';
 
 function load(): ExportChoice {
   try {
     const x = JSON.parse(localStorage.getItem(STORE) ?? '');
-    if (x && Array.isArray(x.videos)) return x;
+    if (x && Array.isArray(x.videos)) return { reels: 0, ...x };
   } catch {
     /* Standard */
   }
@@ -341,14 +365,14 @@ export function ExportPanel(p: { story: Story; api: JobClient; render: RenderSta
   const count = useMemo(() => {
     const L = c.langs.length;
     const pages = (f: Format) => (f === 'quadrat' ? Math.ceil(nOffers / 2) : nOffers < 2 ? 0 : nOffers % 3 === 1 ? Math.floor(nOffers / 3) + 1 : Math.ceil(nOffers / 3)) + 2;
-    const videos = c.videos.length * L;
+    const videos = (c.videos.length + Math.min(c.reels, nOffers)) * L;
     const images = (c.pageImages.reduce((a, f) => a + pages(f), 0) + c.offerImages.length * nOffers) * L;
-    const minutes = Math.max(1, Math.round(videos * 1.2 + images * 0.05));
+    const minutes = Math.max(1, Math.round(c.videos.length * L * 1.2 + Math.min(c.reels, nOffers) * L * 0.4 + images * 0.05));
     return { videos, images, minutes };
   }, [c, nOffers]);
-  const active = PACKS.find((x) => JSON.stringify({ ...x.opts }) === JSON.stringify({ videos: c.videos, pageImages: c.pageImages, offerImages: c.offerImages, captions: c.captions }));
+  const active = PACKS.find((x) => JSON.stringify({ ...x.opts }) === JSON.stringify({ videos: c.videos, reels: c.reels, pageImages: c.pageImages, offerImages: c.offerImages, captions: c.captions }));
   const running = !!p.render?.running;
-  const nothing = !c.langs.length || (!c.videos.length && !c.pageImages.length && !c.offerImages.length && !c.captions);
+  const nothing = !c.langs.length || (!c.videos.length && !c.reels && !c.pageImages.length && !c.offerImages.length && !c.captions);
   const box = (k: 'videos' | 'pageImages' | 'offerImages', f: Format, label = VIEW_LABEL[f]) => (
     <label className="check" key={k + f}>
       <input type="checkbox" checked={c[k].includes(f)} onChange={() => toggle(k, f)} /> {label}
@@ -367,6 +391,9 @@ export function ExportPanel(p: { story: Story; api: JobClient; render: RenderSta
       </div>
       <div className="card exportopts">
         <div className="field"><span>Videos</span><div className="checks">{(['story', 'feed', 'quadrat'] as Format[]).map((f) => box('videos', f))}</div></div>
+        <div className="field"><span>Kurz-Reels (7 s) für die Top-Angebote – Reihenfolge wie im Schritt Angebote</span>
+          <div className="chips">{[0, 1, 3, 5].map((n) => <button key={n} className={c.reels === n ? 'on' : ''} onClick={() => setC((x) => ({ ...x, reels: n }))}>{n === 0 ? 'keine' : `${n} Reel${n === 1 ? '' : 's'}`}</button>)}</div>
+        </div>
         <div className="field"><span>Seiten als Bilder (Karussell)</span><div className="checks">{(['story', 'feed', 'quadrat'] as Format[]).map((f) => box('pageImages', f))}</div></div>
         <div className="field"><span>Jedes Angebot einzeln als Bild</span><div className="checks">{box('offerImages', 'feed')}{box('offerImages', 'quadrat')}</div></div>
         <div className="field"><span>Sprachen</span><div className="checks">

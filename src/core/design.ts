@@ -7,8 +7,8 @@ import { z } from 'zod';
 
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Farbe als #RRGGBB');
 
-export const PRESETS = ['klassik', 'frisch', 'premium', 'knallig', 'minimal'] as const;
-export const BACKGROUNDS = ['logo', 'punkte', 'verlauf', 'ohne'] as const;
+export const PRESETS = ['klassik', 'frisch', 'premium', 'knallig', 'minimal', 'blackweek', 'bayram', 'sommer'] as const;
+export const BACKGROUNDS = ['logo', 'punkte', 'verlauf', 'sterne', 'streifen', 'ohne'] as const;
 export const PRICE_STYLES = ['etikett', 'kreis', 'flach'] as const;
 export const ENTERS = ['wischen', 'hoch', 'blende', 'pop'] as const;
 export const SPEEDS = ['ruhig', 'normal', 'schnell'] as const;
@@ -88,6 +88,24 @@ export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
     hint: 'Hell und aufgeräumt, die Produkte stehen im Mittelpunkt',
     colors: { paper: '#FFFFFF', ink: '#1C1C1C', ink2: '#666666', accent: '#C24A18', accent2: '#1C1C1C', pages: ['#F1ECE4', '#E4ECEE'] },
     background: 'ohne', price: 'flach', enter: 'hoch', speed: 'normal', wobble: false, transition: 'blende',
+  },
+  blackweek: {
+    label: 'Black Week',
+    hint: 'Schwarz mit Neon-Gelb – für Rabattwochen und Sonderaktionen',
+    colors: { paper: '#0B0B0B', ink: '#111111', ink2: '#555555', accent: '#FFE500', accent2: '#FFE500', pages: ['#111111', '#262626'] },
+    background: 'verlauf', price: 'kreis', enter: 'pop', speed: 'schnell', wobble: true, transition: 'kreis',
+  },
+  bayram: {
+    label: 'Bayram',
+    hint: 'Smaragdgrün, Weinrot und Gold – festlich für Ramazan und Bayram',
+    colors: { paper: '#F7F1E3', ink: '#1F1A14', ink2: '#5E5240', accent: '#0F6B52', accent2: '#D4A537', pages: ['#0F5C47', '#6E1C2A'] },
+    background: 'sterne', price: 'etikett', enter: 'blende', speed: 'ruhig', wobble: false, transition: 'blende',
+  },
+  sommer: {
+    label: 'Sommer',
+    hint: 'Türkis und Orange – Grillsaison, Getränke, Eis',
+    colors: { paper: '#FFF8EC', ink: '#1D2A33', ink2: '#4E5C66', accent: '#F2602B', accent2: '#FFD23F', pages: ['#0098B8', '#F2602B'] },
+    background: 'punkte', price: 'kreis', enter: 'pop', speed: 'normal', wobble: true, transition: 'schieben',
   },
 };
 

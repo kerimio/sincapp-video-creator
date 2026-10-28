@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Story as StorySchema } from '../../core/schema';
+import { BADGES, Story as StorySchema } from '../../core/schema';
+import { BADGE_TEXT } from '../../core/badges';
 import { formatDateRange } from '../../core/format';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
 import { type ExportOptions, type JobClient, type RenderState, type State, type StoryOffer } from './api';
@@ -407,6 +408,15 @@ function OfferList(p: {
                 <label className="grow">
                   Zusatz TR
                   <input value={o.note?.tr ?? ''} onChange={(e) => p.setOffer(i, (x) => (x.note = e.target.value || x.note?.de ? { de: x.note?.de ?? '', tr: e.target.value } : undefined))} />
+                </label>
+                <label>
+                  Sticker
+                  <select value={o.badge ?? ''} onChange={(e) => p.setOffer(i, (x) => (x.badge = (e.target.value || undefined) as StoryOffer['badge']))}>
+                    <option value="">– keiner –</option>
+                    {BADGES.map((b) => (
+                      <option key={b} value={b}>{BADGE_TEXT[b].de}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
               {(priceWarn || imgWarn.length > 0) && (

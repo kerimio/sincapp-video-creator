@@ -20,6 +20,8 @@ export interface ExportOptions {
   /** Jedes Angebot einzeln als Bild, in diesen Formaten (feed/quadrat) */
   offerImages: Format[];
   langs?: Lang[];
+  /** Kurz-Reels (9:16, 7 s) für die ersten N Angebote */
+  reels?: number;
   /** Instagram-Texte mitliefern */
   captions?: boolean;
 }
@@ -64,7 +66,8 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
   let poster: string | null = null;
 
   // Arbeitsschritte gewichtet: ein Video ≈ 10 Bilder
-  const steps = opts.videos.length * langs.length * 10 + (opts.pageImages.length + opts.offerImages.length) * langs.length + 1;
+  const reels = Math.max(0, Math.min(opts.reels ?? 0, story.offers.length));
+  const steps = (opts.videos.length * 10 + reels * 3 + opts.pageImages.length + opts.offerImages.length) * langs.length + 1;
   let done = 0;
   const tick = (w: number, msg: string) => {
     done += w;
@@ -96,6 +99,32 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
       files.push({ path: `output/${basename(file)}`, kind: 'video', label: `Video ${FORMAT_LABEL[format]} ${lang.toUpperCase()}`, format, lang: lang as Lang });
     }
     if (r.poster && !poster) poster = `output/${basename(r.poster)}`;
+  }
+
+  for (let i = 0; i < reels; i++) {
+    const base = done;
+    const name = `reel-${String(i + 1).padStart(2, '0')}`;
+    const r = await renderStory({
+      jobDir,
+      outDir: out,
+      langs,
+      extra: `&view=reel&offer=${i}`,
+      name,
+      log: (m) => {
+        const prog = m.match(/^(\w+): (\d+)\/(\d+)/);
+        if (prog) {
+          done = base + (langs.indexOf(prog[1] as Lang) + Number(prog[2]) / Number(prog[3])) * 3;
+          onProgress(Math.min(0.99, done / steps), `Reel ${i + 1} von ${reels} (${prog[1].toUpperCase()})`);
+        }
+      },
+    });
+    done = base + langs.length * 3;
+    for (const [lang, file] of Object.entries(r.videos)) {
+      const c = await verifyVideo(file, r.duration);
+      checks.push({ ...c, rel: `output/${basename(file)}` });
+      const o = story.offers[i];
+      files.push({ path: `output/${basename(file)}`, kind: 'video', label: `Reel ${i + 1}: ${o.name.de.join(' ').replace(/- /g, '')} ${lang.toUpperCase()}`, format: 'story', lang: lang as Lang });
+    }
   }
 
   const needBrowser = opts.pageImages.length + opts.offerImages.length > 0;

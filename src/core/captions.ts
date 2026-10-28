@@ -1,5 +1,6 @@
 import { formatDateRange, turkishLocative } from './format';
 import type { Lang, Story } from './schema';
+import { BADGE_TEXT } from './badges';
 
 /**
  * Instagram-Bildtext (DE/TR) mit Angeboten und Hashtags. Ohne KI – kostet nichts
@@ -21,7 +22,7 @@ export function caption(story: Story, lang: Lang): string {
   const unitOf = (u: Story['offers'][number]['unit']) => (typeof u === 'string' ? u : u?.[lang]);
   const offers = story.offers.map((o) => {
     const unit = unitOf(o.unit);
-    return `✅ ${lineName(o.name[lang])} – ${o.price} €${unit ? ` (${unit})` : ''}`;
+    return `${o.badge === 'knaller' ? '🔥' : '✅'} ${lineName(o.name[lang])} – ${o.price} €${unit ? ` (${unit})` : ''}${o.badge ? ` · ${BADGE_TEXT[o.badge][lang]}` : ''}`;
   });
   const city = cityOf(m.addresses[0] ?? '');
   const head = story.headline[lang].join(' ').replace(/- /g, '');
@@ -41,6 +42,7 @@ export function caption(story: Story, lang: Lang): string {
     return [
       `🔥 ${head} bei ${m.name}!${handle}`,
       `🗓 Gültig ${dates}`,
+      ...(story.banner?.de ? [`⏰ ${story.banner.de}`] : []),
       '',
       ...offers,
       '',
@@ -53,6 +55,7 @@ export function caption(story: Story, lang: Lang): string {
   return [
     `🔥 ${head} – ${turkishLocative(m.name)}!${handle}`,
     `🗓 Geçerlilik: ${dates}`,
+    ...(story.banner?.tr ? [`⏰ ${story.banner.tr}`] : []),
     '',
     ...offers,
     '',

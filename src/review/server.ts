@@ -233,8 +233,9 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
           offerImages: fmts(o.offerImages),
           langs: Array.isArray(o.langs) && o.langs.length ? o.langs.filter((l) => l === 'de' || l === 'tr') : undefined,
           captions: o.captions !== false,
+          reels: typeof o.reels === 'number' ? Math.max(0, Math.min(15, Math.floor(o.reels))) : 0,
         };
-        if (!opts.videos.length && !opts.pageImages.length && !opts.offerImages.length && !opts.captions) return sendJson(res, { error: 'Bitte mindestens etwas zum Exportieren auswählen' }, 400);
+        if (!opts.videos.length && !opts.reels && !opts.pageImages.length && !opts.offerImages.length && !opts.captions) return sendJson(res, { error: 'Bitte mindestens etwas zum Exportieren auswählen' }, 400);
         await startRender(opts);
         return sendJson(res, render, 202);
       }

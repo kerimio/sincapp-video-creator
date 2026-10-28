@@ -76,3 +76,19 @@ describe('ZIP', () => {
     expect(out).toContain("None ['a.txt', 'bilder/b.bin'] Hallo sincapp");
   });
 });
+
+describe('Sticker und Laufband', () => {
+  it('stehen im Instagram-Text', () => {
+    const s = parseStory({ ...JSON.parse(readFileSync(join(__dirname, 'fixtures/reference-job/story.json'), 'utf8')), banner: { de: 'Nur bis Freitag!', tr: 'Sadece Cuma gününe kadar!' } });
+    s.offers[0].badge = 'knaller';
+    const de = caption(s, 'de');
+    expect(de).toContain('⏰ Nur bis Freitag!');
+    expect(de).toMatch(/🔥 .+ · Knaller!/);
+    expect(caption(s, 'tr')).toContain('Süper fiyat!');
+  });
+
+  it('Laufband-Vorschlag nennt den letzten Tag', async () => {
+    const { bannerSuggestions } = await import('../src/core/badges');
+    expect(bannerSuggestions('2026-11-07')[0]).toEqual({ de: 'Nur bis Samstag!', tr: 'Sadece Cumartesi gününe kadar!' });
+  });
+});

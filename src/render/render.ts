@@ -21,6 +21,10 @@ export interface RenderOptions {
   stills?: number[];
   /** Format (Standard: Story 9:16) */
   format?: Format;
+  /** Zusätzliche URL-Parameter fürs Template, z. B. "&view=reel&offer=0" */
+  extra?: string;
+  /** Dateiname ohne Sprache, Standard: das Format ("story" → story-de.mp4) */
+  name?: string;
   log?: (msg: string) => void;
 }
 
@@ -91,7 +95,7 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
   const result: RenderResult = { videos: {}, stills: {}, duration: 0, frames: 0, seconds: 0 };
   try {
     for (const lang of opts.langs) {
-      const pages = await Promise.all(Array.from({ length: workers }, () => openStoryPage(browser, server.url, lang, format)));
+      const pages = await Promise.all(Array.from({ length: workers }, () => openStoryPage(browser, server.url, lang, format, opts.extra ?? '')));
       const duration = pages[0].duration;
       result.duration = duration;
 
@@ -127,7 +131,7 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
       );
       await Promise.all(pages.map((p) => p.page.close()));
 
-      const out = join(opts.outDir, `${format}-${lang}.mp4`);
+      const out = join(opts.outDir, `${opts.name ?? format}-${lang}.mp4`);
       await run(ffmpegBin(), [
         '-y', '-loglevel', 'error',
         '-framerate', String(fps), '-i', join(tmp, '%05d.jpg'),
@@ -139,7 +143,7 @@ export async function renderStory(opts: RenderOptions): Promise<RenderResult> {
       ]);
       result.videos[lang] = out;
       log(`${lang}: ${out}`);
-      if (!result.poster) {
+      if (!result.poster && !opts.extra) {
         // Poster: erste Angebotsseite, wenn alle Karten stehen.
         const k = SPEED_FACTOR[resolveDesign(story.design).speed];
         const posterFrame = Math.min(total - 1, Math.round(fps * k * (story.scenes.intro + 2.6)));

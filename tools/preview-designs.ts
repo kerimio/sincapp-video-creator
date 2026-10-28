@@ -19,6 +19,7 @@ const out = opt('out', join(ROOT, 'tmp/designs'));
 const presets = opt('presets', PRESETS.join(',')).split(',');
 const formats = opt('formats', 'story,feed,quadrat').split(',') as Format[];
 const lang = opt('lang', 'de') as 'de' | 'tr';
+const extras = args.includes('--extras');
 
 const job = await mkdtemp(join(tmpdir(), 'sincapp-designs-'));
 await cp(src, job, { recursive: true });
@@ -29,6 +30,12 @@ const browser = await launchBrowser();
 try {
   for (const preset of presets) {
     const data = { ...base, design: { ...(base.design ?? {}), preset } };
+    if (extras) {
+      // Sticker und Laufband zeigen
+      data.banner = { de: 'Nur bis Samstag!', tr: 'Sadece Cumartesi gününe kadar!' };
+      const badges = ['knaller', 'neu', 'halal', 'woche', 'bestpreis'];
+      data.offers = data.offers.map((o: object, i: number) => ({ ...o, badge: badges[i % badges.length] }));
+    }
     await writeFile(join(job, 'story.json'), JSON.stringify(data));
     const story = parseStory(data);
     for (const format of formats) {
@@ -41,6 +48,14 @@ try {
         await page.screenshot({ path: join(out, `${preset}-${format}-${s.name}.png`) });
       }
       await page.close();
+      if (extras && format === 'story') {
+        const { page: rp } = await openStoryPage(browser, server.url, lang, format, '&view=reel&offer=0');
+        for (const t of [0.8, 2.0, 4.5]) {
+          await rp.evaluate((tt) => window.sincapp.seek(tt), t);
+          await rp.screenshot({ path: join(out, `${preset}-reel-${t}.png`) });
+        }
+        await rp.close();
+      }
       if (format !== 'story') {
         for (const i of [0, 3]) {
           const { page: op } = await openStoryPage(browser, server.url, lang, format, `&view=offer&offer=${i}`);

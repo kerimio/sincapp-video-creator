@@ -8,6 +8,7 @@ import { pagesFor } from '../core/pages';
 import { formatDateRange, defaultEyebrow } from '../core/format';
 import { pageMode, resolveDesign, rgba, textOn, type Palette, type PageMode, type ResolvedDesign } from '../core/design';
 import { LAYOUTS, type Format, type Layout } from '../core/layout';
+import { BADGE_TEXT } from '../core/badges';
 import { Easing, MOTION, tw } from './motion';
 import { fitSize, textWidth } from './fit';
 
@@ -202,6 +203,38 @@ function PriceCircle({ o, lang, theme, p, size }: { o: Offer; lang: Lang; theme:
   );
 }
 
+/** Sticker oben links auf der Karte ("Knaller!", "Neu" …). */
+function BadgeSticker({ o, lang, theme, p, look, size = 30 }: { o: Offer; lang: Lang; theme: PageTheme; p: number; look: Look; size?: number }) {
+  if (!o.badge) return null;
+  const c = look.c;
+  const bg = theme.tagBg === c.accent2 ? c.accent : c.accent2;
+  return (
+    <div style={{ display: 'inline-block', padding: `${size * 0.32}px ${size * 0.7}px`, borderRadius: 999, background: bg, color: textOn(bg, c.ink), fontSize: size, fontWeight: 900, letterSpacing: '0.02em', textTransform: 'uppercase', whiteSpace: 'nowrap', transform: `scale(${p}) rotate(-6deg)`, transformOrigin: '0 50%', boxShadow: '0 8px 18px rgba(0,0,0,.22)', border: '3px solid #fff' }}>
+      {BADGE_TEXT[o.badge][lang]}
+    </div>
+  );
+}
+
+/** Laufband unten auf den Angebotsseiten ("Nur bis Samstag!"). */
+function Banner({ text, T, look, theme, hd }: { text: string; T: number; look: Look; theme: PageTheme; hd: number }) {
+  const { c, L } = look;
+  const h = L.page.bannerH;
+  const bg = theme.mode === 'light' ? c.ink : theme.tagBg === c.accent2 ? c.accent2 : '#FFFFFF';
+  const fg = bg === '#FFFFFF' ? theme.bg : textOn(bg, c.ink);
+  const fs = Math.round(h * 0.46);
+  const item = `${text.toLocaleUpperCase()}   ★   `;
+  const seg = Math.max(200, textWidth(item, { weight: 900, size: fs, lang: 'de' }) + 1);
+  const x = -((T * 90) % seg);
+  const reps = Math.ceil(L.W / seg) + 2;
+  return (
+    <div style={abs({ left: 0, width: L.W, top: L.page.bannerTop, height: h, background: bg, overflow: 'hidden', transform: `translateY(${hd * (h + 80)}px)`, display: 'flex', alignItems: 'center' })}>
+      <div style={{ display: 'flex', transform: `translateX(${x}px)`, whiteSpace: 'pre', fontSize: fs, fontWeight: 900, color: fg, letterSpacing: '0.02em' }}>
+        {Array.from({ length: reps }, (_, i) => <span key={i} style={{ width: seg, flexShrink: 0 }}>{item}</span>)}
+      </div>
+    </div>
+  );
+}
+
 function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: number; n: number; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls; look: Look }) {
   const { d: D, c, L } = look;
   const P = L.page;
@@ -272,6 +305,11 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
           <PriceCircle o={o} lang={lang} theme={theme} p={tagP} size={P.circle} />
         </div>
       )}
+      {o.badge && (
+        <div style={abs({ left: 14, top: -18 })}>
+          <BadgeSticker o={o} lang={lang} theme={theme} p={tagP} look={look} size={Math.round(P.rowH * 0.075)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -290,6 +328,16 @@ function Backdrop({ look, T, urls, mode }: { look: Look; T: number; urls: Urls; 
     const dot = onColor ? 'rgba(255,255,255,.11)' : rgba(look.c.ink, 0.07);
     const shift = T * 6;
     return <div style={abs({ inset: 0, backgroundImage: `radial-gradient(circle, ${dot} 4px, transparent 4.6px)`, backgroundSize: '46px 46px', backgroundPosition: `${shift}px ${shift}px`, pointerEvents: 'none' })} />;
+  }
+  if (kind === 'sterne') {
+    // Sterne und Halbmonde, langsam treibend (festlich, z. B. Bayram)
+    const col = onColor ? 'rgba(255,255,255,.13)' : rgba(look.c.accent2, 0.35);
+    const svg = encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><g fill="${col}"><path d="M40 22l4 10 11 1-8 7 3 11-10-6-10 6 3-11-8-7 11-1z"/><path d="M128 96a22 22 0 1 0 18 34 18 18 0 1 1-18-34z"/><circle cx="150" cy="30" r="3"/><circle cx="70" cy="150" r="4"/></g></svg>`);
+    return <div style={abs({ inset: 0, backgroundImage: `url("data:image/svg+xml,${svg}")`, backgroundSize: '180px 180px', backgroundPosition: `${T * 4}px ${T * 2}px`, pointerEvents: 'none' })} />;
+  }
+  if (kind === 'streifen') {
+    const col = onColor ? 'rgba(255,255,255,.07)' : rgba(look.c.accent, 0.06);
+    return <div style={abs({ inset: 0, backgroundImage: `repeating-linear-gradient(-45deg, ${col} 0 28px, transparent 28px 56px)`, backgroundPosition: `${T * 10}px 0`, pointerEvents: 'none' })} />;
   }
   if (kind === 'verlauf') {
     const g = onColor ? 'linear-gradient(165deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.28) 100%)' : `linear-gradient(180deg, rgba(255,255,255,0) 30%, ${rgba(look.c.accent, 0.1)} 100%)`;
@@ -333,6 +381,11 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
   const themes = pageThemes(story, c);
   const chipProps = { story, logoSize, urls };
   const btnTx = textOn(c.accent, c.ink);
+  // Text auf Anfang/Schluss: bei dunklem Hintergrund (z. B. Black Week) hell
+  const paperMode = pageMode(c.paper, c.ink);
+  const paperDark = paperMode !== 'light';
+  const pInk = paperDark ? '#FFFFFF' : c.ink;
+  const pInk2 = paperDark ? 'rgba(255,255,255,.72)' : c.ink2;
 
   const c1 = cues.S1;
   const cC = cues.CTA;
@@ -368,26 +421,26 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
 
   return (
     <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: c.paper, fontFamily: 'Archivo, system-ui, sans-serif' }}>
-      <Backdrop look={look} T={T} urls={urls} />
+      <Backdrop look={look} T={T} urls={urls} mode={paperMode} />
       <Shot T={T} from={0} to={c1 + 0.6}>
-        <div style={abs({ left: W / 2, top: I.lockTop, transform: `translateX(-50%) scale(${I.lockScale})`, transformOrigin: '50% 0', opacity: lockIn })}><Lockup h={64} urls={urls} /></div>
+        <div style={abs({ left: W / 2, top: I.lockTop, transform: `translateX(-50%) scale(${I.lockScale})`, transformOrigin: '50% 0', opacity: lockIn })}><Lockup h={64} dark={paperDark} urls={urls} /></div>
         <div style={abs({ left: 0, width: W, top: I.headTop, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 })}>
-          <div style={{ opacity: eyeOp, transform: `translateY(${eyeIn}px)`, fontSize: eyebrowSize, fontWeight: 800, letterSpacing: '.2em', textTransform: 'uppercase', color: c.ink2 }}>{eyebrow}</div>
+          <div style={{ opacity: eyeOp, transform: `translateY(${eyeIn}px)`, fontSize: eyebrowSize, fontWeight: 800, letterSpacing: '.2em', textTransform: 'uppercase', color: pInk2 }}>{eyebrow}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: `scale(${headDrift})` }}>
             {head.map((h, k) => (
               <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -10, paddingBottom: 6 }}>
-                <div style={{ transform: `translateY(${tw(T, 0.45 + k * 0.12, 1.15 + k * 0.12, 115, 0, MOTION.enter)}%)`, fontSize: headSize, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'uppercase', color: k === head.length - 1 && head.length > 1 ? c.accent : c.ink, whiteSpace: 'nowrap' }}>{h}</div>
+                <div style={{ transform: `translateY(${tw(T, 0.45 + k * 0.12, 1.15 + k * 0.12, 115, 0, MOTION.enter)}%)`, fontSize: headSize, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'uppercase', color: k === head.length - 1 && head.length > 1 ? c.accent : pInk, whiteSpace: 'nowrap' }}>{h}</div>
               </div>
             ))}
           </div>
         </div>
         <MarketChip {...chipProps} style={{ left: W / 2 - 210 * CS, top: I.chipTop + chipBob, transform: `translate(${210 * CS * (1 - chipP)}px, ${100 * CS * (1 - chipP)}px) scale(${CS * chipP})` }} />
         <div style={abs({ left: 0, width: W, top: I.infoTop, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: I.infoGap, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: I.pillH, padding: '0 40px 0 32px', borderRadius: 999, border: `3px solid ${rgba(c.ink, 0.18)}`, boxSizing: 'border-box' }}>
-            <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: I.cal, height: I.cal, display: 'block' }} />
-            <span style={{ fontSize: I.pillFont, fontWeight: 800, letterSpacing: '-0.01em', color: c.ink, whiteSpace: 'nowrap' }}>{dates}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: I.pillH, padding: '0 40px 0 32px', borderRadius: 999, border: paperDark ? '3px solid rgba(255,255,255,.3)' : `3px solid ${rgba(c.ink, 0.18)}`, boxSizing: 'border-box' }}>
+            <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: I.cal, height: I.cal, display: 'block', ...(paperDark ? { filter: 'invert(1) brightness(2)' } : {}) }} />
+            <span style={{ fontSize: I.pillFont, fontWeight: 800, letterSpacing: '-0.01em', color: pInk, whiteSpace: 'nowrap' }}>{dates}</span>
           </div>
-          <div style={{ fontSize: introAddrSize, fontWeight: 600, color: c.ink2, textAlign: 'center' }}>
+          <div style={{ fontSize: introAddrSize, fontWeight: 600, color: pInk2, textAlign: 'center' }}>
             {story.market.addresses.map((a, i) => <div key={i}>{a}</div>)}
           </div>
           {story.market.instagram && <div style={{ fontSize: I.insta, fontWeight: 800, color: c.accent }}>@{story.market.instagram}</div>}
@@ -409,19 +462,20 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
               <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
               <MarketInfo theme={theme} dates={dates} story={story} lang={lang} hd={hd} urls={urls} look={look} />
               {offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} />)}
+              {story.banner?.[lang] && <Banner text={story.banner[lang]} T={T} look={look} theme={theme} hd={hd} />}
             </Shot>
           </div>
         );
       })}
 
       <div style={abs({ inset: 0, background: c.paper, ...reveal(look, pCta, W / 2, Cta.revealY, false) })}>
-        <Backdrop look={look} T={T} urls={urls} />
+        <Backdrop look={look} T={T} urls={urls} mode={paperMode} />
         <Shot T={T} from={cC - 0.5} to={cC + 10}>
-          <div style={abs({ left: 0, width: W, top: Cta.lockTop, display: 'flex', justifyContent: 'center', opacity: lockCta })}><Lockup h={64} urls={urls} /></div>
+          <div style={abs({ left: 0, width: W, top: Cta.lockTop, display: 'flex', justifyContent: 'center', opacity: lockCta })}><Lockup h={64} dark={paperDark} urls={urls} /></div>
           <div style={abs({ left: 0, width: W, top: Cta.headTop, display: 'flex', flexDirection: 'column', alignItems: 'center' })}>
             {L.cta.map((h, k) => (
               <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -10, paddingBottom: 8 }}>
-                <div style={{ transform: `translateY(${ctaLine(k * 0.12)}%)`, fontSize: Cta.size, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'up' in h ? 'uppercase' : 'none', color: 'red' in h ? c.accent : c.ink, whiteSpace: 'nowrap' }}>{h.t}</div>
+                <div style={{ transform: `translateY(${ctaLine(k * 0.12)}%)`, fontSize: Cta.size, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'up' in h ? 'uppercase' : 'none', color: 'red' in h ? c.accent : pInk, whiteSpace: 'nowrap' }}>{h.t}</div>
               </div>
             ))}
           </div>
@@ -504,6 +558,11 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
       <div style={abs(d.price === 'kreis' ? { right: 40, top: cardTop + cardH - textH - 230 } : { right: 56, top: cardTop + cardH - textH - 150, transform: 'scale(1.3)', transformOrigin: '100% 50%' })}>
         {d.price === 'kreis' ? <PriceCircle o={o} lang={lang} theme={theme} p={1} size={250} /> : <PriceTag o={o} lang={lang} theme={theme} p={1} look={look} />}
       </div>
+      {o.badge && (
+        <div style={abs({ left: 50, top: cardTop - 22 })}>
+          <BadgeSticker o={o} lang={lang} theme={theme} p={1} look={look} size={40} />
+        </div>
+      )}
       <div style={abs({ left: 70, right: 70, bottom: square ? 30 : 44, height: square ? 130 : 150, display: 'flex', alignItems: 'center', gap: 28 })}>
         <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ position: 'relative', flexShrink: 0, transform: `scale(${square ? 0.6 : 0.7})`, transformOrigin: '0 50%', marginRight: square ? -168 : -126, border: theme.dark ? undefined : 'none' }} />
         <div style={{ flex: 1, minWidth: 0, textAlign: 'right', color: light ? '#FAF6F1' : c.ink2 }}>
@@ -511,6 +570,88 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
           {story.market.instagram && <div style={{ fontSize: 30, fontWeight: 800, marginTop: 6, color: light ? (theme.white ? '#fff' : c.accent2) : c.accent }}>@{story.market.instagram}</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+export const REEL_DURATION = 7;
+
+const REEL_COPY = {
+  de: { top: ['Top-', 'Angebot'], at: (m: string) => `Jetzt bei ${m}` },
+  tr: { top: ['Haftanın', 'yıldızı'], at: (m: string) => `Şimdi ${m}` },
+} as const;
+
+/**
+ * Kurz-Reel (9:16, 7 s) für ein einzelnes Top-Angebot: Titel, große Produktkarte,
+ * Preis mit Pop, Sticker, Markt und Zeitraum. Läuft ohne Schnitt, damit es sauber loopt.
+ */
+export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryProps, 'cues' | 'format'> & { index: number }) {
+  const d = resolveDesign(story.design);
+  const c = d.colors;
+  const Lay = LAYOUTS.story;
+  const look: Look = { d, c, L: Lay };
+  const { W, H } = Lay;
+  const o = story.offers[index] ?? story.offers[0];
+  const theme = pageThemes(story, c)[index % 2];
+  const light = theme.mode !== 'light';
+  const fg = light ? '#FFFFFF' : c.ink;
+  const R = REEL_COPY[lang];
+  const dates = formatDateRange(story.dates.from, story.dates.to);
+  const name = o.name[lang];
+  const note = o.note ? o.note[lang] : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
+  const fs = fitSize(name, 800, { weight: 900, size: 84, tracking: -0.035, upper: true, lang });
+  const topSize = fitSize([...R.top], 960, { weight: 900, size: 150, tracking: -0.045, upper: true, lang });
+
+  const topIn = (k: number) => tw(T, 0.25 + k * 0.12, 0.95 + k * 0.12, 115, 0, MOTION.enter);
+  const head = tw(T, 0, 0.6, 0, 1, MOTION.enter);
+  const cardP = tw(T, 0.9, 1.7, 0, 1, MOTION.pop);
+  const cardY = tw(T, 0.9, 1.7, 260, 0, MOTION.enter);
+  const kb = tw(T, 1, REEL_DURATION, 1, 1.1, Easing.linear);
+  const priceP = tw(T, 1.8, 2.4, 0, 1, MOTION.pop);
+  const pulse = 1 + Math.max(0, Math.sin((T - 2.6) * 3.2)) * 0.06 * (T > 2.6 ? 1 : 0);
+  const badgeP = tw(T, 2.3, 2.8, 0, 1, MOTION.pop);
+  const infoIn = tw(T, 2.6, 3.2, 0, 1, MOTION.enter);
+  const wob = d.wobble ? Math.sin(T * 1.4) * 0.8 * tw(T, 1.7, 2.3, 0, 1, Easing.easeInOutSine) : 0;
+  const atSize = fitSize([R.at(story.market.name)], 900, { weight: 800, size: 40, lang });
+  const priceNode =
+    d.price === 'kreis' ? (
+      <PriceCircle o={o} lang={lang} theme={theme} p={priceP * pulse} size={300} />
+    ) : (
+      <div style={{ transform: 'scale(1.7)', transformOrigin: '100% 50%' }}>
+        <PriceTag o={o} lang={lang} theme={theme} p={priceP * pulse} look={{ ...look, L: { ...Lay, page: { ...Lay.page, tagScale: 1 } } }} />
+      </div>
+    );
+  return (
+    <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: theme.bg, fontFamily: 'Archivo, system-ui, sans-serif' }}>
+      <Backdrop look={look} T={T} urls={urls} mode={theme.mode} />
+      <div style={abs({ left: 90, top: 110, opacity: head, transform: `translateY(${(1 - head) * -30}px)` })}><Lockup dark={theme.dark} white={theme.white} h={64} urls={urls} /></div>
+      <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ left: W - 90 - 420 * 0.55, top: 80, transform: `translateX(${(1 - head) * 300}px) scale(.55)`, border: theme.dark ? undefined : 'none' }} />
+      <div style={abs({ left: 0, width: W, top: 250, display: 'flex', flexDirection: 'column', alignItems: 'center' })}>
+        {R.top.map((t, k) => (
+          <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -14, paddingBottom: 6 }}>
+            <div style={{ transform: `translateY(${topIn(k)}%)`, fontSize: topSize, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'uppercase', color: k === 1 ? theme.tagBg === c.accent ? (light ? c.accent2 : c.accent) : c.accent2 : fg, whiteSpace: 'nowrap' }}>{t}</div>
+          </div>
+        ))}
+      </div>
+      <div style={abs({ left: 90, top: 640, width: 900, height: 900, transform: `translateY(${cardY}px) scale(${0.85 + 0.15 * cardP}) rotate(${wob}deg)`, opacity: Math.min(1, cardP * 1.5), transformOrigin: '50% 60%' })}>
+        <div style={{ position: 'absolute', inset: 0, background: '#fff', borderRadius: 56, boxShadow: theme.shadow, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 32, boxSizing: 'border-box' }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+            <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', transform: `scale(${kb * o.imgZoom})` }} />
+          </div>
+          <div style={{ padding: '10px 14px 6px' }}>
+            {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: 1.02, letterSpacing: '-0.035em', textTransform: 'uppercase', color: c.ink, whiteSpace: 'nowrap' }}>{l}</div>)}
+            <div style={{ fontSize: 32, fontWeight: 600, color: c.ink2, marginTop: 6 }}>{note}</div>
+          </div>
+        </div>
+        {o.badge && <div style={abs({ left: -10, top: -26 })}><BadgeSticker o={o} lang={lang} theme={theme} p={badgeP} look={look} size={44} /></div>}
+        <div style={abs(d.price === 'kreis' ? { right: -40, top: 360 } : { right: 20, top: 470 })}>{priceNode}</div>
+      </div>
+      <div style={abs({ left: 0, width: W, top: 1550, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
+        <div style={{ fontSize: atSize, fontWeight: 800, color: fg }}>{R.at(story.market.name)}</div>
+        <Pill light={light} white={theme.white} value={dates} urls={urls} c={c} />
+        <div style={{ fontSize: 26, fontWeight: 600, color: light ? 'rgba(255,255,255,.85)' : c.ink2 }}>{story.market.addresses[0]}</div>
+      </div>
+      {story.banner?.[lang] && <Banner text={story.banner[lang]} T={T} look={look} theme={theme} hd={1 - infoIn} />}
     </div>
   );
 }
