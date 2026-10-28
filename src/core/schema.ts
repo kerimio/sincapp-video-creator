@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Design } from './design';
 
 export const LANGS = ['de', 'tr'] as const;
 export const Lang = z.enum(LANGS);
@@ -70,6 +71,8 @@ export const Story = z
     /** Pfad relativ zum Job-Ordner. */
     appScreenshot: z.string().optional(),
     scenes: SceneDurations.default({}),
+    /** Gestaltung (Vorlage, Farben, Effekte); ohne Angabe "klassik". */
+    design: Design.optional(),
   })
   .superRefine((s, ctx) => {
     if (s.pages) {

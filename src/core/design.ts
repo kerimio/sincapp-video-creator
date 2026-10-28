@@ -86,7 +86,7 @@ export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
   minimal: {
     label: 'Minimal',
     hint: 'Hell und aufgeräumt, die Produkte stehen im Mittelpunkt',
-    colors: { paper: '#FFFFFF', ink: '#1C1C1C', ink2: '#666666', accent: '#C24A18', accent2: '#1C1C1C', pages: ['#F2EEE8', '#FFFFFF'] },
+    colors: { paper: '#FFFFFF', ink: '#1C1C1C', ink2: '#666666', accent: '#C24A18', accent2: '#1C1C1C', pages: ['#F1ECE4', '#E4ECEE'] },
     background: 'ohne', price: 'flach', enter: 'hoch', speed: 'normal', wobble: false, transition: 'blende',
   },
 };

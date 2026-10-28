@@ -2,8 +2,10 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import './fonts.css';
 import { parseStory, type Lang, type Story } from '../core/schema';
-import { buildScenes, deriveTimeline, warp, type Timeline } from '../core/timeline';
-import { paginate } from '../core/pages';
+import { buildScenes, deriveTimeline, storyDurations, warp, type Timeline } from '../core/timeline';
+import { pagesFor } from '../core/pages';
+import { resolveDesign, SPEED_FACTOR } from '../core/design';
+import { LAYOUTS, type Format } from '../core/layout';
 import { StoryView, type Urls } from './Story';
 
 // Seiten-API für Renderer und Review-UI:
@@ -23,6 +25,7 @@ declare global {
 
 const params = new URLSearchParams(location.search);
 const lang = (params.get('lang') === 'tr' ? 'tr' : 'de') as Lang;
+const format = (params.get('format') && params.get('format')! in LAYOUTS ? params.get('format') : 'story') as Format;
 const storyUrl = params.get('story') ?? '/job/story.json';
 const jobBase = storyUrl.slice(0, storyUrl.lastIndexOf('/') + 1);
 
@@ -40,7 +43,7 @@ function draw() {
   if (!state) return;
   const T = warp(state.tl, t);
   flushSync(() => {
-    root.render(<StoryView story={state!.story} lang={lang} T={T} cues={state!.tl.cues} logoSize={state!.logoSize} urls={urls} />);
+    root.render(<StoryView story={state!.story} lang={lang} format={format} T={T} cues={state!.tl.cues} logoSize={state!.logoSize} urls={urls} />);
   });
 }
 
@@ -55,8 +58,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 async function load(data: unknown) {
   const story = parseStory(data);
-  const pages = paginate(story.offers, story.pages);
-  const tl = deriveTimeline(buildScenes(pages.length, story.scenes));
+  const pages = pagesFor(story, format);
+  const speed = SPEED_FACTOR[resolveDesign(story.design).speed];
+  const tl = deriveTimeline(buildScenes(pages.length, storyDurations(story.scenes, speed)));
   const logo = await loadImage(urls.market(story.market.logo));
   // Alle Fontschnitte laden, bevor der erste Frame entsteht (kein Fallback-Font).
   const sample = 'AÄÖÜßÇĞİŞ€0123456789 aäöüçğışü';

@@ -1,16 +1,15 @@
-// sincapp Instagram-Story (1080×1920), portiert aus reference/story-saray.jsx.
-// Maße, Farben, Timing und Animationen sind aus der Referenz übernommen;
-// alle Inhalte kommen aus story.json.
+// sincapp Werbevideo, portiert aus reference/story-saray.jsx.
+// Im Design "klassik" und Format "story" (1080×1920) sind Maße, Farben, Timing und
+// Animationen exakt die der Referenz; Designs und Formate variieren davon ausgehend.
+// Alle Inhalte kommen aus story.json.
 import type { CSSProperties, ReactNode } from 'react';
 import type { Lang, Offer, Story } from '../core/schema';
-import { paginate } from '../core/pages';
+import { pagesFor } from '../core/pages';
 import { formatDateRange, defaultEyebrow } from '../core/format';
+import { pageMode, resolveDesign, rgba, textOn, type Palette, type PageMode, type ResolvedDesign } from '../core/design';
+import { LAYOUTS, type Format, type Layout } from '../core/layout';
 import { Easing, MOTION, tw } from './motion';
 import { fitSize, textWidth } from './fit';
-
-export const W = 1080;
-export const H = 1920;
-export const C = { red: '#C24A18', nut: '#292019', paper: '#FAF6F1', amber: '#E9A02A', ink2: '#5C4E42' };
 
 const COPY = {
   tr: {
@@ -23,9 +22,9 @@ const COPY = {
   },
 } as const;
 
-type PageVariant = 'red' | 'nut';
 interface PageTheme {
   bg: string;
+  mode: PageMode;
   white?: boolean;
   dark?: boolean;
   tagBg: string;
@@ -34,10 +33,30 @@ interface PageTheme {
   /** Phasenversatz fürs Wippen; entspricht in der Referenz der Länge des Theme-Namens ("saray"/"sarayDark"). */
   phase: number;
 }
-const PAGE_THEMES: Record<PageVariant, PageTheme> = {
-  red: { bg: C.red, white: true, tagBg: C.red, tagTx: '#fff', shadow: '0 24px 60px rgba(80,20,0,.35)', phase: 5 * 0.7 },
-  nut: { bg: C.nut, dark: true, tagBg: C.amber, tagTx: C.nut, shadow: '0 24px 60px rgba(0,0,0,.35)', phase: 9 * 0.7 },
-};
+/** Phasen der Referenz für die erste und zweite Seitenfarbe. */
+const PHASES = [5 * 0.7, 9 * 0.7];
+
+function shadowFor(bg: string, mode: PageMode): string {
+  if (mode === 'dark') return '0 24px 60px rgba(0,0,0,.35)';
+  if (mode === 'light') return '0 18px 44px rgba(41,32,25,.14)';
+  // Referenz: Rot #C24A18 → rgba(80,20,0,.35); andere Farben entsprechend abgedunkelt
+  if (bg.toUpperCase() === '#C24A18') return '0 24px 60px rgba(80,20,0,.35)';
+  const [r, g, b] = [1, 3, 5].map((i) => Math.round(parseInt(bg.slice(i, i + 2), 16) * 0.4));
+  return `0 24px 60px rgba(${r},${g},${b},.35)`;
+}
+
+export function pageTheme(bg: string, c: Palette, phase: number): PageTheme {
+  const mode = pageMode(bg, c.ink);
+  const tagBg = mode === 'dark' ? c.accent2 : c.accent;
+  return { bg, mode, white: mode === 'white', dark: mode === 'dark', tagBg, tagTx: textOn(tagBg, c.ink), shadow: shadowFor(bg, mode), phase };
+}
+
+/** Alles, was die Komponenten über das Aussehen wissen müssen. */
+interface Look {
+  d: ResolvedDesign;
+  c: Palette;
+  L: Layout;
+}
 
 export interface Urls {
   job: (p: string) => string;
@@ -48,6 +67,7 @@ export interface Urls {
 export interface StoryProps {
   story: Story;
   lang: Lang;
+  format?: Format;
   /** Choreografie-Zeit (siehe core/timeline.ts) */
   T: number;
   cues: Record<string, number>;
@@ -111,95 +131,119 @@ function Lockup({ dark, white, h = 64, urls }: { dark?: boolean; white?: boolean
   );
 }
 
-function Pill({ light, white, value, urls }: { light: boolean; white?: boolean; value: string; urls: Urls }) {
+function Pill({ light, white, value, urls, c }: { light: boolean; white?: boolean; value: string; urls: Urls; c: Palette }) {
   return (
     <div
       style={{
         position: 'relative', height: 76, padding: '0 30px 0 24px', borderRadius: 999, boxSizing: 'border-box',
-        border: white ? '2px solid rgba(255,255,255,.45)' : light ? '2px solid rgba(250,246,241,.28)' : '2px solid rgba(41,32,25,.18)',
+        border: white ? '2px solid rgba(255,255,255,.45)' : light ? '2px solid rgba(250,246,241,.28)' : `2px solid ${rgba(c.ink, 0.18)}`,
         display: 'flex', alignItems: 'center', gap: 14, whiteSpace: 'nowrap',
       }}
     >
       <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: 32, height: 32, display: 'block', ...(light ? { filter: 'invert(1) brightness(2)' } : {}) }} />
-      <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.01em', color: light ? C.paper : C.nut }}>{value}</span>
+      <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.01em', color: light ? '#FAF6F1' : c.ink }}>{value}</span>
     </div>
   );
 }
 
-// Header rechts: Datum, Adresse(n), @handle. Muss oberhalb der Karten (y 500) enden.
-const INFO_TOP = 262;
-const INFO_BOTTOM = 488;
-function addressSize(addresses: string[], lang: Lang): number {
+// Header rechts: Datum, Adresse(n), @handle. Muss oberhalb der Karten enden.
+function addressSize(addresses: string[], lang: Lang, L: Layout, insta: boolean): number {
   for (let size = 24; size > 16; size--) {
     const lines = addresses.reduce((n, a) => n + Math.ceil(textWidth(a, { weight: 600, size, lang }) / 560), 0);
-    const height = 76 + 10 + lines * size * 1.25 + 10 + 26 * 1.2;
-    if (INFO_TOP + height <= INFO_BOTTOM) return size;
+    const height = 76 + 10 + lines * size * 1.25 + (insta ? 10 + 26 * 1.2 : 0);
+    if (L.page.infoTop + height <= L.page.infoBottom) return size;
   }
   return 16;
 }
 
-function MarketInfo({ theme, dates, story, lang, hd, urls }: { theme: PageTheme; dates: string; story: Story; lang: Lang; hd: number; urls: Urls }) {
+function MarketInfo({ theme, dates, story, lang, hd, urls, look }: { theme: PageTheme; dates: string; story: Story; lang: Lang; hd: number; urls: Urls; look: Look }) {
+  const { c, L } = look;
   const light = !!(theme.dark || theme.white);
-  const size = addressSize(story.market.addresses, lang);
+  const size = addressSize(story.market.addresses, lang, L, !!story.market.instagram);
   return (
-    <div style={{ position: 'absolute', right: 90, top: INFO_TOP, width: 600, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, transform: `translateX(${hd * 760}px)` }}>
-      <Pill light={light} white={theme.white} value={dates} urls={urls} />
-      <div style={{ maxWidth: 560, textAlign: 'right', fontSize: size, fontWeight: 600, lineHeight: 1.25, color: light ? C.paper : C.ink2, textWrap: 'balance' } as CSSProperties}>
+    <div style={{ position: 'absolute', right: 90, top: L.page.infoTop, width: 600, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, transform: `translateX(${hd * 760}px)` }}>
+      <Pill light={light} white={theme.white} value={dates} urls={urls} c={c} />
+      <div style={{ maxWidth: 560, textAlign: 'right', fontSize: size, fontWeight: 600, lineHeight: 1.25, color: light ? '#FAF6F1' : c.ink2, textWrap: 'balance' } as CSSProperties}>
         {story.market.addresses.map((a, i) => <div key={i}>{a}</div>)}
       </div>
-      {story.market.instagram && <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em', color: light ? (theme.white ? '#fff' : C.amber) : C.red }}>@{story.market.instagram}</div>}
+      {story.market.instagram && <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em', color: light ? (theme.white ? '#fff' : c.accent2) : c.accent }}>@{story.market.instagram}</div>}
     </div>
   );
 }
 
-const ROW_H = 380;
-const ROW_GAP = 28;
-const ROW_TOP = 500;
-
-function PriceTag({ o, lang, theme, p }: { o: Offer; lang: Lang; theme: PageTheme; p: number }) {
+function PriceTag({ o, lang, theme, p, look }: { o: Offer; lang: Lang; theme: PageTheme; p: number; look: Look }) {
   const unit = unitOf(o, lang);
+  const flat = look.d.price === 'flach';
+  const k = look.L.page.tagScale;
   return (
-    <div style={{ alignSelf: 'flex-start', marginTop: 10, display: 'flex', alignItems: 'stretch', gap: 18, padding: '12px 24px 10px', borderRadius: 24, background: theme.tagBg, color: theme.tagTx, transform: `scale(${p}) rotate(-3deg)`, transformOrigin: '0 50%', boxShadow: '0 8px 18px rgba(41,32,25,.18)' }}>
+    <div style={{ alignSelf: 'flex-start', marginTop: 10 * k, display: 'flex', alignItems: 'stretch', gap: 18, padding: flat ? `${12 * k}px ${22 * k}px ${10 * k}px` : '12px 24px 10px', borderRadius: flat ? 10 : 24, background: theme.tagBg, color: theme.tagTx, transform: flat ? `scale(${p})` : k === 1 ? `scale(${p}) rotate(-3deg)` : `scale(${p * k}) rotate(-3deg)`, transformOrigin: '0 50%', boxShadow: flat ? 'none' : '0 8px 18px rgba(41,32,25,.18)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, lineHeight: 0.9 }}>
-        <span style={{ fontSize: 80, fontWeight: 900, letterSpacing: '-0.05em' }}>{o.price}</span>
-        <span style={{ fontSize: 40, fontWeight: 900, marginBottom: 4 }}>€</span>
-        {unit && <span style={{ fontSize: 28, fontWeight: 800, marginLeft: 8, marginBottom: 8, whiteSpace: 'nowrap' }}>{unit}</span>}
+        <span style={{ fontSize: flat ? 80 * k : 80, fontWeight: 900, letterSpacing: '-0.05em' }}>{o.price}</span>
+        <span style={{ fontSize: flat ? 40 * k : 40, fontWeight: 900, marginBottom: 4 }}>€</span>
+        {unit && <span style={{ fontSize: flat ? 28 * k : 28, fontWeight: 800, marginLeft: 8, marginBottom: 8, whiteSpace: 'nowrap' }}>{unit}</span>}
       </div>
     </div>
   );
 }
 
-function OfferRow({ o, k, n, s, T, lang, theme, urls }: { o: Offer; k: number; n: number; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls }) {
-  const big = n === 2;
-  const rh = big ? 600 : ROW_H;
+/** Runder Preis-Sticker, sitzt auf der Kartenecke. */
+function PriceCircle({ o, lang, theme, p, size }: { o: Offer; lang: Lang; theme: PageTheme; p: number; size: number }) {
+  const unit = unitOf(o, lang);
+  const [eur, ct] = o.price.split(',');
+  const f = size / 200;
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: theme.tagBg, color: theme.tagTx, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transform: `scale(${p}) rotate(-8deg)`, boxShadow: '0 10px 24px rgba(41,32,25,.25)', border: `${Math.round(6 * f)}px solid ${theme.tagTx === '#ffffff' ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.6)'}`, boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', lineHeight: 0.85, fontWeight: 900, letterSpacing: '-0.05em' }}>
+        <span style={{ fontSize: (eur.length > 2 ? 64 : 84) * f }}>{eur}</span>
+        <span style={{ fontSize: 40 * f, marginTop: 4 * f }}>,{ct}</span>
+      </div>
+      <div style={{ fontSize: 24 * f, fontWeight: 800, marginTop: 6 * f, whiteSpace: 'nowrap' }}>€{unit ? ` ${unit}` : ''}</div>
+    </div>
+  );
+}
+
+function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: number; n: number; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls; look: Look }) {
+  const { d: D, c, L } = look;
+  const P = L.page;
+  const big = n === 1 || (n === 2 && P.bigPairs);
+  const rh = big ? (n === 1 ? P.rowH * 2 + P.rowGap : P.bigH) : P.rowH;
   const name = o.name[lang];
   const other = o.name[lang === 'tr' ? 'de' : 'tr'];
   const alt = joinName(other);
   const d = s + 0.35 + k * 0.22;
-  const x = tw(T, d, d + 0.85, 1150, 0, MOTION.enter);
-  const rot = tw(T, d, d + 0.85, 7, 0, MOTION.enter);
+  const ent = MOTION.enter;
+  // Einflug je nach Effekt; "wischen" ist der Referenz-Einflug.
+  const x = D.enter === 'wischen' ? tw(T, d, d + 0.85, 1150, 0, ent) : 0;
+  const rot = D.enter === 'wischen' ? tw(T, d, d + 0.85, 7, 0, ent) : 0;
+  const y = D.enter === 'hoch' ? tw(T, d, d + 0.85, 260, 0, ent) : 0;
+  const op = D.enter === 'wischen' ? 1 : D.enter === 'pop' ? tw(T, d, d + 0.3, 0, 1, ent) : tw(T, d, d + 0.75, 0, 1, ent);
+  const sc = D.enter === 'pop' ? tw(T, d, d + 0.7, 0.4, 1, MOTION.pop) : D.enter === 'blende' ? tw(T, d, d + 0.9, 0.94, 1, ent) : 1;
   const tagP = tw(T, d + 0.5, d + 1.0, 0, 1, MOTION.pop);
   const kb = tw(T, d, d + 6.5, 1, 1.07, Easing.linear);
-  const live = tw(T, d + 0.6, d + 1.2, 0, 1, Easing.easeInOutSine);
+  const live = D.wobble ? tw(T, d + 0.6, d + 1.2, 0, 1, Easing.easeInOutSine) : 0;
   const ph = k * 2.1 + theme.phase;
   const wob = Math.sin(T * 1.3 + ph) * 0.8 * live;
   const bob = Math.sin(T * 1.1 + ph * 1.3) * 5 * live;
   const nameStyle = { weight: 900, tracking: -0.035, upper: true, lang };
+  const circle = D.price === 'kreis';
+  const textW = 900 - 56 - P.imgCol - 24 - (circle ? Math.round(P.circle * 0.55) : 0);
   // Referenz-Formel; zusätzlich gemessen, damit nichts überläuft.
   const maxLen = Math.max(...name.map((l) => l.length));
   const fs = big
-    ? fitSize(name, 820, { ...nameStyle, size: 66 })
-    : fitSize(name, 480, { ...nameStyle, size: Math.min(56, Math.round(480 / (maxLen * 0.72))) });
+    ? fitSize(name, 820, { ...nameStyle, size: P.bigName })
+    : fitSize(name, textW, { ...nameStyle, size: Math.min(P.nameMax, Math.round(textW / (maxLen * 0.72))) });
   const imgBase: CSSProperties = { objectFit: 'contain', mixBlendMode: 'multiply', display: 'block' };
   const note = o.note ? o.note[lang] : alt;
   const card: CSSProperties = { position: 'absolute', inset: 0, background: '#fff', borderRadius: 40, border: '2px solid rgba(41,32,25,.08)', boxShadow: theme.shadow, boxSizing: 'border-box', overflow: 'hidden' };
   const nameLines = (lh: number) => (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: lh, letterSpacing: '-0.035em', textTransform: 'uppercase', color: C.nut, whiteSpace: 'nowrap' }}>{l}</div>)}
+      {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: lh, letterSpacing: '-0.035em', textTransform: 'uppercase', color: c.ink, whiteSpace: 'nowrap' }}>{l}</div>)}
     </div>
   );
+  const tag = <PriceTag o={o} lang={lang} theme={theme} p={tagP} look={look} />;
+  const transform = D.enter === 'wischen' ? `translate(${x}px, ${bob}px) rotate(${rot + wob}deg)` : `translate(0px, ${y + bob}px) rotate(${wob}deg) scale(${sc})`;
   return (
-    <div style={abs({ left: 90, top: ROW_TOP + k * (rh + ROW_GAP), width: 900, height: rh, transform: `translate(${x}px, ${bob}px) rotate(${rot + wob}deg)`, transformOrigin: '50% 50%' })}>
+    <div style={abs({ left: 90, top: P.rowTop + k * (rh + P.rowGap), width: 900, height: rh, transform, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
       {big ? (
         <div style={{ ...card, display: 'flex', flexDirection: 'column', padding: 20, gap: 14 }}>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', borderRadius: 28 }}>
@@ -207,20 +251,25 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls }: { o: Offer; k: number; n
           </div>
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, padding: '0 20px 14px' }}>
             {nameLines(1.0)}
-            <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.25, color: C.ink2 }}>{note}</div>
-            <div style={{ position: 'absolute', right: 10, top: -120 }}><PriceTag o={o} lang={lang} theme={theme} p={tagP} /></div>
+            <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
+            {!circle && <div style={{ position: 'absolute', right: 10, top: -120 }}>{tag}</div>}
           </div>
         </div>
       ) : (
-        <div style={{ ...card, display: 'grid', gridTemplateColumns: '340px minmax(0,1fr)', gap: 24, padding: '20px 36px 20px 20px' }}>
+        <div style={{ ...card, display: 'grid', gridTemplateColumns: `${P.imgCol}px minmax(0,1fr)`, gap: 24, padding: '20px 36px 20px 20px' }}>
           <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 28 }}>
             <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: `scale(${kb * o.imgZoom})`, ...imgBase }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, minWidth: 0, ...(circle ? { paddingRight: P.circle * 0.55 } : {}) }}>
             {nameLines(1.04)}
-            <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.25, color: C.ink2 }}>{note}</div>
-            <PriceTag o={o} lang={lang} theme={theme} p={tagP} />
+            <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
+            {!circle && tag}
           </div>
+        </div>
+      )}
+      {circle && (
+        <div style={abs(big ? { right: 30, bottom: 120 } : { right: -22, bottom: -18 })}>
+          <PriceCircle o={o} lang={lang} theme={theme} p={tagP} size={P.circle} />
         </div>
       )}
     </div>
@@ -232,19 +281,58 @@ function Watermark({ dark, T, op, urls }: { dark?: boolean; T: number; op?: numb
   return <img src={urls.asset(dark ? 'logo/marke-white.svg' : 'logo/marke-dark.svg')} alt="" style={{ position: 'absolute', left: -300, bottom: -260, width: 1150, height: 'auto', opacity: op || (dark ? 0.06 : 0.05), transform: `translate(${d}px, ${-d}px) rotate(-8deg)`, display: 'block', pointerEvents: 'none' }} />;
 }
 
+/** Hintergrund-Muster einer Fläche: Logo-Wasserzeichen (Referenz), Punkte, Verlauf oder nichts. */
+function Backdrop({ look, T, urls, mode }: { look: Look; T: number; urls: Urls; mode?: PageMode }) {
+  const kind = look.d.background;
+  const onColor = mode === 'white' || mode === 'dark';
+  if (kind === 'logo') return mode ? <Watermark dark={onColor} T={T} op={mode === 'white' ? 0.08 : undefined} urls={urls} /> : <Watermark T={T} urls={urls} />;
+  if (kind === 'punkte') {
+    const dot = onColor ? 'rgba(255,255,255,.11)' : rgba(look.c.ink, 0.07);
+    const shift = T * 6;
+    return <div style={abs({ inset: 0, backgroundImage: `radial-gradient(circle, ${dot} 4px, transparent 4.6px)`, backgroundSize: '46px 46px', backgroundPosition: `${shift}px ${shift}px`, pointerEvents: 'none' })} />;
+  }
+  if (kind === 'verlauf') {
+    const g = onColor ? 'linear-gradient(165deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,.28) 100%)' : `linear-gradient(180deg, rgba(255,255,255,0) 30%, ${rgba(look.c.accent, 0.1)} 100%)`;
+    return <div style={abs({ inset: 0, background: g, pointerEvents: 'none' })} />;
+  }
+  return null;
+}
+
 /** Sichtbar, solange from ≤ T < to; Kinder bleiben gemountet (Bilder bleiben geladen). */
 function Shot({ T, from, to, children }: { T: number; from: number; to: number; children: ReactNode }) {
   return <div style={{ position: 'absolute', inset: 0, visibility: T >= from && T < to ? 'visible' : 'hidden' }}>{children}</div>;
 }
 
-export function StoryView({ story, lang, T, cues, logoSize, urls }: StoryProps) {
+/** Übergang einer Fläche: Kreis (Referenz), Schieben oder Überblenden. p: 0 → 1. */
+function reveal(look: Look, p: number, cx: number, cy: number, fromLeft: boolean): CSSProperties {
+  if (look.d.transition === 'schieben') return p >= 1 ? {} : { transform: `translateX(${(fromLeft ? -1 : 1) * (1 - p) * look.L.W}px)` };
+  if (look.d.transition === 'blende') return p >= 1 ? {} : { opacity: p };
+  return { clipPath: `circle(${p * 2400}px at ${cx}px ${cy}px)` };
+}
+
+/** Seitenfarben: Design-Farben, alte Markt-Einstellung (red/nut) wird darauf abgebildet. */
+function pageThemes(story: Story, c: Palette): PageTheme[] {
+  const legacy = story.market.theme?.pages;
+  const idx = legacy && !story.design?.colors?.pages ? legacy.map((v) => (v === 'red' ? 0 : 1 % c.pages.length)) : c.pages.map((_, i) => i);
+  return idx.map((i) => pageTheme(c.pages[i], c, PHASES[i % 2]));
+}
+
+export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'story' }: StoryProps) {
+  const d = resolveDesign(story.design);
+  const c = d.colors;
+  const Lay = LAYOUTS[format];
+  const look: Look = { d, c, L: Lay };
+  const { W, H } = Lay;
+  const I = Lay.intro;
+  const Cta = Lay.cta;
   const L = COPY[lang];
   const eyebrow = (story.eyebrow ?? defaultEyebrow(story.market.name))[lang];
   const head = story.headline[lang];
   const dates = formatDateRange(story.dates.from, story.dates.to);
-  const pages = paginate(story.offers, story.pages);
-  const variants = story.market.theme?.pages ?? ['red', 'nut'];
+  const pages = pagesFor(story, format);
+  const themes = pageThemes(story, c);
   const chipProps = { story, logoSize, urls };
+  const btnTx = textOn(c.accent, c.ink);
 
   const c1 = cues.S1;
   const cC = cues.CTA;
@@ -253,93 +341,93 @@ export function StoryView({ story, lang, T, cues, logoSize, urls }: StoryProps) 
   const eyeIn = tw(T, 0.35, 0.95, 40, 0, MOTION.enter);
   const eyeOp = tw(T, 0.35, 0.95, 0, 1, MOTION.enter);
   const chipP = tw(T, 1.0, 1.6, 0, 1, MOTION.pop);
-  const CS = 1.35;
+  const CS = I.chipScale;
   const infoIn = tw(T, 1.5, 2.1, 0, 1, MOTION.enter);
   const chipBob = Math.sin(T * 1.2) * 8 * tw(T, 1.6, 2.2, 0, 1, Easing.easeInOutSine);
 
-  const ctaLine = (d: number) => tw(T, cC + 0.15 + d, cC + 0.8 + d, 115, 0, MOTION.enter);
-  const ctaFade = (d: number) => tw(T, cC + 0.3 + d, cC + 0.9 + d, 0, 1, MOTION.enter);
+  const ctaLine = (dl: number) => tw(T, cC + 0.15 + dl, cC + 0.8 + dl, 115, 0, MOTION.enter);
+  const ctaFade = (dl: number) => tw(T, cC + 0.3 + dl, cC + 0.9 + dl, 0, 1, MOTION.enter);
   const btnPop = tw(T, cC + 0.7, cC + 1.2, 0, 1, MOTION.pop);
   const pulse = 1 + Math.max(0, Math.sin((T - cC - 1.4) * 4.2)) * 0.035 * (T > cC + 1.4 ? 1 : 0);
   const phoneY = tw(T, cC + 0.3, cC + 2.0, 1000, -20, Easing.easeInOutCubic) + Math.sin(Math.max(0, T - cC - 2.0) * 1.2) * 10;
   const lockCta = tw(T, cC + 0.1, cC + 0.6, 0, 1, MOTION.enter);
-  const rCta = tw(T, cC - 0.45, cC + 0.45, 0, 2400, MOTION.swipe);
+  const pCta = tw(T, cC - 0.45, cC + 0.45, 0, 1, MOTION.swipe);
   const nextCue = (i: number) => cues[i < pages.length - 1 ? `S${i + 2}` : 'CTA'];
 
   // Intro: Adressen untereinander, bei Bedarf kleiner, damit sie in die Breite passen.
-  const introAddrSize = fitSize(story.market.addresses, 1000, { weight: 600, size: 40, lang });
+  const introAddrSize = fitSize(story.market.addresses, 1000, { weight: 600, size: I.addr, lang });
   // Eyebrow und Headline verkleinern sich nur, wenn sie sonst überlaufen würden.
-  const eyebrowSize = fitSize([eyebrow], 980, { weight: 800, size: 30, tracking: 0.2, upper: true, lang });
-  const headSize = fitSize(head, 1000 / 1.04, { weight: 900, size: 110, tracking: -0.045, upper: true, lang });
+  const eyebrowSize = fitSize([eyebrow], 980, { weight: 800, size: I.eyebrow, tracking: 0.2, upper: true, lang });
+  const headSize = fitSize(head, 1000 / 1.04, { weight: 900, size: I.head, tracking: -0.045, upper: true, lang });
 
   // CTA: Headline → Button = Button → Badges (aus den Zeilenhöhen berechnet).
-  const ctaLineH = 22 - 10 + 96 + 8;
-  const ctaHeadBottom = 280 + ctaLineH * L.cta.length;
-  const CTA_GAP = 52;
-  const btnTop = ctaHeadBottom + CTA_GAP;
-  const badgesTop = btnTop + 124 + CTA_GAP;
+  const ctaLineH = 22 - 10 + Cta.size + 8;
+  const ctaHeadBottom = Cta.headTop + ctaLineH * L.cta.length;
+  const btnTop = ctaHeadBottom + Cta.gap;
+  const badgesTop = btnTop + Cta.btnH + Cta.gap;
 
   return (
-    <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: C.paper, fontFamily: 'Archivo, system-ui, sans-serif' }}>
-      <Watermark T={T} urls={urls} />
+    <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: c.paper, fontFamily: 'Archivo, system-ui, sans-serif' }}>
+      <Backdrop look={look} T={T} urls={urls} />
       <Shot T={T} from={0} to={c1 + 0.6}>
-        <div style={abs({ left: 540, top: 250, transform: 'translateX(-50%) scale(1.7)', transformOrigin: '50% 0', opacity: lockIn })}><Lockup h={64} urls={urls} /></div>
-        <div style={abs({ left: 0, width: W, top: 470, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 })}>
-          <div style={{ opacity: eyeOp, transform: `translateY(${eyeIn}px)`, fontSize: eyebrowSize, fontWeight: 800, letterSpacing: '.2em', textTransform: 'uppercase', color: C.ink2 }}>{eyebrow}</div>
+        <div style={abs({ left: W / 2, top: I.lockTop, transform: `translateX(-50%) scale(${I.lockScale})`, transformOrigin: '50% 0', opacity: lockIn })}><Lockup h={64} urls={urls} /></div>
+        <div style={abs({ left: 0, width: W, top: I.headTop, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28 })}>
+          <div style={{ opacity: eyeOp, transform: `translateY(${eyeIn}px)`, fontSize: eyebrowSize, fontWeight: 800, letterSpacing: '.2em', textTransform: 'uppercase', color: c.ink2 }}>{eyebrow}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: `scale(${headDrift})` }}>
             {head.map((h, k) => (
               <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -10, paddingBottom: 6 }}>
-                <div style={{ transform: `translateY(${tw(T, 0.45 + k * 0.12, 1.15 + k * 0.12, 115, 0, MOTION.enter)}%)`, fontSize: headSize, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'uppercase', color: k === head.length - 1 && head.length > 1 ? C.red : C.nut, whiteSpace: 'nowrap' }}>{h}</div>
+                <div style={{ transform: `translateY(${tw(T, 0.45 + k * 0.12, 1.15 + k * 0.12, 115, 0, MOTION.enter)}%)`, fontSize: headSize, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'uppercase', color: k === head.length - 1 && head.length > 1 ? c.accent : c.ink, whiteSpace: 'nowrap' }}>{h}</div>
               </div>
             ))}
           </div>
         </div>
-        <MarketChip {...chipProps} style={{ left: 540 - 210 * CS, top: 900 + chipBob, transform: `translate(${210 * CS * (1 - chipP)}px, ${100 * CS * (1 - chipP)}px) scale(${CS * chipP})` }} />
-        <div style={abs({ left: 0, width: W, top: 1230, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: 100, padding: '0 40px 0 32px', borderRadius: 999, border: '3px solid rgba(41,32,25,.18)', boxSizing: 'border-box' }}>
-            <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: 44, height: 44, display: 'block' }} />
-            <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-0.01em', color: C.nut, whiteSpace: 'nowrap' }}>{dates}</span>
+        <MarketChip {...chipProps} style={{ left: W / 2 - 210 * CS, top: I.chipTop + chipBob, transform: `translate(${210 * CS * (1 - chipP)}px, ${100 * CS * (1 - chipP)}px) scale(${CS * chipP})` }} />
+        <div style={abs({ left: 0, width: W, top: I.infoTop, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: I.infoGap, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: I.pillH, padding: '0 40px 0 32px', borderRadius: 999, border: `3px solid ${rgba(c.ink, 0.18)}`, boxSizing: 'border-box' }}>
+            <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: I.cal, height: I.cal, display: 'block' }} />
+            <span style={{ fontSize: I.pillFont, fontWeight: 800, letterSpacing: '-0.01em', color: c.ink, whiteSpace: 'nowrap' }}>{dates}</span>
           </div>
-          <div style={{ fontSize: introAddrSize, fontWeight: 600, color: C.ink2, textAlign: 'center' }}>
+          <div style={{ fontSize: introAddrSize, fontWeight: 600, color: c.ink2, textAlign: 'center' }}>
             {story.market.addresses.map((a, i) => <div key={i}>{a}</div>)}
           </div>
-          {story.market.instagram && <div style={{ fontSize: 44, fontWeight: 800, color: C.red }}>@{story.market.instagram}</div>}
+          {story.market.instagram && <div style={{ fontSize: I.insta, fontWeight: 800, color: c.accent }}>@{story.market.instagram}</div>}
         </div>
       </Shot>
 
       {pages.map((offers, i) => {
-        const theme = PAGE_THEMES[variants[i % variants.length]];
+        const theme = themes[i % themes.length];
         const s = cues[`S${i + 1}`];
         const e = nextCue(i);
-        const r = tw(T, s - 0.45, s + 0.45, 0, 2400, MOTION.swipe);
+        const p = tw(T, s - 0.45, s + 0.45, 0, 1, MOTION.swipe);
         const hd = tw(T, s - 0.1, s + 0.6, 1, 0, MOTION.enter);
+        const P = Lay.page;
         return (
-          <div key={i} style={abs({ inset: 0, background: theme.bg, clipPath: `circle(${r}px at ${i % 2 ? 200 : 880}px 560px)` })}>
-            <Watermark dark T={T} op={theme.white ? 0.08 : undefined} urls={urls} />
+          <div key={i} style={abs({ inset: 0, background: theme.bg, ...reveal(look, p, i % 2 ? 200 : 880, P.revealY, i % 2 === 1) })}>
+            <Backdrop look={look} T={T} urls={urls} mode={theme.mode} />
             <Shot T={T} from={s - 0.5} to={e + 0.6}>
-              <div style={abs({ left: 90, top: 150, transform: `translateY(${hd * -40}px)` })}><Lockup dark={theme.dark} white={theme.white} h={64} urls={urls} /></div>
-              <MarketChip {...chipProps} style={{ left: 90, top: 280, transform: `translateX(${hd * -600}px) scale(.62)`, border: theme.dark ? undefined : 'none' }} />
-              <MarketInfo theme={theme} dates={dates} story={story} lang={lang} hd={hd} urls={urls} />
-              {offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} />)}
+              <div style={abs({ left: 90, top: P.lockTop, transform: `translateY(${hd * -40}px)${P.lockScale === 1 ? '' : ` scale(${P.lockScale})`}`, transformOrigin: '0 0' })}><Lockup dark={theme.dark} white={theme.white} h={64} urls={urls} /></div>
+              <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
+              <MarketInfo theme={theme} dates={dates} story={story} lang={lang} hd={hd} urls={urls} look={look} />
+              {offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} />)}
             </Shot>
           </div>
         );
       })}
 
-      <div style={abs({ inset: 0, background: C.paper, clipPath: `circle(${rCta}px at 540px 1500px)` })}>
-        <Watermark T={T} urls={urls} />
+      <div style={abs({ inset: 0, background: c.paper, ...reveal(look, pCta, W / 2, Cta.revealY, false) })}>
+        <Backdrop look={look} T={T} urls={urls} />
         <Shot T={T} from={cC - 0.5} to={cC + 10}>
-          <div style={abs({ left: 0, width: W, top: 150, display: 'flex', justifyContent: 'center', opacity: lockCta })}><Lockup h={64} urls={urls} /></div>
-          <div style={abs({ left: 0, width: W, top: 280, display: 'flex', flexDirection: 'column', alignItems: 'center' })}>
+          <div style={abs({ left: 0, width: W, top: Cta.lockTop, display: 'flex', justifyContent: 'center', opacity: lockCta })}><Lockup h={64} urls={urls} /></div>
+          <div style={abs({ left: 0, width: W, top: Cta.headTop, display: 'flex', flexDirection: 'column', alignItems: 'center' })}>
             {L.cta.map((h, k) => (
               <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -10, paddingBottom: 8 }}>
-                <div style={{ transform: `translateY(${ctaLine(k * 0.12)}%)`, fontSize: 96, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'up' in h ? 'uppercase' : 'none', color: 'red' in h ? C.red : C.nut, whiteSpace: 'nowrap' }}>{h.t}</div>
+                <div style={{ transform: `translateY(${ctaLine(k * 0.12)}%)`, fontSize: Cta.size, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.045em', textTransform: 'up' in h ? 'uppercase' : 'none', color: 'red' in h ? c.accent : c.ink, whiteSpace: 'nowrap' }}>{h.t}</div>
               </div>
             ))}
           </div>
-          <div style={abs({ left: 190, top: btnTop, width: 700, height: 124, transform: `scale(${btnPop * pulse})`, transformOrigin: '50% 50%', borderRadius: 999, background: C.red, boxShadow: '0 12px 28px rgba(194,74,24,.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 22 })}>
-            <span style={{ fontSize: 44, fontWeight: 800, letterSpacing: '.12em', color: '#fff', textTransform: 'uppercase' }}>{L.btn}</span>
-            <img src={urls.asset('icons/arrow_right-white.svg')} alt="" style={{ width: 48, height: 48, display: 'block' }} />
+          <div style={abs({ left: (W - Cta.btnW) / 2, top: btnTop, width: Cta.btnW, height: Cta.btnH, transform: `scale(${btnPop * pulse})`, transformOrigin: '50% 50%', borderRadius: 999, background: c.accent, boxShadow: `0 12px 28px ${rgba(c.accent, 0.32)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 22 })}>
+            <span style={{ fontSize: Cta.btnFont, fontWeight: 800, letterSpacing: '.12em', color: btnTx, textTransform: 'uppercase' }}>{L.btn}</span>
+            <img src={urls.asset('icons/arrow_right-white.svg')} alt="" style={{ width: 48, height: 48, display: 'block', ...(btnTx === '#ffffff' ? {} : { filter: 'invert(1)' }) }} />
           </div>
           <div style={abs({ left: 0, width: W, top: badgesTop, display: 'flex', justifyContent: 'center', gap: 24, opacity: ctaFade(0.6) })}>
             <div style={{ height: 96, width: 300, borderRadius: 20, background: '#fff', border: '2px solid rgba(41,32,25,.10)', display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', boxSizing: 'border-box', color: '#000' }}>
@@ -357,8 +445,8 @@ export function StoryView({ story, lang, T, cues, logoSize, urls }: StoryProps) 
               </div>
             </div>
           </div>
-          <div style={abs({ left: 250, top: 1030, width: 580, height: 1260, transform: `translateY(${phoneY}px)`, borderRadius: 84, background: C.nut, padding: 16, boxSizing: 'border-box', boxShadow: '0 30px 60px rgba(41,32,25,.25)' })}>
-            <div style={{ width: '100%', height: '100%', borderRadius: 70, overflow: 'hidden', background: C.paper }}>
+          <div style={abs({ left: (W - 580) / 2, top: Cta.phoneTop, width: 580, height: 1260, transform: `translateY(${phoneY}px)`, borderRadius: 84, background: c.ink, padding: 16, boxSizing: 'border-box', boxShadow: '0 30px 60px rgba(41,32,25,.25)' })}>
+            <div style={{ width: '100%', height: '100%', borderRadius: 70, overflow: 'hidden', background: c.paper }}>
               {story.appScreenshot ? (
                 <img src={urls.job(story.appScreenshot)} alt="" style={{ width: '100%', display: 'block' }} />
               ) : (
