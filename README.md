@@ -26,14 +26,21 @@ Märkte (Name, Adresse, Logo, Instagram) und Prospekte (Seiten, Gültigkeit) kom
 Ein Video entsteht in drei Schritten: **Angebote** prüfen → **Design** wählen → **Export**.
 
 - **Neues Video:** Markt wählen, ein oder mehrere Prospekte anhaken. Aus allen Prospekten kommen automatisch die besten Angebote ins Video (groß abgebildete Angebote und in Firestore gepflegte Produkte zuerst).
-- **Design:** 5 Vorlagen (Klassik, Frisch, Premium, Knallig, Minimal), alle Farben einzeln oder „Farben aus dem Markt-Logo“, Hintergrund (Logo, Punkte, Verlauf, schlicht), Preis (Etikett, Kreis, flach), Effekte (Einflug, Seitenwechsel, Tempo, Wippen). „Als Standard für <Markt> speichern“ – neue Videos dieses Markts starten dann damit. Eigenes Logo pro Markt hochladbar.
+- **Design:** 8 Vorlagen (Klassik, Frisch, Premium, Knallig, Minimal, Black Week, Bayram, Sommer), Sticker pro Angebot, Laufband, alle Farben einzeln oder „Farben aus dem Markt-Logo“, Hintergrund (Logo, Punkte, Verlauf, schlicht), Preis (Etikett, Kreis, flach), Effekte (Einflug, Seitenwechsel, Tempo, Wippen). „Als Standard für <Markt> speichern“ – neue Videos dieses Markts starten dann damit. Eigenes Logo pro Markt hochladbar.
 - **Formate:** Story 9:16, Feed 4:5, Quadrat 1:1, jedes Angebot einzeln als Bild. Die Vorschau rechts schaltet zwischen allen um.
 - **Export:** Pakete („Wochenpaket“, „Nur Story“, „Feed-Beitrag“, „Nur Bilder“) oder frei wählbar; Instagram-Texte mit Hashtags (DE/TR); alles als ZIP. Der Export kostet keine KI-Tokens.
 - **Bild aus dem Prospekt:** Rechteck ziehen oder mit dem Pen umranden – der Ausschnitt wird so übernommen, wie er ist. Hintergrund nur auf Wunsch entfernen.
 
+**Zaubern (ohne Zwischenschritte):**
+
+- **✨ Zauberknopf** beim neuen Video: Prospekt lesen → beste Angebote → Produktbilder → komplettes Paket, in einem Klick. Nutzt das gespeicherte Design des Markts. Danach lässt sich trotzdem alles ändern und neu exportieren.
+- **📅 7-Tage-Plan:** Jeden Tag ein Top-Angebot als Reel, Bild (4:5) und Text, im ZIP nach Tagen sortiert (`plan/01-mittwoch-29-10/…`) mit `wochenplan.txt` als Übersicht.
+- **⏰ „Letzte Chance“-Videos** (8 s, 9:16): „Noch 2 Tage!“ und „Nur noch heute!“ mit Countdown-Ring und den drei Top-Angeboten; im Plan liegen sie auf den passenden Tagen.
+- **QR-Code am Schluss** (Design → QR-Code): Route zum Markt (Google Maps), Instagram oder eigener Link – für Laden-Bildschirm, Schaufenster und Ausdrucke.
+
 **Kosten sparen:** KI-Antworten werden pro Seite gemerkt (`.cache/ki`), dieselbe Seite wird nie zweimal bezahlt. Seiten ohne Produkte (laut Firestore-Fundstellen) werden übersprungen, der Zeitraum kommt aus Firestore. Preis-Gegencheck und Bildvergleich laufen mit dem günstigeren Modell (`GEMINI_CHECK_MODEL`, Standard `gemini-3.8-flash`).
 
-Vorschau aller Vorlagen und Formate: `pnpm tsx tools/preview-designs.ts` (Bilder in `tmp/designs`).
+Vorschau aller Vorlagen und Formate: `pnpm tsx tools/preview-designs.ts` (Bilder in `tmp/designs`; `--extras` für Sticker/Laufband/Reels, `--magic` für Countdown und QR-Code).
 
 ## Alles in einem Befehl
 

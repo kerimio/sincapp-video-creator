@@ -13,7 +13,7 @@ const TR_MAX = 14;
 const JobCtx = createContext<{ api: JobClient; base: string }>(null!);
 type Busy = Record<string, string | undefined>;
 
-export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: string; onBack?: () => void }) {
+export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { api: JobClient; title?: string; onBack?: () => void; initialTab?: 'angebote' | 'design' | 'export' }) {
   const [state, setState] = useState<State | null>(null);
   const [story, setStory] = useState<Story | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -23,7 +23,7 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
   const [dialog, setDialog] = useState<string | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'angebote' | 'design' | 'export'>('angebote');
+  const [tab, setTab] = useState<'angebote' | 'design' | 'export'>(initialTab);
   const [view, setView] = useState<View>('story');
 
   useEffect(() => {
@@ -179,7 +179,7 @@ export function ReviewPage({ api, title, onBack }: { api: JobClient; title?: str
             </div>
           )}
           {tab === 'design' && <DesignPanel story={story} update={update} api={api} say={say} onStory={(s) => { setStory(s); setDirty(false); }} />}
-          {tab === 'export' && <ExportPanel story={story} api={api} render={render} start={doExport} dirty={dirty} disabled={!!validation} />}
+          {tab === 'export' && <ExportPanel story={story} base={state.urlBase} api={api} render={render} start={doExport} dirty={dirty} disabled={!!validation} />}
           {tab === 'angebote' && <>
           <StoryHeader story={story} update={update} />
           <OfferCount n={story.offers.length} />

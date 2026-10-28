@@ -6,7 +6,8 @@ import { buildScenes, deriveTimeline, storyDurations, warp, type Timeline } from
 import { pagesFor } from '../core/pages';
 import { resolveDesign, SPEED_FACTOR } from '../core/design';
 import { LAYOUTS, type Format } from '../core/layout';
-import { OfferPost, OfferReel, REEL_DURATION, StoryView, type Urls } from './Story';
+import { CountdownView, OfferPost, OfferReel, REEL_DURATION, StoryView, type Urls } from './Story';
+import { COUNTDOWN_DURATION } from '../core/magic';
 
 // Seiten-API für Renderer und Review-UI:
 //   await window.sincapp.ready  → { duration, fps }
@@ -28,6 +29,7 @@ const lang = (params.get('lang') === 'tr' ? 'tr' : 'de') as Lang;
 const format = (params.get('format') && params.get('format')! in LAYOUTS ? params.get('format') : 'story') as Format;
 const view = params.get('view');
 const offerIndex = view === 'offer' || view === 'reel' ? Number(params.get('offer') ?? 0) : null;
+const daysLeft = Number(params.get('days') ?? 0);
 const storyUrl = params.get('story') ?? '/job/story.json';
 const jobBase = storyUrl.slice(0, storyUrl.lastIndexOf('/') + 1);
 
@@ -46,7 +48,9 @@ function draw() {
   const T = warp(state.tl, t);
   flushSync(() => {
     root.render(
-      view === 'reel' ? (
+      view === 'countdown' ? (
+        <CountdownView story={state!.story} lang={lang} T={t} daysLeft={daysLeft} logoSize={state!.logoSize} urls={urls} />
+      ) : view === 'reel' ? (
         <OfferReel story={state!.story} lang={lang} index={offerIndex ?? 0} T={t} logoSize={state!.logoSize} urls={urls} />
       ) : offerIndex !== null ? (
         <OfferPost story={state!.story} lang={lang} format={format} index={offerIndex} logoSize={state!.logoSize} urls={urls} />
@@ -82,7 +86,7 @@ async function load(data: unknown) {
   // Alle Bilder sind ab dem ersten Frame gemountet; warten, bis sie dekodiert sind.
   const imgs = [...document.images];
   await Promise.all(imgs.map((i) => (i.complete && i.naturalWidth ? i.decode() : new Promise((res, rej) => { i.onload = () => i.decode().then(res, rej); i.onerror = () => rej(new Error(`Bild nicht ladbar: ${i.src}`)); }))));
-  return { duration: view === 'reel' ? REEL_DURATION : tl.total };
+  return { duration: view === 'reel' ? REEL_DURATION : view === 'countdown' ? COUNTDOWN_DURATION : tl.total };
 }
 
 window.sincapp = {

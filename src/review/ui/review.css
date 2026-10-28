@@ -204,3 +204,15 @@ label.check { flex-direction: row; align-items: center; color: var(--nut); font-
 .prospect { position: relative; }
 .prospect .tick { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 2px solid var(--line); display: grid; place-items: center; font-weight: 800; z-index: 1; }
 .prospect.on .tick { background: var(--red); border-color: var(--red); color: #fff; }
+
+/* Zauber: 7-Tage-Plan, Zauberknopf */
+.checks.col { flex-direction: column; gap: 6px; }
+.plan { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.planday { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 0; }
+.planday b { font-size: 13px; }
+.planday img { width: 100%; aspect-ratio: 4 / 5; object-fit: contain; border-radius: 6px; background: #faf6f1; display: block; }
+.planday small { font-size: 11px; line-height: 1.25; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planday small.cd { color: var(--red); font-weight: 700; }
+.planday a.small, h3 a.small { font-size: 12px; font-weight: 600; }
+.plan.result img { aspect-ratio: 4 / 5; object-fit: cover; }
+button.primary.magic { box-shadow: 0 8px 20px rgba(194, 74, 24, .28); }

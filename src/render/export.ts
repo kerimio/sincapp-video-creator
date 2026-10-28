@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile, rename } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseStory, type Lang, type Story } from '../core/schema';
 import { LAYOUTS, type Format } from '../core/layout';
@@ -6,6 +6,7 @@ import { buildScenes, deriveTimeline, storyDurations } from '../core/timeline';
 import { pagesFor } from '../core/pages';
 import { resolveDesign, SPEED_FACTOR } from '../core/design';
 import { caption } from '../core/captions';
+import { countdownDays, countdownName, offerCaption, planDir, planOverview, shortDate, weekday, weekPlan } from '../core/magic';
 import { startStaticServer } from '../server/static';
 import { launchBrowser, openStoryPage, renderStory, templateMounts } from './render';
 import { verifyVideo, type VideoCheck } from './verify';
@@ -24,6 +25,10 @@ export interface ExportOptions {
   reels?: number;
   /** Instagram-Texte mitliefern */
   captions?: boolean;
+  /** "Letzte Chance"-Videos (noch 2 Tage / heute) */
+  countdown?: boolean;
+  /** 7-Tage-Plan: pro Tag ein Angebot als Reel, Bild und Text, nach Tagen sortiert */
+  plan?: boolean;
 }
 
 export interface ExportFile {
@@ -33,6 +38,8 @@ export interface ExportFile {
   label: string;
   format?: Format;
   lang?: Lang;
+  /** Tag im 7-Tage-Plan, z. B. "Mittwoch, 29.10." */
+  day?: string;
 }
 
 export interface ExportResult {
@@ -53,6 +60,8 @@ export function stillTimes(story: Story, format: Format) {
   return tl.sections.map((s) => ({ name: s.name, t: s.playStart + s.dur * (s.name === 'Intro' ? 0.85 : s.name === 'CTA' ? 0.6 : 0.72) }));
 }
 
+const dayLabel = (iso: string) => `${weekday(iso, 'de')}, ${shortDate(iso)}`;
+
 const slugify = (s: string) => s.toLowerCase().replace(/ı/g, 'i').replace(/ß/g, 'ss').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 export async function exportJob(jobDir: string, opts: ExportOptions, onProgress: (fraction: number, message: string) => void = () => {}): Promise<ExportResult> {
@@ -66,8 +75,11 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
   let poster: string | null = null;
 
   // Arbeitsschritte gewichtet: ein Video ≈ 10 Bilder
-  const reels = Math.max(0, Math.min(opts.reels ?? 0, story.offers.length));
-  const steps = (opts.videos.length * 10 + reels * 3 + opts.pageImages.length + opts.offerImages.length) * langs.length + 1;
+  const plan = opts.plan ? weekPlan(story, !!opts.countdown) : [];
+  // Der Plan braucht ein Reel für jedes Angebot, das darin vorkommt.
+  const reels = Math.max(0, Math.min(Math.max(opts.reels ?? 0, ...plan.map((d) => d.offer + 1)), story.offers.length));
+  const cds = opts.countdown ? countdownDays(story) : [];
+  const steps = (opts.videos.length * 10 + reels * 3 + cds.length * 3 + opts.pageImages.length + opts.offerImages.length + (plan.length ? 1 : 0)) * langs.length + 1;
   let done = 0;
   const tick = (w: number, msg: string) => {
     done += w;
@@ -127,11 +139,39 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
     }
   }
 
-  const needBrowser = opts.pageImages.length + opts.offerImages.length > 0;
+  const countdownFiles: Record<string, string> = {};
+  for (const n of cds) {
+    const base = done;
+    const name = countdownName(n);
+    const r = await renderStory({
+      jobDir,
+      outDir: out,
+      langs,
+      extra: `&view=countdown&days=${n}`,
+      name,
+      log: (m) => {
+        const prog = m.match(/^(\w+): (\d+)\/(\d+)/);
+        if (prog) {
+          done = base + (langs.indexOf(prog[1] as Lang) + Number(prog[2]) / Number(prog[3])) * 3;
+          onProgress(Math.min(0.99, done / steps), `Letzte-Chance-Video (${prog[1].toUpperCase()})`);
+        }
+      },
+    });
+    done = base + langs.length * 3;
+    for (const [lang, file] of Object.entries(r.videos)) {
+      const c = await verifyVideo(file, r.duration);
+      checks.push({ ...c, rel: `output/${basename(file)}` });
+      countdownFiles[`${n}-${lang}`] = file;
+      files.push({ path: `output/${basename(file)}`, kind: 'video', label: `Letzte Chance: ${n === 0 ? 'heute' : `noch ${n} Tage`} ${lang.toUpperCase()}`, format: 'story', lang: lang as Lang });
+    }
+  }
+
+  const needBrowser = opts.pageImages.length + opts.offerImages.length + plan.length > 0;
   if (needBrowser) {
     const imgDir = join(out, 'bilder');
     await rm(imgDir, { recursive: true, force: true });
     await mkdir(imgDir, { recursive: true });
+    await rm(join(out, 'plan'), { recursive: true, force: true });
     const server = await startStaticServer(templateMounts(jobDir));
     const browser = await launchBrowser();
     try {
@@ -159,11 +199,43 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
           }
           tick(1, `Einzelangebote ${FORMAT_LABEL[format]} ${lang.toUpperCase()}`);
         }
+        for (const d of plan) {
+          const dir = `output/plan/${planDir(d)}`;
+          await mkdir(join(jobDir, dir), { recursive: true });
+          const { page } = await openStoryPage(browser, server.url, lang, 'feed', `&view=offer&offer=${d.offer}`);
+          await page.screenshot({ path: join(jobDir, dir, `bild-${lang}.png`) });
+          await page.close();
+          files.push({ path: `${dir}/bild-${lang}.png`, kind: 'image', label: `Bild ${lang.toUpperCase()}`, format: 'feed', lang, day: dayLabel(d.date) });
+        }
+        if (plan.length) tick(1, `7-Tage-Plan ${lang.toUpperCase()}`);
       }
     } finally {
       await browser.close();
       await server.close();
     }
+  }
+
+  const planOnly = new Set<string>();
+  if (plan.length) {
+    for (const d of plan) {
+      const dir = `output/plan/${planDir(d)}`;
+      await mkdir(join(jobDir, dir), { recursive: true });
+      for (const lang of langs) {
+        const reel = join(out, `reel-${String(d.offer + 1).padStart(2, '0')}-${lang}.mp4`);
+        await copyFile(reel, join(jobDir, dir, `reel-${lang}.mp4`));
+        files.push({ path: `${dir}/reel-${lang}.mp4`, kind: 'video', label: `Reel ${lang.toUpperCase()}`, format: 'story', lang, day: dayLabel(d.date) });
+        if (d.countdown != null && countdownFiles[`${d.countdown}-${lang}`]) {
+          await copyFile(countdownFiles[`${d.countdown}-${lang}`], join(jobDir, dir, `letzte-chance-${lang}.mp4`));
+          files.push({ path: `${dir}/letzte-chance-${lang}.mp4`, kind: 'video', label: `Letzte Chance ${lang.toUpperCase()}`, format: 'story', lang, day: dayLabel(d.date) });
+        }
+        await writeFile(join(jobDir, dir, `text-${lang}.txt`), offerCaption(story, d.offer, lang, { countdown: d.countdown }) + '\n');
+        files.push({ path: `${dir}/text-${lang}.txt`, kind: 'text', label: `Text ${lang.toUpperCase()}`, lang, day: dayLabel(d.date) });
+      }
+    }
+    await writeFile(join(out, 'plan', 'wochenplan.txt'), planOverview(story, plan) + '\n');
+    files.push({ path: 'output/plan/wochenplan.txt', kind: 'text', label: 'Wochenplan (Übersicht)' });
+    // Reels, die nur für den Plan entstanden sind, liegen im ZIP nur im Plan-Ordner
+    for (const f of files) if (/^output\/reel-(\d+)-/.test(f.path) && Number(f.path.match(/reel-(\d+)/)![1]) > (opts.reels ?? 0)) planOnly.add(f.path);
   }
 
   if (opts.captions !== false) {
@@ -177,7 +249,7 @@ export async function exportJob(jobDir: string, opts: ExportOptions, onProgress:
   onProgress(0.99, 'ZIP wird gepackt …');
   const zipName = `${slugify(story.market.name)}-${story.dates.from}.zip`;
   const tmpZip = join(out, `.${zipName}.tmp`);
-  await writeZip(tmpZip, files.map((f) => ({ name: f.path.replace(/^output\//, ''), file: join(jobDir, f.path) })));
+  await writeZip(tmpZip, files.filter((f) => !planOnly.has(f.path)).map((f) => ({ name: f.path.replace(/^output\//, ''), file: join(jobDir, f.path) })));
   await rename(tmpZip, join(out, zipName));
   files.push({ path: `output/${zipName}`, kind: 'zip', label: 'Alles als ZIP' });
 

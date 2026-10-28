@@ -14,6 +14,8 @@ export const ENTERS = ['wischen', 'hoch', 'blende', 'pop'] as const;
 export const SPEEDS = ['ruhig', 'normal', 'schnell'] as const;
 export const TRANSITIONS = ['kreis', 'schieben', 'blende'] as const;
 export const FORMATS = ['story', 'feed', 'quadrat'] as const;
+/** Ziel des QR-Codes am Schluss */
+export const QR_TARGETS = ['aus', 'route', 'instagram', 'link'] as const;
 
 export const Palette = z.object({
   /** Hintergrund von Intro und Schluss */
@@ -41,6 +43,9 @@ export const Design = z.object({
   speed: z.enum(SPEEDS).optional(),
   wobble: z.boolean().optional(),
   transition: z.enum(TRANSITIONS).optional(),
+  qr: z.enum(QR_TARGETS).optional(),
+  /** eigener Link für qr = "link" */
+  qrLink: z.string().url().max(500).optional(),
 });
 export type Design = z.infer<typeof Design>;
 export type DesignInput = z.input<typeof Design>;
@@ -54,9 +59,11 @@ export interface ResolvedDesign {
   speed: (typeof SPEEDS)[number];
   wobble: boolean;
   transition: (typeof TRANSITIONS)[number];
+  qr: (typeof QR_TARGETS)[number];
+  qrLink?: string;
 }
 
-type PresetDef = Omit<ResolvedDesign, 'preset'> & { label: string; hint: string };
+type PresetDef = Omit<ResolvedDesign, 'preset' | 'qr' | 'qrLink'> & { label: string; hint: string };
 
 export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
   klassik: {
@@ -75,7 +82,7 @@ export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
     label: 'Premium',
     hint: 'Schwarz und Gold, ruhig und edel – für Fleisch und Feinkost',
     colors: { paper: '#F3EFE7', ink: '#141414', ink2: '#5A544A', accent: '#B08D3C', accent2: '#D9B65E', pages: ['#141414', '#2A2622'] },
-    background: 'verlauf', price: 'flach', enter: 'blende', speed: 'ruhig', wobble: false, transition: 'blende',
+    background: 'ohne', price: 'flach', enter: 'blende', speed: 'ruhig', wobble: false, transition: 'blende',
   },
   knallig: {
     label: 'Knallig',
@@ -93,7 +100,7 @@ export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
     label: 'Black Week',
     hint: 'Schwarz mit Neon-Gelb – für Rabattwochen und Sonderaktionen',
     colors: { paper: '#0B0B0B', ink: '#111111', ink2: '#555555', accent: '#FFE500', accent2: '#FFE500', pages: ['#111111', '#262626'] },
-    background: 'verlauf', price: 'kreis', enter: 'pop', speed: 'schnell', wobble: true, transition: 'kreis',
+    background: 'streifen', price: 'kreis', enter: 'pop', speed: 'schnell', wobble: true, transition: 'kreis',
   },
   bayram: {
     label: 'Bayram',
@@ -124,6 +131,8 @@ export function resolveDesign(d?: DesignInput | null): ResolvedDesign {
     speed: pick('speed'),
     wobble: pick('wobble'),
     transition: pick('transition'),
+    qr: parsed.qr ?? 'aus',
+    qrLink: parsed.qrLink,
   };
 }
 

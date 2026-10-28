@@ -27,7 +27,7 @@ export function bannerSuggestions(to: string): { de: string; tr: string }[] {
   return [
     { de: `Nur bis ${WEEKDAY.de[d]}!`, tr: `Sadece ${WEEKDAY.tr[d]} gününe kadar!` },
     { de: 'Solange der Vorrat reicht', tr: 'Stoklarla sınırlı' },
-    { de: 'Jetzt zuschlagen!', tr: 'Fırsatı kaçırma!' },
+    { de: 'Diese Woche günstig', tr: 'Bu hafta ucuz' },
     { de: 'Neue Woche – neue Angebote', tr: 'Yeni hafta – yeni fırsatlar' },
     { de: 'Frisch eingetroffen', tr: 'Yeni geldi' },
   ];

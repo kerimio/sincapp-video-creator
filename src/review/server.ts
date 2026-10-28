@@ -75,13 +75,15 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   const lastExport = async (): Promise<RenderState['result'] | undefined> =>
     existsSync(exportFile) ? { ...(JSON.parse(await readFile(exportFile, 'utf8')) as ExportResult), urlBase } : undefined;
 
-  async function startRender(opts: ExportOptions) {
+  /** Startet den Export im Hintergrund; das Promise endet, wenn er fertig ist (Fehler stehen in `render.error`). */
+  function startRender(opts: ExportOptions, onProgress: (fraction: number, message: string) => void = () => {}): Promise<void> {
     Object.assign(render, { running: true, fraction: 0, message: 'Wird vorbereitet …', error: undefined, result: undefined });
-    (async () => {
+    return (async () => {
       try {
         const r = await exportJob(jobDir, opts, (fraction, message) => {
           log(message);
           Object.assign(render, { fraction, message });
+          onProgress(fraction, message);
         });
         await writeFile(exportFile, JSON.stringify(r, null, 2) + '\n');
         render.result = { ...r, urlBase };
@@ -95,7 +97,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   }
 
   /** Bearbeitet `sub` (Pfad nach dem API-Präfix, z. B. "state", "offer/s1-1/crop"). */
-  return async function handle(method: string, sub: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  const handle = async function handle(method: string, sub: string, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const m = sub.match(/^offer\/([\w-]+)\/(\w+)$/);
 
     if (method === 'GET' && sub === 'state') {
@@ -234,15 +236,18 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
           langs: Array.isArray(o.langs) && o.langs.length ? o.langs.filter((l) => l === 'de' || l === 'tr') : undefined,
           captions: o.captions !== false,
           reels: typeof o.reels === 'number' ? Math.max(0, Math.min(15, Math.floor(o.reels))) : 0,
+          countdown: o.countdown === true,
+          plan: o.plan === true,
         };
-        if (!opts.videos.length && !opts.reels && !opts.pageImages.length && !opts.offerImages.length && !opts.captions) return sendJson(res, { error: 'Bitte mindestens etwas zum Exportieren auswählen' }, 400);
-        await startRender(opts);
+        if (!opts.videos.length && !opts.reels && !opts.pageImages.length && !opts.offerImages.length && !opts.captions && !opts.countdown && !opts.plan) return sendJson(res, { error: 'Bitte mindestens etwas zum Exportieren auswählen' }, 400);
+        void startRender(opts);
         return sendJson(res, render, 202);
       }
     }
 
     return false;
   };
+  return Object.assign(handle, { startRender, render });
 }
 
 /** Review-Server für einen einzelnen Job (`sincapp-story review <job>`). */

@@ -1,5 +1,5 @@
 // Vorschaubilder aller Designs × Formate für einen Job (Standard: Referenz-Job).
-// Aufruf: pnpm tsx tools/preview-designs.ts [--job <ordner>] [--out <ordner>] [--presets a,b] [--formats story,feed]
+// Aufruf: pnpm tsx tools/preview-designs.ts [--job <ordner>] [--out <ordner>] [--presets a,b] [--formats story,feed] [--extras] [--magic]
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,6 +20,7 @@ const presets = opt('presets', PRESETS.join(',')).split(',');
 const formats = opt('formats', 'story,feed,quadrat').split(',') as Format[];
 const lang = opt('lang', 'de') as 'de' | 'tr';
 const extras = args.includes('--extras');
+const magic = args.includes('--magic');
 
 const job = await mkdtemp(join(tmpdir(), 'sincapp-designs-'));
 await cp(src, job, { recursive: true });
@@ -36,6 +37,7 @@ try {
       const badges = ['knaller', 'neu', 'halal', 'woche', 'bestpreis'];
       data.offers = data.offers.map((o: object, i: number) => ({ ...o, badge: badges[i % badges.length] }));
     }
+    if (magic) data.design = { ...data.design, qr: 'route' };
     await writeFile(join(job, 'story.json'), JSON.stringify(data));
     const story = parseStory(data);
     for (const format of formats) {
@@ -48,6 +50,16 @@ try {
         await page.screenshot({ path: join(out, `${preset}-${format}-${s.name}.png`) });
       }
       await page.close();
+      if (magic && format === 'story') {
+        for (const days of [2, 0]) {
+          const { page: cp } = await openStoryPage(browser, server.url, lang, format, `&view=countdown&days=${days}`);
+          for (const t of [0.4, 1.4, 2.2, 3.4, 6.0]) {
+            await cp.evaluate((tt) => window.sincapp.seek(tt), t);
+            await cp.screenshot({ path: join(out, `${preset}-countdown${days}-${t}.png`) });
+          }
+          await cp.close();
+        }
+      }
       if (extras && format === 'story') {
         const { page: rp } = await openStoryPage(browser, server.url, lang, format, '&view=reel&offer=0');
         for (const t of [0.8, 2.0, 4.5]) {

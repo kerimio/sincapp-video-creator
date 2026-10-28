@@ -4,7 +4,7 @@ import { call, jobClient } from './api';
 import { ReviewPage } from './App';
 
 // ---------- Typen der App-API ----------
-interface Run { running: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
+interface Run { running: boolean; auto?: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
 interface Job {
   id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string };
   inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
@@ -152,7 +152,7 @@ export function NewJob() {
     .filter((m) => `${m.name} ${m.address ?? ''}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')))
     .sort((a, b) => Number(b.current > 0) - Number(a.current > 0) || a.name.localeCompare(b.name, 'de'));
 
-  const start = async () => {
+  const start = async (auto = false) => {
     setErr('');
     try {
       setBusy(upload ? 'Job wird angelegt …' : 'Prospektseiten werden aus Firestore geladen …');
@@ -163,8 +163,8 @@ export function NewJob() {
           await call('POST', `/api/jobs/${job.id}/files?name=${encodeURIComponent(f.name)}`, undefined, f);
         }
       }
-      setBusy('Auslesen startet …');
-      await call('POST', `/api/jobs/${job.id}/process`);
+      setBusy(auto ? '✨ Es wird gezaubert …' : 'Auslesen startet …');
+      await call('POST', `/api/jobs/${job.id}/process`, { auto });
       go(`#/job/${job.id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -277,6 +277,7 @@ export function NewJob() {
               </label>
             </div>
             <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>
+            <p className="muted small"><b>✨ Zaubern</b> erledigt alles in einem Rutsch: Prospekt lesen, beste Angebote wählen, Produktbilder freistellen und das komplette Paket erstellen (Story- und Feed-Video, 7-Tage-Plan mit Reels, Bildern und Texten, „Letzte Chance“-Videos). Es nutzt dein gespeichertes Design für den Markt. Danach kannst du trotzdem noch alles ändern und neu exportieren.</p>
           </section>
         )}
 
@@ -288,8 +289,11 @@ export function NewJob() {
         {err && <div className="errors">{err}</div>}
         <div className="row end">
           <button className="ghost" onClick={() => go('#/')}>Abbrechen</button>
-          <button className="primary big" disabled={!ready || !!busy || !!noKey} onClick={start}>
-            {busy || 'Weiter: Prospekt auslesen →'}
+          <button className="ghost big" disabled={!ready || !!busy || !!noKey} onClick={() => start(false)} title="Erst die Angebote prüfen, dann Design und Export wählen">
+            Angebote erst prüfen →
+          </button>
+          <button className="primary big magic" disabled={!ready || !!busy || !!noKey} onClick={() => start(true)} title="Liest den Prospekt, wählt die besten Angebote und erstellt das komplette Wochenpaket – ohne Zwischenschritte">
+            {busy || '✨ Zaubern: alles automatisch'}
           </button>
         </div>
       </div>
@@ -371,7 +375,11 @@ export function JobPage({ id }: { id: string }) {
             <>
               <div className="progressbar big"><div style={{ width: `${(f * 100).toFixed(1)}%` }} /></div>
               <p>{run.progress.message}</p>
-              <p className="muted small">Claude liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.</p>
+              <p className="muted small">
+                {run.auto
+                  ? '✨ Zauberknopf: Die KI liest die Seiten und prüft jeden Preis doppelt, dann entstehen Videos, Reels, Bilder und Texte. Das dauert etwa 10–20 Minuten – hol dir einen Kaffee, das Fenster kann offen bleiben.'
+                  : 'Die KI liest die Seiten, prüft jeden Preis doppelt und sucht für jedes Produkt ein sauberes Bild. Das dauert je nach Umfang ein paar Minuten – du kannst das Fenster offen lassen.'}
+              </p>
             </>
           ) : (
             <>
@@ -403,7 +411,7 @@ export function JobPage({ id }: { id: string }) {
   return (
     <>
       {run?.notes && run.notes.length > 0 && <Notes notes={run.notes} />}
-      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} />
+      <ReviewPage api={api} title={job.title} onBack={() => go('#/')} initialTab={run?.auto && !run.error ? 'export' : 'angebote'} />
     </>
   );
 }

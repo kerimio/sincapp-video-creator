@@ -56,7 +56,7 @@ describe('Instagram-Text', () => {
   it('enthält Angebote, Datum und Hashtags in beiden Sprachen', () => {
     const de = caption(story, 'de');
     expect(de).toContain('Gültig 28.10. – 30.10.2026');
-    expect(de).toMatch(/✅ .+ – \d+,\d{2} €/);
+    expect(de).toMatch(/– .+: \d+,\d{2} €/);
     expect(de).toContain('#sincapp');
     expect(de).toContain('#hannover');
     const tr = caption(story, 'tr');
@@ -82,9 +82,17 @@ describe('Sticker und Laufband', () => {
     const s = parseStory({ ...JSON.parse(readFileSync(join(__dirname, 'fixtures/reference-job/story.json'), 'utf8')), banner: { de: 'Nur bis Freitag!', tr: 'Sadece Cuma gününe kadar!' } });
     s.offers[0].badge = 'knaller';
     const de = caption(s, 'de');
-    expect(de).toContain('⏰ Nur bis Freitag!');
-    expect(de).toMatch(/🔥 .+ · Knaller!/);
+    expect(de).toContain('\nNur bis Freitag!\n');
+    expect(de).toMatch(/– .+ · Knaller!/);
     expect(caption(s, 'tr')).toContain('Süper fiyat!');
+  });
+
+  it('folgt dem Design System: höchstens 🐿 als Emoji, kein „jetzt laden“', () => {
+    for (const l of ['de', 'tr'] as const) {
+      const t = caption(story, l);
+      expect(t.replace(/🐿/g, '')).not.toMatch(/\p{Extended_Pictographic}/u);
+      expect(t).not.toMatch(/jetzt|hemen/i);
+    }
   });
 
   it('Laufband-Vorschlag nennt den letzten Tag', async () => {

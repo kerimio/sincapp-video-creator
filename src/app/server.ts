@@ -11,6 +11,7 @@ import { readBody, sendJson, jobApi } from '../review/server';
 import { startStaticServer } from '../server/static';
 import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summarize } from './jobs';
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
+import { MAGIC_PACK } from '../core/packs';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
 const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
@@ -18,6 +19,8 @@ const SAMPLES = join(ROOT, 'reference/samples/saray-2026-10-28');
 
 interface Run {
   running: boolean;
+  /** Zauberknopf: nach dem Auslesen direkt alles exportieren */
+  auto?: boolean;
   progress: Progress;
   error?: string;
   notes?: string[];
@@ -63,11 +66,20 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     return a;
   };
 
-  function process_(id: string, settings: JobSettings) {
-    const run: Run = { running: true, progress: { step: 'extract', message: 'Startet …', fraction: 0 } };
+  function process_(id: string, settings: JobSettings, auto = false) {
+    const run: Run = { running: true, auto, progress: { step: 'extract', message: 'Startet …', fraction: 0 } };
     runs.set(id, run);
-    prepareStory(jobPath(id), settings, (p) => (run.progress = p))
-      .then((r) => (run.notes = r.notes))
+    // Beim Zauberknopf zählt das Auslesen bis 50 %, der Export die zweite Hälfte.
+    const k = auto ? 0.5 : 1;
+    (async () => {
+      const r = await prepareStory(jobPath(id), settings, (p) => (run.progress = { ...p, fraction: p.fraction * k }));
+      run.notes = r.notes;
+      if (!auto) return;
+      const api = apiFor(id);
+      run.progress = { step: 'render', message: 'Videos, Reels und Bilder werden erstellt …', fraction: 0.5 };
+      await api.startRender({ ...MAGIC_PACK, langs: r.story.lang }, (f, m) => (run.progress = { step: 'render', message: m, fraction: 0.5 + f * 0.5 }));
+      if (api.render.error) throw new Error(`Export: ${api.render.error}`);
+    })()
       .catch((e) => (run.error = (e as Error).message))
       .finally(() => (run.running = false));
   }
@@ -234,7 +246,8 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
         if (runs.get(id)?.running) return sendJson(res, { error: 'Läuft bereits' }, 409);
         const meta = await readJob(id);
         if (!meta.settings.recorded && !aiProvider()) throw new Error(NO_AI_KEY);
-        process_(id, meta.settings);
+        const body = (await readBody(req)).toString('utf8');
+        process_(id, meta.settings, !!(body && JSON.parse(body).auto));
         return sendJson(res, runs.get(id), 202);
       }
       if (sub === 'progress' && method === 'GET') return sendJson(res, runs.get(id) ?? null);

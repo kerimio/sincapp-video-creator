@@ -2,16 +2,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Story } from '../../core/schema';
 import {
-  BACKGROUNDS, ENTERS, PRESET_DEFS, PRESETS, PRICE_STYLES, SPEEDS, TRANSITIONS, resolveDesign,
+  BACKGROUNDS, ENTERS, PRESET_DEFS, PRESETS, PRICE_STYLES, QR_TARGETS, SPEEDS, TRANSITIONS, resolveDesign,
   type DesignInput, type Palette,
 } from '../../core/design';
 import { LAYOUTS, type Format } from '../../core/layout';
 import { caption } from '../../core/captions';
 import { bannerSuggestions } from '../../core/badges';
 import type { ExportOptions, JobClient, RenderState } from './api';
+import { PACKS, type PackOptions } from '../../core/packs';
+import { countdownDays, weekPlan, weekday, shortDate } from '../../core/magic';
 
-export type View = Format | 'angebot' | 'reel';
-const VIEW_LABEL: Record<View, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1', angebot: 'Einzelbild', reel: 'Top-Reel' };
+export type View = Format | 'angebot' | 'reel' | 'countdown';
+const VIEW_LABEL: Record<View, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1', angebot: 'Einzelbild', reel: 'Top-Reel', countdown: 'Letzte Chance' };
 
 // ---------- Vorschau ----------
 
@@ -21,14 +23,15 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
   const [duration, setDuration] = useState(0);
   const [t, setT] = useState(4.5);
   const [offer, setOffer] = useState(0);
+  const [days, setDays] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [ready, setReady] = useState(false);
   const win = () => frame.current?.contentWindow as (Window & { sincapp?: Window['sincapp'] }) | null;
-  const format: Format = view === 'angebot' ? 'feed' : view === 'reel' ? 'story' : view;
+  const format: Format = view === 'angebot' ? 'feed' : view === 'reel' || view === 'countdown' ? 'story' : view;
   const { W, H } = LAYOUTS[format];
   const scale = 360 / W;
   const offers = (story as Story | null)?.offers.length ?? 0;
-  const src = `/index.html?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${view === 'angebot' || view === 'reel' ? `&view=${view === 'reel' ? 'reel' : 'offer'}&offer=${Math.min(offer, Math.max(0, offers - 1))}` : ''}&story=${encodeURIComponent(`${base}story.json`)}`;
+  const src = `/index.html?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${view === 'angebot' || view === 'reel' ? `&view=${view === 'reel' ? 'reel' : 'offer'}&offer=${Math.min(offer, Math.max(0, offers - 1))}` : ''}${view === 'countdown' ? `&view=countdown&days=${days}` : ''}&story=${encodeURIComponent(`${base}story.json`)}`;
 
   const onLoad = useCallback(async () => {
     setReady(false);
@@ -100,6 +103,11 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
             <button className="ghost" disabled={offer >= offers - 1} onClick={() => setOffer((i) => i + 1)}>›</button>
           </div>
         )}
+        {view === 'countdown' && (
+          <div className="seg">
+            {[2, 1, 0].map((n) => <button key={n} className={days === n ? 'on' : ''} onClick={() => setDays(n)}>{n === 0 ? 'Heute' : n === 1 ? 'Morgen' : `${n} Tage`}</button>)}
+          </div>
+        )}
         {view !== 'angebot' && (
           <>
             <button className="ghost" onClick={() => setPlaying((p) => !p)}>{playing ? '❚❚ Pause' : '▶ Abspielen'}</button>
@@ -117,7 +125,8 @@ export function Preview({ story, base, view, setView }: { story: unknown; base: 
 
 // ---------- Design ----------
 
-const BG_LABEL: Record<(typeof BACKGROUNDS)[number], string> = { logo: 'Logo-Wasserzeichen', punkte: 'Punkte', verlauf: 'Verlauf', sterne: 'Sterne & Mond', streifen: 'Streifen', ohne: 'Schlicht' };
+const QR_LABEL: Record<(typeof QR_TARGETS)[number], string> = { aus: 'Kein QR-Code', route: '📍 Route zum Markt', instagram: '📷 Instagram', link: '🔗 Eigener Link' };
+const BG_LABEL: Record<(typeof BACKGROUNDS)[number], string> = { logo: 'Logo-Wasserzeichen', punkte: 'Punkte', verlauf: 'Verlauf (nicht im Design System)', sterne: 'Sterne & Mond', streifen: 'Streifen', ohne: 'Schlicht' };
 const PRICE_LABEL: Record<(typeof PRICE_STYLES)[number], string> = { etikett: 'Etikett (schräg)', kreis: 'Kreis-Sticker', flach: 'Flach' };
 const ENTER_LABEL: Record<(typeof ENTERS)[number], string> = { wischen: 'Reinwischen', hoch: 'Von unten', blende: 'Einblenden', pop: 'Aufploppen' };
 const TRANS_LABEL: Record<(typeof TRANSITIONS)[number], string> = { kreis: 'Kreis', schieben: 'Schieben', blende: 'Überblenden' };
@@ -229,7 +238,7 @@ export function DesignPanel(p: {
       <h2>Vorlage</h2>
       <div className="presets">
         {PRESETS.map((k) => (
-          <button key={k} className={`preset ${r.preset === k ? 'on' : ''}`} onClick={() => p.update((s) => ((s.design = { preset: k } as Story['design']), s))}>
+          <button key={k} className={`preset ${r.preset === k ? 'on' : ''}`} onClick={() => p.update((s) => ((s.design = { preset: k, qr: s.design?.qr, qrLink: s.design?.qrLink } as Story['design']), s))}>
             <Swatches c={PRESET_DEFS[k].colors} />
             <b>{PRESET_DEFS[k].label}</b>
             <small>{PRESET_DEFS[k].hint}</small>
@@ -286,6 +295,19 @@ export function DesignPanel(p: {
         <small className="muted">Sticker wie „Knaller!“ oder „Halal“ setzt du pro Angebot im Schritt Angebote.</small>
       </div>
 
+      <h2>QR-Code am Schluss</h2>
+      <div className="card banner-edit">
+        <Chips value={r.qr} options={QR_TARGETS} labels={QR_LABEL} onChange={(v) => set((d) => ({ ...d, qr: v }))} />
+        {r.qr === 'link' && (
+          <label>
+            Link (z. B. eure Website oder WhatsApp)
+            <input value={design.qrLink ?? ''} placeholder="https://…" onChange={(e) => set((d) => ({ ...d, qrLink: /^https?:\/\/\S+\.\S+/.test(e.target.value) ? e.target.value.trim() : undefined }))} />
+          </label>
+        )}
+        {r.qr === 'instagram' && !p.story.market.instagram && <small className="warn">Für diesen Markt ist kein Instagram-Name eingetragen.</small>}
+        <small className="muted">Gut für den Bildschirm im Laden, das Schaufenster oder ausgedruckte Bilder: Kunden scannen und landen direkt bei der Route oder auf Instagram.</small>
+      </div>
+
       <h2>{p.story.market.name}</h2>
       <div className="card row">
         <button
@@ -329,27 +351,20 @@ export function DesignPanel(p: {
 
 // ---------- Export ----------
 
-type ExportChoice = Required<Pick<ExportOptions, 'videos' | 'pageImages' | 'offerImages' | 'langs' | 'captions' | 'reels'>>;
-const PACKS: { key: string; label: string; hint: string; opts: Omit<ExportChoice, 'langs'> }[] = [
-  { key: 'woche', label: 'Wochenpaket', hint: 'Story- und Feed-Video, 3 Reels für die Top-Angebote, Karussell-Bilder, jedes Angebot als Bild, Texte', opts: { videos: ['story', 'feed'], reels: 3, pageImages: ['feed'], offerImages: ['feed'], captions: true } },
-  { key: 'story', label: 'Nur Story', hint: 'Das Video für die Instagram-Story', opts: { videos: ['story'], reels: 0, pageImages: [], offerImages: [], captions: false } },
-  { key: 'feed', label: 'Feed-Beitrag', hint: 'Video 4:5 und Karussell-Bilder für einen Beitrag, mit Text', opts: { videos: ['feed'], reels: 0, pageImages: ['feed'], offerImages: [], captions: true } },
-  { key: 'bilder', label: 'Nur Bilder', hint: 'Jedes Angebot einzeln (4:5 und 1:1), schnell fertig', opts: { videos: [], reels: 0, pageImages: [], offerImages: ['feed', 'quadrat'], captions: true } },
-  { key: 'reels', label: 'Top-Reels', hint: 'Ein 7-Sekunden-Reel pro Top-Angebot (die ersten 3), mit Text', opts: { videos: [], reels: 3, pageImages: [], offerImages: [], captions: true } },
-];
+type ExportChoice = PackOptions & { langs: ('de' | 'tr')[] };
 const STORE = 'sincapp.export';
 
 function load(): ExportChoice {
   try {
     const x = JSON.parse(localStorage.getItem(STORE) ?? '');
-    if (x && Array.isArray(x.videos)) return { reels: 0, ...x };
+    if (x && Array.isArray(x.videos)) return { reels: 0, countdown: false, plan: false, ...x };
   } catch {
     /* Standard */
   }
   return { ...PACKS[0].opts, langs: ['de', 'tr'] };
 }
 
-export function ExportPanel(p: { story: Story; api: JobClient; render: RenderState | null; start: (o: ExportOptions) => void; dirty: boolean; disabled: boolean }) {
+export function ExportPanel(p: { story: Story; base: string; api: JobClient; render: RenderState | null; start: (o: ExportOptions) => void; dirty: boolean; disabled: boolean }) {
   const [c, setC] = useState<ExportChoice>(load);
   useEffect(() => {
     try {
@@ -362,17 +377,21 @@ export function ExportPanel(p: { story: Story; api: JobClient; render: RenderSta
     setC((x) => ({ ...x, [k]: x[k].includes(f) ? x[k].filter((y) => y !== f) : [...x[k], f] }));
   const toggleLang = (l: 'de' | 'tr') => setC((x) => ({ ...x, langs: x.langs.includes(l) ? x.langs.filter((y) => y !== l) : [...x.langs, l] }));
   const nOffers = p.story.offers.length;
+  const plan = useMemo(() => (c.plan ? weekPlan(p.story, c.countdown) : []), [c.plan, c.countdown, p.story]);
   const count = useMemo(() => {
     const L = c.langs.length;
     const pages = (f: Format) => (f === 'quadrat' ? Math.ceil(nOffers / 2) : nOffers < 2 ? 0 : nOffers % 3 === 1 ? Math.floor(nOffers / 3) + 1 : Math.ceil(nOffers / 3)) + 2;
-    const videos = (c.videos.length + Math.min(c.reels, nOffers)) * L;
-    const images = (c.pageImages.reduce((a, f) => a + pages(f), 0) + c.offerImages.length * nOffers) * L;
-    const minutes = Math.max(1, Math.round(c.videos.length * L * 1.2 + Math.min(c.reels, nOffers) * L * 0.4 + images * 0.05));
+    const reels = Math.min(nOffers, Math.max(c.reels, ...plan.map((d) => d.offer + 1)));
+    const cds = c.countdown ? countdownDays(p.story).length : 0;
+    const videos = (c.videos.length + reels + cds) * L;
+    const images = (c.pageImages.reduce((a, f) => a + pages(f), 0) + c.offerImages.length * nOffers + plan.length) * L;
+    const minutes = Math.max(1, Math.round(c.videos.length * L * 1.2 + (reels + cds) * L * 0.4 + images * 0.05));
     return { videos, images, minutes };
-  }, [c, nOffers]);
-  const active = PACKS.find((x) => JSON.stringify({ ...x.opts }) === JSON.stringify({ videos: c.videos, reels: c.reels, pageImages: c.pageImages, offerImages: c.offerImages, captions: c.captions }));
+  }, [c, nOffers, plan, p.story]);
+  const key = (x: PackOptions) => JSON.stringify([x.videos, x.reels, x.pageImages, x.offerImages, x.captions, x.countdown, x.plan]);
+  const active = PACKS.find((x) => key(x.opts) === key(c));
   const running = !!p.render?.running;
-  const nothing = !c.langs.length || (!c.videos.length && !c.reels && !c.pageImages.length && !c.offerImages.length && !c.captions);
+  const nothing = !c.langs.length || (!c.videos.length && !c.reels && !c.pageImages.length && !c.offerImages.length && !c.captions && !c.countdown && !c.plan);
   const box = (k: 'videos' | 'pageImages' | 'offerImages', f: Format, label = VIEW_LABEL[f]) => (
     <label className="check" key={k + f}>
       <input type="checkbox" checked={c[k].includes(f)} onChange={() => toggle(k, f)} /> {label}
@@ -394,6 +413,22 @@ export function ExportPanel(p: { story: Story; api: JobClient; render: RenderSta
         <div className="field"><span>Kurz-Reels (7 s) für die Top-Angebote – Reihenfolge wie im Schritt Angebote</span>
           <div className="chips">{[0, 1, 3, 5].map((n) => <button key={n} className={c.reels === n ? 'on' : ''} onClick={() => setC((x) => ({ ...x, reels: n }))}>{n === 0 ? 'keine' : `${n} Reel${n === 1 ? '' : 's'}`}</button>)}</div>
         </div>
+        <div className="field"><span>Zauber-Extras</span><div className="checks col">
+          <label className="check"><input type="checkbox" checked={c.plan} onChange={(e) => setC((x) => ({ ...x, plan: e.target.checked }))} /> 📅 7-Tage-Plan: jeden Tag ein Top-Angebot als Reel, Bild und Text, nach Tagen sortiert</label>
+          <label className="check"><input type="checkbox" checked={c.countdown} onChange={(e) => setC((x) => ({ ...x, countdown: e.target.checked }))} /> ⏰ „Letzte Chance“-Videos ({countdownDays(p.story).map((n) => (n === 0 ? '„Nur noch heute!“' : `„Noch ${n} Tage!“`)).join(' und ')})</label>
+        </div></div>
+        {plan.length > 0 && (
+          <div className="plan">
+            {plan.map((d) => (
+              <div key={d.date} className="planday">
+                <b>{weekday(d.date, 'de').slice(0, 2)} {shortDate(d.date)}</b>
+                <img src={`${p.base}${p.story.offers[d.offer].img}`} loading="lazy" />
+                <small>{p.story.offers[d.offer].name.de.join(' ').replace(/- /g, '')}</small>
+                {d.countdown != null && <small className="cd">⏰ {d.countdown === 0 ? 'heute' : `noch ${d.countdown}`}</small>}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="field"><span>Seiten als Bilder (Karussell)</span><div className="checks">{(['story', 'feed', 'quadrat'] as Format[]).map((f) => box('pageImages', f))}</div></div>
         <div className="field"><span>Jedes Angebot einzeln als Bild</span><div className="checks">{box('offerImages', 'feed')}{box('offerImages', 'quadrat')}</div></div>
         <div className="field"><span>Sprachen</span><div className="checks">
@@ -417,8 +452,10 @@ export function ExportPanel(p: { story: Story; api: JobClient; render: RenderSta
 
 function ExportResult({ r }: { r: NonNullable<RenderState['result']> }) {
   const url = (path: string) => `${r.urlBase}${path}`;
-  const videos = r.files.filter((f) => f.kind === 'video');
-  const images = r.files.filter((f) => f.kind === 'image');
+  const videos = r.files.filter((f) => f.kind === 'video' && !f.day);
+  const images = r.files.filter((f) => f.kind === 'image' && !f.day);
+  const days = [...new Set(r.files.filter((f) => f.day).map((f) => f.day!))];
+  const overview = r.files.find((f) => f.path.endsWith('wochenplan.txt'));
   return (
     <div className="card render">
       <div className="row">
@@ -435,6 +472,24 @@ function ExportResult({ r }: { r: NonNullable<RenderState['result']> }) {
           </div>
         );
       })}
+      {days.length > 0 && (
+        <>
+          <h3>📅 7-Tage-Plan {overview && <a className="small" href={url(overview.path)} target="_blank">Übersicht</a>}</h3>
+          <div className="plan result">
+            {days.map((day) => {
+              const fs = r.files.filter((f) => f.day === day);
+              const img = fs.find((f) => f.kind === 'image');
+              return (
+                <div key={day} className="planday">
+                  <b>{day}</b>
+                  {img && <a href={url(img.path)} download><img src={url(img.path)} loading="lazy" /></a>}
+                  {fs.filter((f) => f.kind !== 'image').map((f) => <a key={f.path} className="small" href={url(f.path)} download>⬇ {f.label}</a>)}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
       {images.length > 0 && (
         <div className="thumbs">
           {images.map((f) => (

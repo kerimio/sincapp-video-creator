@@ -4,7 +4,7 @@ import { BADGE_TEXT } from './badges';
 
 /**
  * Instagram-Bildtext (DE/TR) mit Angeboten und Hashtags. Ohne KI – kostet nichts
- * und ist sofort da. Wird beim Export als Textdatei mitgeliefert.
+ * und ist sofort da. Nach dem Design System: kein Imperativ, als Emoji höchstens 🐿. Wird beim Export als Textdatei mitgeliefert.
  */
 const lineName = (lines: string[]) =>
   lines.reduce((acc, l) => (!acc ? l : acc.endsWith('-') ? (/^\p{Lu}/u.test(l) ? acc + l : acc.slice(0, -1) + l.toLowerCase()) : `${acc} ${l}`), '');
@@ -22,7 +22,7 @@ export function caption(story: Story, lang: Lang): string {
   const unitOf = (u: Story['offers'][number]['unit']) => (typeof u === 'string' ? u : u?.[lang]);
   const offers = story.offers.map((o) => {
     const unit = unitOf(o.unit);
-    return `${o.badge === 'knaller' ? '🔥' : '✅'} ${lineName(o.name[lang])} – ${o.price} €${unit ? ` (${unit})` : ''}${o.badge ? ` · ${BADGE_TEXT[o.badge][lang]}` : ''}`;
+    return `– ${lineName(o.name[lang])}: ${o.price} €${unit ? ` (${unit})` : ''}${o.badge ? ` · ${BADGE_TEXT[o.badge][lang]}` : ''}`;
   });
   const city = cityOf(m.addresses[0] ?? '');
   const head = story.headline[lang].join(' ').replace(/- /g, '');
@@ -40,27 +40,27 @@ export function caption(story: Story, lang: Lang): string {
   const handle = m.instagram ? ` @${m.instagram}` : '';
   if (lang === 'de') {
     return [
-      `🔥 ${head} bei ${m.name}!${handle}`,
-      `🗓 Gültig ${dates}`,
-      ...(story.banner?.de ? [`⏰ ${story.banner.de}`] : []),
+      `${head} bei ${m.name}!${handle}`,
+      `Gültig ${dates}`,
+      ...(story.banner?.de ? [story.banner.de] : []),
       '',
       ...offers,
       '',
-      `📍 ${m.addresses.join(' · ')}`,
-      '📲 Alle Angebote in der sincapp App – jetzt kostenlos laden!',
+      m.addresses.join(' · '),
+      "Alle Angebote in der sincapp App, kostenlos. Wissen, wo's günstig ist. 🐿",
       '',
       [...tags].join(' '),
     ].join('\n');
   }
   return [
-    `🔥 ${head} – ${turkishLocative(m.name)}!${handle}`,
-    `🗓 Geçerlilik: ${dates}`,
-    ...(story.banner?.tr ? [`⏰ ${story.banner.tr}`] : []),
+    `${head} – ${turkishLocative(m.name)}!${handle}`,
+    `Geçerlilik: ${dates}`,
+    ...(story.banner?.tr ? [story.banner.tr] : []),
     '',
     ...offers,
     '',
-    `📍 ${m.addresses.join(' · ')}`,
-    '📲 Tüm fırsatlar sincapp uygulamasında – hemen ücretsiz indir!',
+    m.addresses.join(' · '),
+    'Tüm fırsatlar sincapp uygulamasında, ücretsiz. Ucuzu bilenler. 🐿',
     '',
     [...tags].join(' '),
   ].join('\n');
