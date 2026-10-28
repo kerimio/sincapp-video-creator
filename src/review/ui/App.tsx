@@ -492,13 +492,13 @@ function ImageDialog(p: {
             <div className="grid">
               {(o.imgAlternatives ?? []).map((a, i) => (
                 <div key={a.url} className={`cand ${a.match ? 'match' : ''}`}>
-                  {a.file ? <img src={`${base}${a.file}`} /> : <div className="noimg">nicht geladen</div>}
+                  <img src={a.file ? `${base}${a.file}` : a.url} referrerPolicy="no-referrer" />
                   <small title={a.title}>{a.title || a.source}</small>
                   {a.verdict && <small className={a.match ? 'ok' : 'muted'}>{a.match ? '✓ ' : ''}{a.verdict}</small>}
                   <button
-                    disabled={!a.file || !!p.busy}
+                    disabled={!!p.busy}
                     onClick={() =>
-                      p.run('Wird freigestellt …', async () => {
+                      p.run(a.file ? 'Wird freigestellt …' : 'Wird heruntergeladen und freigestellt …', async () => {
                         const r = await api.alternative(o.id, i);
                         p.onImage(r.offer, r.warnings);
                         p.onClose();

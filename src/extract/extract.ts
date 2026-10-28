@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { extname, join, relative } from 'node:path';
 import { runPython } from '../python';
 import type { PageReader } from './claude';
-import { DE_SOFT_CHARS, TR_MAX_CHARS, normalizeDate, normalizePrice, normalizeUnit, offerKey, wrapLines } from './normalize';
+import { DE_SOFT_CHARS, TR_MAX_CHARS, normalizeDate, normalizePrice, normalizeUnit, offerKey, nameLines } from './normalize';
 import type { ExtractedOffer, Extraction, PageResult } from './schema';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
@@ -42,9 +42,9 @@ export function normalizePage(raw: PageResult, page: PreparedPage, pageNo: numbe
     const warnings: string[] = [];
     const price = normalizePrice(o.price);
     if (!price) warnings.push(`Preis "${o.price}" nicht lesbar`);
-    const tr = wrapLines(o.name_tr, TR_MAX_CHARS);
+    const tr = nameLines(o.brand, o.name_tr, TR_MAX_CHARS);
     if (tr.truncated) warnings.push(`Türkischer Name "${o.name_tr}" passt nicht in 2 × ${TR_MAX_CHARS} Zeichen – gekürzt auf "${tr.lines.join(' / ')}"`);
-    const de = wrapLines(o.name_de, DE_SOFT_CHARS, 2, false);
+    const de = nameLines(o.brand, o.name_de, DE_SOFT_CHARS, false);
     const bbox = box(o.bbox, page.width, page.height);
     if (!bbox) warnings.push('Kein gültiger Bildausschnitt erkannt');
     const confidence = Math.max(0, Math.min(1, o.confidence));
