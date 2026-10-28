@@ -191,21 +191,23 @@ function ProductCard({ r, onOpen }: { r: Row; onOpen: () => void }) {
     <button className="product" onClick={onOpen} title="Bearbeiten">
       <div className="pimg">
         <img src={r.url} loading="lazy" alt="" />
-        {!r.verified && <span className="flag">ungeprüft</span>}
       </div>
       <div className="pbody">
-        <span className="pbrand">{r.brand ?? 'Ohne Marke'}</span>
+        <span className="pbrand">
+          {r.brand ?? 'Ohne Marke'}
+          {!r.verified && <span className="flag inline">ungeprüft</span>}
+        </span>
         <b className="pname">{r.name.de}</b>
         <span className="ptr">{r.name.tr}</span>
         <div className="ptags">
-          {r.size ? <span className="tag">{r.size.label}</span> : <span className="tag missing">Menge fehlt</span>}
-          {r.variant && (r.variant.de || r.variant.tr) && <span className="tag">{r.variant.de || r.variant.tr}</span>}
+          {r.size ? <span className="ptag">{r.size.label}</span> : <span className="ptag missing">Menge fehlt</span>}
+          {r.variant && (r.variant.de || r.variant.tr) && <span className="ptag">{r.variant.de || r.variant.tr}</span>}
         </div>
         {r.last?.price && (
           <div className="pprice">
             <b>{r.last.price} €</b>
-            {up && <small> · {up}</small>}
-            <small className="muted"> · {r.last.market}</small>
+            {up && <small>{up}</small>}
+            <small className="muted">{r.last.market}</small>
           </div>
         )}
       </div>
@@ -222,7 +224,7 @@ function ProductTable({ rows, onOpen }: { rows: Row[]; onOpen: (img: string) => 
             <th />
             <th>Marke</th>
             <th>Produkt</th>
-            <th>Türkisch</th>
+            <th className="opt">Türkisch</th>
             <th>Sorte</th>
             <th>Menge</th>
             <th>Warengruppe</th>
@@ -237,9 +239,9 @@ function ProductTable({ rows, onOpen }: { rows: Row[]; onOpen: (img: string) => 
               <td><img src={r.url} loading="lazy" alt="" /></td>
               <td>{r.brand ?? <span className="muted">–</span>}</td>
               <td><b>{r.name.de}</b>{!r.verified && <span className="flag inline">ungeprüft</span>}</td>
-              <td className="muted">{r.name.tr}</td>
+              <td className="muted opt">{r.name.tr}</td>
               <td>{r.variant?.de || r.variant?.tr || <span className="muted">–</span>}</td>
-              <td>{r.size?.label ?? (r.unit || <span className="warn">fehlt</span>)}</td>
+              <td className="qty">{r.size?.label ?? (r.unit || <span className="warn">fehlt</span>)}</td>
               <td>{CATEGORY_LABEL[r.cat].de}</td>
               <td className="num">{r.last?.price ? `${r.last.price} €` : '–'}</td>
               <td className="num muted">{unitPrice(r.last?.price, r.size) ?? '–'}</td>
