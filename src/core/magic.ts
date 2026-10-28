@@ -87,15 +87,18 @@ export interface PlanDay {
   countdown: number | null;
 }
 
-/** Ein Top-Angebot pro Tag, vom ersten Gültigkeitstag bis zum letzten (höchstens 7 Tage); bei wenigen Angeboten von vorn. */
+/**
+ * Ein Top-Angebot pro Tag (höchstens 7 Posts; bei wenigen Angeboten von vorn).
+ * Läuft der Prospekt länger als 7 Tage, sind es die ersten 5 Tage plus der
+ * vorletzte-2 und der letzte Tag – so liegen die "Letzte Chance"-Posts im Plan.
+ */
 export function weekPlan(story: Story, withCountdown = true): PlanDay[] {
-  const len = Math.min(7, daysBetween(story.dates.from, story.dates.to) + 1);
-  const cds = withCountdown ? countdownDays(story) : [];
   const last = daysBetween(story.dates.from, story.dates.to);
-  return Array.from({ length: Math.max(1, len) }, (_, k) => {
-    const date = addDays(story.dates.from, k);
-    const left = last - k;
-    return { n: k + 1, date, offer: k % story.offers.length, countdown: cds.includes(left) ? left : null };
+  const offsets = last + 1 <= 7 ? Array.from({ length: Math.max(1, last + 1) }, (_, k) => k) : [0, 1, 2, 3, 4, last - 2, last];
+  const cds = withCountdown ? countdownDays(story) : [];
+  return offsets.map((off, k) => {
+    const left = last - off;
+    return { n: k + 1, date: addDays(story.dates.from, off), offer: k % story.offers.length, countdown: cds.includes(left) ? left : null };
   });
 }
 

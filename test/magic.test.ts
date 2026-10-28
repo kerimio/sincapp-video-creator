@@ -44,12 +44,14 @@ describe('Countdown', () => {
 });
 
 describe('7-Tage-Plan', () => {
-  it('ein Tag pro Gültigkeitstag, höchstens 7, Angebote der Reihe nach', () => {
+  it('höchstens 7 Tage, Angebote der Reihe nach', () => {
     const plan = weekPlan(withDates('2026-10-26', '2026-11-07'));
     expect(plan).toHaveLength(7);
     expect(plan.map((d) => d.offer)).toEqual([0, 1, 2, 3, 4, 0, 1]);
     expect(plan[0]).toMatchObject({ n: 1, date: '2026-10-26' });
     expect(planDir(plan[0])).toBe('01-montag-26-10');
+    // länger als 7 Tage: Ende mit "noch 2 Tage" und "heute"
+    expect(plan.slice(4).map((d) => [d.date, d.countdown])).toEqual([['2026-10-30', null], ['2026-11-05', 2], ['2026-11-07', 0]]);
   });
 
   it('Countdown liegt auf den letzten Tagen', () => {
