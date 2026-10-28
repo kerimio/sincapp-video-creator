@@ -118,8 +118,32 @@ export interface ExtractOptions {
   jobDir: string;
   reader: PageReader;
   log?: (m: string) => void;
-  /** Gegencheck der Preise (Standard: an). */
+  /** Gegencheck der Preise (Standard: an). Aus: später nur für die Auswahl mit `checkPrices` – spart Zeit und Geld. */
   priceCheck?: boolean;
+  /** So viele Seiten gleichzeitig lesen (Standard 4) – die KI braucht pro Seite einige Sekunden. */
+  parallel?: number;
+}
+
+/**
+ * Preis-Gegencheck nur für bestimmte Angebote, gebündelt pro Seite (ein KI-Aufruf je Seite).
+ * Bei 180 erkannten Angeboten, von denen 8 ins Video kommen, prüft das ~12 statt 180 Preisschilder.
+ */
+export async function checkPrices(offers: ExtractedOffer[], pages: { file: string }[], reader: PageReader, workDir: string): Promise<string[]> {
+  const warnings: string[] = [];
+  const byPage = new Map<number, ExtractedOffer[]>();
+  for (const o of offers) byPage.set(o.page, [...(byPage.get(o.page) ?? []), o]);
+  await Promise.all(
+    [...byPage].map(async ([no, list]) => {
+      const page = pages[no - 1];
+      if (!page) return;
+      try {
+        await crossCheckPrices(list, page as PreparedPage, reader, workDir);
+      } catch (e) {
+        warnings.push(`Seite ${no}: Preis-Gegencheck fehlgeschlagen (${(e as Error).message}) – Preise bitte prüfen`);
+      }
+    }),
+  );
+  return warnings;
 }
 
 export async function extractJob(opts: ExtractOptions): Promise<Extraction> {
@@ -131,32 +155,39 @@ export async function extractJob(opts: ExtractOptions): Promise<Extraction> {
   const pages = await preparePages(inputs, join(workDir, 'pages'));
   log(`${pages.length} Seite(n) vorbereitet`);
 
-  const raws: (PageResult | null)[] = [];
-  const offers: ExtractedOffer[] = [];
-  const pageInfo: Extraction['pages'] = [];
-  for (const [i, page] of pages.entries()) {
-    const no = i + 1;
-    try {
-      log(`Seite ${no}: lese mit ${opts.reader.name} …`);
-      const raw = await opts.reader.readPage(page.file, page);
-      raws.push(raw);
-      const found = normalizePage(raw, page, no, opts.jobDir);
-      if (opts.priceCheck !== false) {
-        try {
-          await crossCheckPrices(found, page, opts.reader, workDir);
-        } catch (e) {
-          warnings.push(`Seite ${no}: Preis-Gegencheck fehlgeschlagen (${(e as Error).message}) – Preise bitte prüfen`);
+  // Mehrere Seiten gleichzeitig lesen; Ergebnisse bleiben in Seitenreihenfolge.
+  const raws: (PageResult | null)[] = new Array(pages.length).fill(null);
+  const perPage: ExtractedOffer[][] = pages.map(() => []);
+  const pageWarnings: string[][] = pages.map(() => []);
+  let next = 0;
+  const worker = async () => {
+    while (next < pages.length) {
+      const i = next++;
+      const page = pages[i];
+      const no = i + 1;
+      try {
+        log(`Seite ${no}: lese mit ${opts.reader.name} …`);
+        const raw = await opts.reader.readPage(page.file, page);
+        raws[i] = raw;
+        const found = normalizePage(raw, page, no, opts.jobDir);
+        if (opts.priceCheck !== false) {
+          try {
+            await crossCheckPrices(found, page, opts.reader, workDir);
+          } catch (e) {
+            pageWarnings[i].push(`Seite ${no}: Preis-Gegencheck fehlgeschlagen (${(e as Error).message}) – Preise bitte prüfen`);
+          }
         }
+        perPage[i] = found;
+        log(`Seite ${no}: ${found.length} Angebot(e)`);
+      } catch (e) {
+        pageWarnings[i].push(`Seite ${no} (${page.source}): ${(e as Error).message}`);
       }
-      offers.push(...found);
-      pageInfo.push({ file: page.file, source: page.source, width: page.width, height: page.height, offers: found.length });
-      log(`Seite ${no}: ${found.length} Angebot(e)`);
-    } catch (e) {
-      raws.push(null);
-      pageInfo.push({ file: page.file, source: page.source, width: page.width, height: page.height, offers: 0 });
-      warnings.push(`Seite ${no} (${page.source}): ${(e as Error).message}`);
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(opts.parallel ?? 4, pages.length)) }, worker));
+  const offers = perPage.flat();
+  warnings.push(...pageWarnings.flat());
+  const pageInfo: Extraction['pages'] = pages.map((page, i) => ({ file: page.file, source: page.source, width: page.width, height: page.height, offers: perPage[i].length }));
 
   // Doppelte Angebote (gleiche Marke, Name, Preis) zusammenfassen
   const seen = new Map<string, ExtractedOffer>();

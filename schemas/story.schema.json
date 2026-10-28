@@ -290,7 +290,7 @@
             "additionalProperties": false
           },
           "minItems": 2,
-          "maxItems": 15
+          "maxItems": 30
         },
         "pages": {
           "type": "array",
@@ -459,6 +459,29 @@
             }
           },
           "additionalProperties": false
+        },
+        "markets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "logo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "address": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

@@ -11,6 +11,7 @@ import { usageSummary } from '../ai/usage';
 import { libraryDir } from '../library/library';
 import { catalogApi } from '../library/catalog-api';
 import { ROOT } from '../paths';
+import { runPython } from '../python';
 import { readBody, sendJson, jobApi } from '../review/server';
 import { startStaticServer } from '../server/static';
 import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summarize } from './jobs';
@@ -177,8 +178,21 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       if (!complete()) ({ markets, prospects } = await firestore(true));
       if (!complete()) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
       const ms = marketIds.map((id) => markets.find((x) => x.id === id)!);
-      const chosen = picks.map((x) => ({ ...prospects.find((y) => y.id === x.prospectId)!, marketName: ms.find((m) => m.id === x.marketId)!.name }));
       const mixed = ms.length > 1;
+      // mehrere Märkte: jedes Logo lokal ablegen – das Video zeigt sie im Intro und im Kopf jeder Seite
+      const own = new Map(mixed ? await Promise.all(ms.map(async (m) => [m.id, await cacheMarket(m, fetchImpl).catch(() => null)] as const)) : []);
+      // Logos ohne weißen Rand, sonst bleibt in der Kachel nur ein Fleck in der Mitte (ein Python-Lauf für alle)
+      const logos = [...own.values()].filter((c): c is NonNullable<typeof c> => !!c);
+      const trimmed = new Map<string, string>();
+      if (logos.length) {
+        const lines = await runPython('logo.py', [], logos.map((c) => ({ image: join(marketsCacheDir(), c.logo), out: join(marketsCacheDir(), c.slug, 'logo-kachel.png') }))).catch(() => []);
+        lines.forEach((l, i) => JSON.parse(l).ok && trimmed.set(logos[i].slug, `${logos[i].slug}/logo-kachel.png`));
+      }
+      const chosen = picks.map((x) => {
+        const m = ms.find((y) => y.id === x.marketId)!;
+        const c = own.get(m.id);
+        return { ...prospects.find((y) => y.id === x.prospectId)!, marketName: m.name, ...(c ? { marketLogo: trimmed.get(c.slug) ?? c.logo, marketAddress: c.addresses[0] } : {}) };
+      });
       const market = mixed ? await mixMarket(ms) : await cacheMarket(ms[0], fetchImpl);
       const title = mixed ? `sincapp – ${ms.map((m) => m.name).join(' + ')}` : chosen.length ? `${ms[0].name} – ${chosen.map((x) => x.title).join(' + ')}` : ms[0].name;
       const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, title);

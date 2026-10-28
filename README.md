@@ -96,7 +96,7 @@ mkdir -p jobs/saray-kw44/input && cp ~/Downloads/prospekt/*.{jpg,png,pdf} jobs/s
 Ablauf je Seite:
 1. PDF-Seiten werden zu PNG, große Bilder auf 2000 px verkleinert (`tools/prep.py`).
 2. Claude (`claude-opus-5-5`) oder Gemini (`gemini-4-argon`, änderbar mit `GEMINI_MODEL`) – je nachdem, welcher Key da ist; bei beiden Claude, außer `SINCAPP_AI=gemini` – liest per Structured Output Marke, Name DE/TR, Menge, Preis, Zusatz, Warengruppe, Bildausschnitt, Preisschild, Gültigkeit, Markt und Adressen.
-3. **Preis-Gegencheck:** Jedes Preisschild wird einzeln ausgeschnitten und noch einmal gelesen. Nur wenn beide Lesungen übereinstimmen, gilt der Preis als sicher (`priceConfidence` 0.98), sonst < 0.9 und ein Hinweis im Bericht.
+3. **Preis-Gegencheck:** Jedes Preisschild wird einzeln ausgeschnitten und noch einmal gelesen. Nur wenn beide Lesungen übereinstimmen, gilt der Preis als sicher (`priceConfidence` 0.98), sonst < 0.9 und ein Hinweis im Bericht. In der Web-App passiert das erst nach einer Vorauswahl mit Reserve (bei 8 Angeboten 12 Schilder statt aller 180 eines dicken Prospekts); die Seiten selbst werden zu viert gleichzeitig gelesen.
 4. Normalisierung: Preis „13,99“, Menge getrennt („5×140 g“), türkischer Name auf max. 2 × 14 Zeichen (sonst gekürzt + Hinweis), doppelte Angebote zusammengefasst.
 5. Freisteller lokal mit rembg (`birefnet-general-lite`, Rückfall `isnet-general-use`): Preisschilder werden vorher entfernt und die verdeckte Stelle aufgefüllt, Inseln entfernt, Rand geprüft (≥ 90 % transparent), Schachbrett-Fakes erkannt. Klappt es lokal nicht und `REMOVEBG_API_KEY` ist gesetzt, übernimmt remove.bg.
 Fehler einzelner Seiten oder Bilder landen in `report.md`, der Lauf läuft weiter.
@@ -110,7 +110,7 @@ Optionen: `--no-price-check`, `--images` (gleich alle Bilder holen), `--recorded
 ./bin/sincapp-story.mjs select saray-kw44 --market saray --topic fleisch --count 6
 ```
 
-- **Mehrere Märkte:** Beim neuen Video lassen sich Prospekte verschiedener Märkte zusammen wählen (nacheinander die Märkte antippen). Daraus wird ein sincapp-Video: Bei jedem Angebot steht der Markt („bei Saray Market“), gleiche Produkte kommen nur mit dem günstigsten Preis rein.
+- **Mehrere Märkte:** Beim neuen Video lassen sich Prospekte verschiedener Märkte zusammen wählen (nacheinander die Märkte antippen). Daraus wird ein sincapp-Video: Im Intro stehen die Logos aller Märkte als Kacheln, danach bekommt jeder Markt eine eigene Seite mit Logo, Adresse und seinen 2–3 besten Angeboten (bis 5 Märkte je 3, darüber je 2, höchstens 30 Angebote). Gleiche Produkte kommen nur beim günstigsten Markt rein. Logos werden lokal zugeschnitten (`tools/logo.py`).
 - **Auswahl:** Angebote ohne Preis und Dubletten fallen raus, sichere Preise und saubere Bilder zuerst. Fleisch und Wurst kommen immer vorn in die Story, der Rest reihum aus den Warengruppen. Die Marke steht im Produktnamen, wenn alles in 2 Zeilen passt („Egetürk Sırma / Knoblauchwurst“). Themen (`fleisch`, `snacks`, `vorrat`, `getraenke`, `frische`, `milch`, `haushalt`) filtern und setzen die passende Überschrift.
 - **Produktbilder**, in dieser Reihenfolge:
   1. **Produkt-Katalog** (`library/`, Ort änderbar mit `SINCAPP_LIBRARY`): einmal gefundene Produkte werden wiederverwendet – gleiche Marke, gleicher Name (DE oder TR), gleiche Menge. Eigene Bilder gehen vor Internet-Fotos, beide werden ohne Suche und ohne KI genommen. Liegt nur ein Prospekt-Ausschnitt vor, wird einmal im Internet gesucht; ohne Treffer merkt sich der Katalog das.
