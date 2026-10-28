@@ -297,3 +297,11 @@ h2.cat-group small { font-size: 13px; }
 .camp-item .best { font-size: 12px; font-weight: 700; color: var(--red); }
 .camp-item label.price { display: flex; flex-direction: row; align-items: center; color: var(--nut); font-size: 14px; gap: 4px; font-weight: 700; flex: none; }
 .camp-item .price input { width: 76px; text-align: right; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+
+/* Wochen-Autopilot */
+.pilot-line { margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid var(--line); font-size: 14px; }
+.pilot-markets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 320px; overflow-y: auto; margin: 10px 0; }
+.pilot-markets .check { padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 0; }
+.pilot-markets .check span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilot-markets .check.on { border-color: var(--red); }
+.ptag.pilot { align-self: flex-start; }

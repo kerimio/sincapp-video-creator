@@ -23,6 +23,8 @@ export interface JobSettings {
   recorded?: string;
   /** Kampagne aus dem Katalog statt Prospekt */
   catalog?: import('./campaign').CatalogCampaign;
+  /** vom Wochen-Autopiloten angelegt (Übersicht zeigt „bereit zur Freigabe“) */
+  autopilot?: boolean;
 }
 
 export type Step = 'extract' | 'images' | 'story' | 'render' | 'done';

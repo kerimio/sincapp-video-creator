@@ -17,6 +17,7 @@ import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summ
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
 import { MAGIC_PACK } from '../core/packs';
 import { checkCampaign, prepareCampaign, type CatalogCampaign } from './campaign';
+import { doneKey, dueProspects, readAutopilot, saveAutopilot, type AutopilotState } from './autopilot';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
 const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
@@ -83,12 +84,12 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     return a;
   };
 
-  function process_(id: string, settings: JobSettings, auto = false) {
+  function process_(id: string, settings: JobSettings, auto = false): Promise<void> {
     const run: Run = { running: true, auto, progress: { step: 'extract', message: 'Startet …', fraction: 0 } };
     runs.set(id, run);
     // Beim Zauberknopf zählt das Auslesen bis 50 %, der Export die zweite Hälfte.
     const k = auto ? 0.5 : 1;
-    (async () => {
+    return (async () => {
       const onProgress = (p: Progress) => (run.progress = { ...p, fraction: p.fraction * k });
       const r = settings.catalog ? await prepareCampaign(jobPath(id), settings.market, settings.catalog, onProgress) : await prepareStory(jobPath(id), settings, onProgress);
       run.notes = r.notes;
@@ -98,9 +99,73 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       await api.startRender({ ...MAGIC_PACK, langs: r.story.lang }, (f, m) => (run.progress = { step: 'render', message: m, fraction: 0.5 + f * 0.5 }));
       if (api.render.error) throw new Error(`Export: ${api.render.error}`);
     })()
-      .catch((e) => (run.error = (e as Error).message))
+      .catch((e) => {
+        run.error = (e as Error).message;
+      })
       .finally(() => (run.running = false));
   }
+
+  /** Job aus Firestore-Prospekten anlegen und die Seiten laden (von Hand und vom Autopiloten). */
+  async function jobFromFirestore(m: FsMarket, chosen: FsProspect[], extra: Partial<JobSettings> = {}) {
+    const market = await cacheMarket(m, fetchImpl);
+    const title = chosen.length ? `${m.name} – ${chosen.map((x) => x.title).join(' + ')}` : m.name;
+    const meta = await createJob({ market: market.slug, topic: null, ...extra }, title);
+    const notes: string[] = [];
+    if (!chosen.length) return { meta, notes };
+    meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: m.id };
+    await saveJob(meta);
+    // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind
+    const dir = jobPath(meta.id);
+    await Promise.all(
+      chosen.flatMap((pr, k) => {
+        const read = pagesToRead(pr);
+        if (read.length < pr.imageUrls.length) notes.push(`${pr.title}: ${pr.imageUrls.length - read.length} von ${pr.imageUrls.length} Seiten ohne Produkte übersprungen`);
+        return read.map(async (n) => {
+          const r = await fetchImpl(pr.imageUrls[n - 1], { signal: AbortSignal.timeout(30000) });
+          if (!r.ok) throw new Error(`${pr.title}, Seite ${n} nicht ladbar (HTTP ${r.status})`);
+          const name = `${chosen.length > 1 ? `p${k + 1}-` : ''}seite-${String(n).padStart(2, '0')}.jpg`;
+          await writeFile(join(dir, 'input', name), Buffer.from(await r.arrayBuffer()));
+        });
+      }),
+    );
+    await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(chosen.length === 1 ? chosen[0] : chosen, null, 2) + '\n');
+    return { meta, notes };
+  }
+
+  // Autopilot: stündlich (und beim Start) nach neuen Prospekten der gewählten Märkte schauen.
+  // Läuft nur, solange die App offen ist; Jobs nacheinander, damit der Rechner nicht in die Knie geht.
+  let autopilotBusy = false;
+  async function autopilot(fresh = false) {
+    const s = await readAutopilot();
+    if (!s.markets.length || autopilotBusy) return;
+    autopilotBusy = true;
+    try {
+      if (!aiProvider()) throw new Error(NO_AI_KEY);
+      const { markets, prospects } = await firestore(fresh);
+      const sources = (await listJobs()).flatMap((j) => (j.source ? [{ marketId: j.source.marketId, prospects: j.source.firestoreProspects ?? [j.source.firestoreProspect] }] : []));
+      const due = dueProspects(s, prospects, sources, todayBerlin());
+      s.lastCheck = new Date().toISOString();
+      delete s.lastError;
+      await saveAutopilot(s);
+      for (const d of due) {
+        const m = markets.find((x) => x.id === d.marketId);
+        if (!m) continue;
+        // erst als erledigt merken: ein Fehler beim Lesen soll nicht jede Stunde neu Geld kosten
+        s.done.push(doneKey(d.marketId, d.prospect.id));
+        await saveAutopilot(s);
+        const { meta } = await jobFromFirestore(m, [d.prospect], { autopilot: true });
+        log(`Autopilot: ${meta.title}`);
+        await process_(meta.id, meta.settings, s.render);
+      }
+    } catch (e) {
+      s.lastError = (e as Error).message;
+      await saveAutopilot(s);
+    } finally {
+      autopilotBusy = false;
+    }
+  }
+  setTimeout(() => autopilot().catch(() => {}), 10_000).unref();
+  setInterval(() => autopilot().catch(() => {}), 3600_000).unref();
 
   const handler = async (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://x');
@@ -176,30 +241,24 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       const ids = [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])];
       const prs = ids.map((id) => prospects.find((x) => x.id === id));
       if (!m || prs.some((x) => !x)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
-      const chosen = prs as FsProspect[];
-      const market = await cacheMarket(m, fetchImpl);
-      const title = chosen.length ? `${m.name} – ${chosen.map((x) => x.title).join(' + ')}` : m.name;
-      const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, title);
-      if (!chosen.length) return sendJson(res, meta, 201);
-      meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: m.id };
-      await saveJob(meta);
-      // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind
-      const dir = jobPath(meta.id);
-      const skipped: string[] = [];
-      await Promise.all(
-        chosen.flatMap((pr, k) => {
-          const read = pagesToRead(pr);
-          if (read.length < pr.imageUrls.length) skipped.push(`${pr.title}: ${pr.imageUrls.length - read.length} von ${pr.imageUrls.length} Seiten ohne Produkte übersprungen`);
-          return read.map(async (n) => {
-            const r = await fetchImpl(pr.imageUrls[n - 1], { signal: AbortSignal.timeout(30000) });
-            if (!r.ok) throw new Error(`${pr.title}, Seite ${n} nicht ladbar (HTTP ${r.status})`);
-            const name = `${chosen.length > 1 ? `p${k + 1}-` : ''}seite-${String(n).padStart(2, '0')}.jpg`;
-            await writeFile(join(dir, 'input', name), Buffer.from(await r.arrayBuffer()));
-          });
-        }),
-      );
-      await writeFile(join(dir, 'firestore-prospekt.json'), JSON.stringify(chosen.length === 1 ? chosen[0] : chosen, null, 2) + '\n');
-      return sendJson(res, { ...meta, notes: skipped }, 201);
+      const { meta, notes } = await jobFromFirestore(m, prs as FsProspect[], { topic: b.topic || null, count: b.count || undefined });
+      return sendJson(res, { ...meta, notes }, 201);
+    }
+
+    if (p === '/api/autopilot') {
+      if (method === 'PUT') {
+        const b = JSON.parse((await readBody(req)).toString('utf8')) as Partial<Pick<AutopilotState, 'markets' | 'render'>>;
+        const s = await readAutopilot();
+        if (Array.isArray(b.markets)) s.markets = [...new Set(b.markets.filter((x) => typeof x === 'string'))];
+        if (typeof b.render === 'boolean') s.render = b.render;
+        await saveAutopilot(s);
+      }
+      const s = await readAutopilot();
+      return sendJson(res, { markets: s.markets, render: s.render, lastCheck: s.lastCheck ?? null, lastError: s.lastError ?? null, running: autopilotBusy, ai: !!aiProvider() });
+    }
+    if (method === 'POST' && p === '/api/autopilot/jetzt') {
+      if (!autopilotBusy) autopilot(true).catch(() => {});
+      return sendJson(res, { ok: true }, 202);
     }
 
     if (p === '/api/settings') {

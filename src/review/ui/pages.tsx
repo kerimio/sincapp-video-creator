@@ -6,7 +6,7 @@ import { ReviewPage } from './App';
 // ---------- Typen der App-API ----------
 interface Run { running: boolean; auto?: boolean; progress: { step: string; message: string; fraction: number }; error?: string; notes?: string[] }
 interface Job {
-  id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string; catalog?: unknown };
+  id: string; title: string; createdAt: string; settings: { market: string; topic?: string | null; count?: number; recorded?: string; catalog?: unknown; autopilot?: boolean };
   inputs: number; hasStory: boolean; offers: number; videos: string[]; poster: string | null; dates: { from: string; to: string } | null;
   files?: string[]; run?: Run | null;
 }
@@ -49,11 +49,13 @@ export function Shell({ children, active }: { children: React.ReactNode; active?
 export function Home() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [pilot, setPilot] = useState<Autopilot | null>(null);
   const [err, setErr] = useState('');
   const load = () => call<Job[]>('GET', '/api/jobs').then(setJobs, (e) => setErr(e.message));
   useEffect(() => {
     load();
     call<Settings>('GET', '/api/settings').then(setSettings);
+    call<Autopilot>('GET', '/api/autopilot').then(setPilot, () => {});
   }, []);
   const demo = async () => {
     const j = await call<Job>('POST', '/api/jobs/demo');
@@ -78,6 +80,15 @@ export function Home() {
         </div>
       </div>
       {err && <div className="errors">{err}</div>}
+      {pilot && (
+        <div className="pilot-line">
+          {pilot.markets.length ? (
+            <>🐿 Autopilot an für {pilot.markets.length} {pilot.markets.length === 1 ? 'Markt' : 'Märkte'}{pilot.lastCheck ? ` · zuletzt geschaut ${new Date(pilot.lastCheck).toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}{pilot.lastError ? <span className="warn"> · {pilot.lastError}</span> : ''} · <a href="#/einstellungen">ändern</a></>
+          ) : (
+            <>🐿 Neu: Der Autopilot liest neue Prospekte selbst und legt die Videos fertig hin. <a href="#/einstellungen">Einschalten</a></>
+          )}
+        </div>
+      )}
       <h2>Bisherige Videos</h2>
       {jobs && !jobs.length && <p className="muted">Noch keine – leg mit „Neues Video“ los.</p>}
       <div className="jobs">
@@ -86,6 +97,7 @@ export function Home() {
             <div className="poster">{j.poster ? <img src={`${j.poster}?v=${j.createdAt}`} /> : <span>{j.hasStory ? 'noch kein Video' : 'in Arbeit'}</span>}</div>
             <div className="meta">
               <b>{j.title}</b>
+              {j.settings.autopilot && <span className="ptag pilot">🐿 Autopilot</span>}
               <span className="muted">
                 {j.dates ? formatDateRange(j.dates.from, j.dates.to) : new Date(j.createdAt).toLocaleDateString('de-DE')}
                 {j.offers ? ` · ${j.offers} Angebote` : ''}
@@ -475,8 +487,68 @@ export function SettingsPage() {
           <button className="primary" onClick={save} disabled={!Object.values(vals).some((v) => v.trim())}>Speichern</button>
         </div>
       </div>
+      <AutopilotCard />
       <Usage />
     </Shell>
+  );
+}
+
+interface Autopilot { markets: string[]; render: boolean; lastCheck: string | null; lastError: string | null; running: boolean; ai: boolean }
+
+/** Wochen-Autopilot: Märkte wählen, deren neue Prospekte die App selbst liest. */
+function AutopilotCard() {
+  const [a, setA] = useState<Autopilot | null>(null);
+  const [markets, setMarkets] = useState<FsMarket[] | null>(null);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    call<Autopilot>('GET', '/api/autopilot').then(setA, (e) => setErr(e.message));
+    call<FsMarket[]>('GET', '/api/firestore/markets').then(setMarkets, (e) => setErr(e.message));
+  }, []);
+  const put = (b: Partial<Autopilot>) => call<Autopilot>('PUT', '/api/autopilot', b).then(setA, (e) => setErr(e.message));
+  const toggle = (id: string) => a && put({ markets: a.markets.includes(id) ? a.markets.filter((x) => x !== id) : [...a.markets, id] });
+  const now = async () => {
+    await call('POST', '/api/autopilot/jetzt');
+    setA((x) => x && { ...x, running: true });
+    setTimeout(() => call<Autopilot>('GET', '/api/autopilot').then(setA), 4000);
+  };
+  if (!a) return null;
+  // gewählte Märkte oben, dann die mit aktuellem Prospekt
+  const list = (markets ?? [])
+    .filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((x, y) => Number(a.markets.includes(y.id)) - Number(a.markets.includes(x.id)) || y.current - x.current || x.name.localeCompare(y.name, 'de'));
+  return (
+    <>
+      <h2>🐿 Wochen-Autopilot</h2>
+      <div className="card settings">
+        <p className="muted small">
+          Sobald für einen gewählten Markt ein neuer Prospekt in Firestore liegt, liest die App ihn selbst (stündlich, solange sie läuft) und legt Story, Videos, Reels, Bilder und Texte fertig hin. Du musst nur noch prüfen und posten. Jeder Prospekt wird genau einmal gelesen – die KI kostet also nicht mehr als von Hand.
+        </p>
+        {!a.ai && <p className="warn small">Dafür braucht es einen KI-Key (oben).</p>}
+        <label className="check">
+          <input type="checkbox" checked={a.render} onChange={(e) => put({ render: e.target.checked })} /> Videos gleich erstellen (sonst nur die Story zum Prüfen)
+        </label>
+        {markets && markets.length > 8 && <input placeholder="Markt suchen …" value={q} onChange={(e) => setQ(e.target.value)} />}
+        <div className="pilot-markets">
+          {list.map((m) => (
+            <label key={m.id} className={`check${a.markets.includes(m.id) ? ' on' : ''}`}>
+              <input type="checkbox" checked={a.markets.includes(m.id)} onChange={() => toggle(m.id)} />
+              <span>{m.name}</span>
+              {m.current > 0 && <span className="muted small">{m.current} aktuell</span>}
+            </label>
+          ))}
+          {!markets && !err && <span className="muted small">Märkte werden geladen …</span>}
+        </div>
+        <div className="row end">
+          <span className="muted small">
+            {a.running ? 'Schaut gerade nach …' : a.lastCheck ? `Zuletzt geschaut: ${new Date(a.lastCheck).toLocaleString('de-DE')}` : 'Noch nicht gelaufen'}
+            {a.lastError && <span className="warn"> · {a.lastError}</span>}
+          </span>
+          <button className="ghost" disabled={!a.markets.length || a.running} onClick={() => now().catch((e) => setErr(e.message))}>Jetzt nachschauen</button>
+        </div>
+        {err && <div className="errors">{err}</div>}
+      </div>
+    </>
   );
 }
 
