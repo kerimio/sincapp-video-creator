@@ -5,7 +5,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { Lang, Offer, Story } from '../core/schema';
 import { pagesFor } from '../core/pages';
-import { formatDateRange, defaultEyebrow, turkishLocative } from '../core/format';
+import { formatDateRange, defaultEyebrow } from '../core/format';
 import { pageMode, resolveDesign, rgba, textOn, type Palette, type PageMode, type ResolvedDesign } from '../core/design';
 import { LAYOUTS, type Format, type Layout } from '../core/layout';
 import { BADGE_TEXT } from '../core/badges';
@@ -134,6 +134,44 @@ function MarketChip({ style, ...p }: Pick<StoryProps, 'story' | 'logoSize' | 'ur
       }}
     >
       <MarketLogo {...p} />
+    </div>
+  );
+}
+
+type MarketRef = NonNullable<Story['markets']>[number];
+
+/** Logo eines Markts auf weißer Karte (Design System: Radius 20, 1 px Rand); ohne Logo der Name. */
+function LogoBox({ m, w, h, urls, style }: { m: MarketRef; w: number; h: number; urls: Urls; style?: CSSProperties }) {
+  const pad = Math.round(h * 0.14);
+  return (
+    <div style={{ width: w, height: h, boxSizing: 'border-box', padding: pad, background: '#fff', borderRadius: 20, border: '1px solid rgba(41,32,25,.14)', boxShadow: '0 8px 22px rgba(41,32,25,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', ...style }}>
+      {m.logo ? (
+        <img src={urls.market(m.logo)} alt={m.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }} />
+      ) : (
+        <span style={{ fontSize: Math.round(h * 0.2), fontWeight: 900, textAlign: 'center', lineHeight: 1.1, color: '#292019', textTransform: 'uppercase' }}>{m.name}</span>
+      )}
+    </div>
+  );
+}
+
+/** Logos aller Märkte als Kacheln, so groß wie der Platz erlaubt (2 nebeneinander bis 4 pro Reihe). */
+function LogoGrid({ markets, width, height, T, from, urls }: { markets: MarketRef[]; width: number; height: number; T: number; from: number; urls: Urls }) {
+  const n = markets.length;
+  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+  const rows = Math.ceil(n / cols);
+  const gap = 24;
+  let cw = (width - gap * (cols - 1)) / cols;
+  let ch = cw * 0.5;
+  if (rows * ch + gap * (rows - 1) > height) {
+    ch = (height - gap * (rows - 1)) / rows;
+    cw = Math.min(cw, ch * 2.2);
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap, width: cols * cw + gap * (cols - 1) }}>
+      {markets.map((m, i) => {
+        const p = tw(T, from + i * 0.08, from + 0.5 + i * 0.08, 0, 1, MOTION.pop);
+        return <LogoBox key={m.name} m={m} w={cw} h={ch} urls={urls} style={{ transform: `scale(${p})` }} />;
+      })}
     </div>
   );
 }
@@ -291,8 +329,6 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
     </div>
   );
   const tag = <PriceTag o={o} lang={lang} theme={theme} p={tagP} look={look} />;
-  // nur bei Videos aus mehreren Märkten: wo es das Angebot gibt
-  const where = o.market ? <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1, letterSpacing: '0.02em', textTransform: 'uppercase', color: c.accent, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lang === 'tr' ? turkishLocative(o.market) : `bei ${o.market}`}</div> : null;
   const transform = D.enter === 'wischen' ? `translate(${x}px, ${bob}px) rotate(${rot + wob}deg)` : `translate(0px, ${y + bob}px) rotate(${wob}deg) scale(${sc})`;
   return (
     <div style={abs({ left: 90, top: P.rowTop + k * (rh + P.rowGap), width: 900, height: rh, transform, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
@@ -302,7 +338,6 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
             <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: `scale(${kb * o.imgZoom * 1.3})`, ...imgBase }} />
           </div>
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 6, padding: '0 20px 14px' }}>
-            {where}
             {nameLines(1.0)}
             <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
             {!circle && <div style={{ position: 'absolute', right: 10, top: -120 }}>{tag}</div>}
@@ -314,7 +349,6 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
             <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: `scale(${kb * o.imgZoom})`, ...imgBase }} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, minWidth: 0, ...(circle ? { paddingRight: P.circle * 0.55 } : {}) }}>
-            {where}
             {nameLines(1.04)}
             <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.25, color: c.ink2 }}>{note}</div>
             {!circle && tag}
@@ -422,6 +456,7 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
   const head = story.headline[lang];
   const dates = formatDateRange(story.dates.from, story.dates.to);
   const pages = pagesFor(story, format);
+  const multi = !!story.markets?.length;
   const themes = pageThemes(story, c);
   const chipProps = { story, logoSize, urls };
   const btnTx = textOn(c.accent, c.ink);
@@ -481,6 +516,17 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
             ))}
           </div>
         </div>
+        {multi ? (
+          // mehrere Märkte: Datum, darunter die Logos als Kacheln statt sincapp-Karte und Adressliste
+          <div style={abs({ left: 0, width: W, top: I.chipTop - 40, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 40, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: I.pillH, padding: '0 40px 0 32px', borderRadius: 999, border: paperDark ? '3px solid rgba(255,255,255,.3)' : `3px solid ${rgba(c.ink, 0.18)}`, boxSizing: 'border-box' }}>
+              <img src={urls.asset('icons/calendar.svg')} alt="" style={{ width: I.cal, height: I.cal, display: 'block', ...(paperDark ? { filter: 'invert(1) brightness(2)' } : {}) }} />
+              <span style={{ fontSize: I.pillFont, fontWeight: 800, letterSpacing: '-0.01em', color: pInk, whiteSpace: 'nowrap' }}>{dates}</span>
+            </div>
+            <LogoGrid markets={story.markets!} width={W - 120} height={H - (I.chipTop - 40 + I.pillH + 40) - Math.round(H * 0.06)} T={T} from={1.2} urls={urls} />
+          </div>
+        ) : (
+          <>
         <MarketChip {...chipProps} style={{ left: W / 2 - 210 * CS, top: I.chipTop + chipBob, transform: `translate(${210 * CS * (1 - chipP)}px, ${100 * CS * (1 - chipP)}px) scale(${CS * chipP})` }} />
         <div style={abs({ left: 0, width: W, top: I.infoTop, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: I.infoGap, opacity: infoIn, transform: `translateY(${(1 - infoIn) * 40}px)` })}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, height: I.pillH, padding: '0 40px 0 32px', borderRadius: 999, border: paperDark ? '3px solid rgba(255,255,255,.3)' : `3px solid ${rgba(c.ink, 0.18)}`, boxSizing: 'border-box' }}>
@@ -492,6 +538,8 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
           </div>
           {story.market.instagram && <div style={{ fontSize: I.insta, fontWeight: 800, color: c.accent }}>@{story.market.instagram}</div>}
         </div>
+          </>
+        )}
       </Shot>
 
       {pages.map((offers, i) => {
@@ -501,13 +549,19 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
         const p = tw(T, s - 0.45, s + 0.45, 0, 1, MOTION.swipe);
         const hd = tw(T, s - 0.1, s + 0.6, 1, 0, MOTION.enter);
         const P = Lay.page;
+        const pm = multi ? story.markets!.find((m) => m.name === offers[0]?.market) : undefined;
         return (
           <div key={i} style={abs({ inset: 0, background: theme.bg, ...reveal(look, p, i % 2 ? 200 : 880, P.revealY, i % 2 === 1) })}>
             <Backdrop look={look} T={T} urls={urls} mode={theme.mode} />
             <Shot T={T} from={s - 0.5} to={e + 0.6}>
               <div style={abs({ left: 90, top: P.lockTop, transform: `translateY(${hd * -40}px)${P.lockScale === 1 ? '' : ` scale(${P.lockScale})`}`, transformOrigin: '0 0' })}><Lockup dark={theme.dark} white={theme.white} h={64} urls={urls} /></div>
-              <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
-              <MarketInfo theme={theme} dates={dates} story={story} lang={lang} hd={hd} urls={urls} look={look} />
+              {pm ? (
+                // Seite eines Markts: sein Logo, sein Name und seine Adresse
+                <LogoBox m={pm} w={420 * P.chipScale * 1.2} h={200 * P.chipScale * 1.2} urls={urls} style={{ position: 'absolute', left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px)` }} />
+              ) : (
+                <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
+              )}
+              <MarketInfo theme={theme} dates={dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: undefined } } : story} lang={lang} hd={hd} urls={urls} look={look} />
               {offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} />)}
               {story.banner?.[lang] && <Banner text={story.banner[lang]} T={T} look={look} theme={theme} hd={hd} />}
             </Shot>
@@ -591,8 +645,9 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
   const cardH = H - cardTop - cardBottom;
   const fs = fitSize(name, 860, { weight: 900, size: square ? 72 : 84, tracking: -0.035, upper: true, lang });
   const textH = name.length * fs * 1.02 + 44 + 40;
-  // Video aus mehreren Märkten: der Markt dieses Angebots statt der Märkte-Liste
-  const addr = o.market ?? story.market.addresses[0];
+  // Video aus mehreren Märkten: Logo und Adresse des Markts dieses Angebots
+  const pm = story.markets?.find((m) => m.name === o.market);
+  const addr = pm ? (pm.address ?? pm.name) : (o.market ?? story.market.addresses[0]);
   return (
     <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: theme.bg, fontFamily: 'Archivo, system-ui, sans-serif' }}>
       <Backdrop look={look} T={0} urls={urls} mode={theme.mode} />
@@ -616,7 +671,11 @@ export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' 
         </div>
       )}
       <div style={abs({ left: 70, right: 70, bottom: square ? 30 : 44, height: square ? 130 : 150, display: 'flex', alignItems: 'center', gap: 28 })}>
-        <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ position: 'relative', flexShrink: 0, transform: `scale(${square ? 0.6 : 0.7})`, transformOrigin: '0 50%', marginRight: square ? -168 : -126, border: theme.dark ? undefined : 'none' }} />
+        {pm ? (
+          <LogoBox m={pm} w={420 * (square ? 0.6 : 0.7)} h={200 * (square ? 0.6 : 0.7)} urls={urls} style={{ flexShrink: 0 }} />
+        ) : (
+          <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ position: 'relative', flexShrink: 0, transform: `scale(${square ? 0.6 : 0.7})`, transformOrigin: '0 50%', marginRight: square ? -168 : -126, border: theme.dark ? undefined : 'none' }} />
+        )}
         <div style={{ flex: 1, minWidth: 0, textAlign: 'right', color: light ? '#FAF6F1' : c.ink2 }}>
           <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.25 }}>{addr}</div>
           {story.market.instagram && <div style={{ fontSize: 30, fontWeight: 800, marginTop: 6, color: light ? (theme.white ? '#fff' : c.accent2) : c.accent }}>@{story.market.instagram}</div>}
@@ -665,6 +724,7 @@ export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryP
   const badgeP = tw(T, 2.3, 2.8, 0, 1, MOTION.pop);
   const infoIn = tw(T, 2.6, 3.2, 0, 1, MOTION.enter);
   const wob = d.wobble ? Math.sin(T * 1.4) * 0.8 * tw(T, 1.7, 2.3, 0, 1, Easing.easeInOutSine) : 0;
+  const reelMarket = story.markets?.find((m) => m.name === o.market);
   const at = R.at(o.market ?? story.market.name);
   const atSize = fitSize([at], 900, { weight: 800, size: 40, lang });
   const priceNode =
@@ -679,7 +739,11 @@ export function OfferReel({ story, lang, index, logoSize, urls, T }: Omit<StoryP
     <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: theme.bg, fontFamily: 'Archivo, system-ui, sans-serif' }}>
       <Backdrop look={look} T={T} urls={urls} mode={theme.mode} />
       <div style={abs({ left: 90, top: 110, opacity: head, transform: `translateY(${(1 - head) * -30}px)` })}><Lockup dark={theme.dark} white={theme.white} h={64} urls={urls} /></div>
-      <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ left: W - 90 - 420 * 0.55, top: 80, transform: `translateX(${(1 - head) * 300}px) scale(.55)`, border: theme.dark ? undefined : 'none' }} />
+      {reelMarket ? (
+        <LogoBox m={reelMarket} w={420 * 0.55} h={200 * 0.55} urls={urls} style={{ position: 'absolute', left: W - 90 - 420 * 0.55, top: 80, transform: `translateX(${(1 - head) * 300}px)` }} />
+      ) : (
+        <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ left: W - 90 - 420 * 0.55, top: 80, transform: `translateX(${(1 - head) * 300}px) scale(.55)`, border: theme.dark ? undefined : 'none' }} />
+      )}
       <div style={abs({ left: 0, width: W, top: 250, display: 'flex', flexDirection: 'column', alignItems: 'center' })}>
         {R.top.map((t, k) => (
           <div key={k} style={{ overflow: 'hidden', paddingTop: 22, marginTop: -14, paddingBottom: 6 }}>

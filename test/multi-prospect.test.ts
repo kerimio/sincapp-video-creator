@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { checkPrices, extractJob } from '../src/extract/extract';
+import { PageResult } from '../src/extract/schema';
+import { pythonBin } from '../src/python';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pagesToRead } from '../src/firestore/firestore';
 import { applyFirestoreDates, applyFirestoreMarkets, firestoreProductNames } from '../src/app/pipeline';
 import { caption } from '../src/core/captions';
 import { parseStory } from '../src/core/schema';
-import { offerToStory } from '../src/select/select';
+import { offerToStory, selectByMarket } from '../src/select/select';
+import { pagesFor } from '../src/core/pages';
 import { readFileSync } from 'node:fs';
 import { offerBoosts, selectOffers } from '../src/select/select';
 import { CachingReader } from '../src/ai/cache';
@@ -115,5 +119,60 @@ describe('Prospekte mehrerer Märkte', () => {
     expect(caption(story, 'de')).toContain('bei Yıldız Market');
     expect(caption(story, 'tr')).toContain('Yıldız Market’te');
     expect(caption(story, 'de')).toContain('#yildizmarket');
+  });
+});
+
+describe.skipIf(!existsSync(pythonBin()))('Schneller lesen', () => {
+  it('liest Seiten parallel in fester Reihenfolge und prüft Preise nur für die Vorauswahl', async () => {
+    const job = mkdtempSync(join(tmpdir(), 'schnell-'));
+    mkdirSync(join(job, 'input'));
+    for (const n of [1, 2, 3, 4, 5, 6]) copyFileSync(join(__dirname, `../reference/samples/saray-2026-10-28/seite-${n}.png`), join(job, 'input', `seite-${n}.png`));
+    let running = 0;
+    let most = 0;
+    const priceCalls: number[] = [];
+    const reader = {
+      name: 'fake',
+      async readPage(file: string) {
+        running++;
+        most = Math.max(most, running);
+        await new Promise((r) => setTimeout(r, 30));
+        running--;
+        const n = file.match(/seite-(\d)/)![1];
+        return PageResult.parse(JSON.parse(readFileSync(join(__dirname, `fixtures/saray-extraction/seite-${n}.json`), 'utf8')));
+      },
+      async readPrices(crops: string[]) {
+        priceCalls.push(crops.length);
+        return crops.map(() => null);
+      },
+    };
+    const ex = await extractJob({ jobDir: job, reader, priceCheck: false, parallel: 3 });
+    expect(most).toBe(3);
+    expect(ex.pages.map((p) => p.source.match(/seite-\d/)![0])).toEqual(['seite-1', 'seite-2', 'seite-3', 'seite-4', 'seite-5', 'seite-6']);
+    expect(ex.offers[0].id).toBe('s1-1');
+    expect(priceCalls).toEqual([]);
+    // zwei Angebote auf zwei Seiten: zwei Aufrufe mit je einem Schild, der Rest bleibt ungeprüft
+    const pick = [ex.offers.find((o) => o.page === 1 && o.priceTagBbox)!, ex.offers.find((o) => o.page === 3 && o.priceTagBbox)!];
+    await checkPrices(pick, ex.pages, reader, join(job, 'work'));
+    expect(priceCalls).toEqual([1, 1]);
+  }, 120000);
+});
+
+describe('Eine Seite pro Markt', () => {
+  const o = (id: string, market: string, cat = 'fleisch', size = 100) => ({ ...offer(id, `Produkt ${id}`, [0, 0, size, size], cat), market });
+
+  it('jeder Markt bekommt seine besten Angebote, auch wenn ein anderer viel mehr hat', () => {
+    const all = [o('a1', 'A'), o('a2', 'A'), o('a3', 'A'), o('a4', 'A'), o('a5', 'A'), o('b1', 'B', 'konserven'), o('b2', 'B', 'snacks'), o('c1', 'C')];
+    const sel = selectByMarket(all, ['A', 'B', 'C']);
+    expect(sel.offers.map((x) => x.market)).toEqual(['A', 'A', 'A', 'B', 'B']);
+    expect(sel.warnings.join()).toMatch(/C: zu wenige/);
+    // ab 6 Märkten je 2
+    const many = ['A', 'B', 'C', 'D', 'E', 'F'].flatMap((m) => [o(`${m}1`, m), o(`${m}2`, m), o(`${m}3`, m)]);
+    expect(selectByMarket(many, ['A', 'B', 'C', 'D', 'E', 'F']).offers).toHaveLength(12);
+  });
+
+  it('Seiten folgen den Märkten', () => {
+    const story = { offers: ['A', 'A', 'A', 'B', 'B', 'C', 'C', 'C', 'C'].map((market) => ({ market, img: 'x.png', price: '1,99', name: { de: ['X'], tr: ['X'] }, imgZoom: 1 })) };
+    expect(pagesFor(story).map((p) => p.map((x) => x.market).join(''))).toEqual(['AAA', 'BB', 'CC', 'CC']);
+    expect(pagesFor(story, 'quadrat').map((p) => p.length)).toEqual([2, 1, 2, 2, 2]);
   });
 });

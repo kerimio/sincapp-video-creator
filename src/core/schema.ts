@@ -74,7 +74,8 @@ export const Story = z
     dates: z.object({ from: IsoDate, to: IsoDate }),
     headline: z.object({ de: Lines, tr: Lines }),
     eyebrow: Localized.optional(),
-    offers: z.array(Offer).min(2).max(15),
+    /** Mehr als 15 nur bei Videos aus mehreren Märkten (eine Seite je Markt) */
+    offers: z.array(Offer).min(2).max(30),
     /** Angebote pro Seite; ohne Angabe automatisch (3/2-Regel). */
     pages: z.array(z.union([z.literal(2), z.literal(3)])).optional(),
     /** Pfad relativ zum Job-Ordner. */
@@ -84,6 +85,13 @@ export const Story = z
     banner: Localized.optional(),
     /** Gestaltung (Vorlage, Farben, Effekte); ohne Angabe "klassik". */
     design: Design.optional(),
+    /**
+     * Video aus Prospekten mehrerer Märkte: Logos fürs Intro und den Kopf jeder Seite.
+     * Die Angebote nennen ihren Markt in `market` (= `name` hier); jede Seite zeigt einen Markt.
+     */
+    markets: z
+      .array(z.object({ name: z.string().min(1), logo: z.string().min(1).optional(), address: z.string().optional() }))
+      .optional(),
   })
   .superRefine((s, ctx) => {
     if (s.pages) {

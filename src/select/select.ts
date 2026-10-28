@@ -125,6 +125,41 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
   return { offers: picked, warnings };
 }
 
+/**
+ * Video aus mehreren Märkten: pro Markt die besten 2–3 Angebote (eine Seite je Markt), in der
+ * Reihenfolge der Märkte. Bis 5 Märkte je 3 Angebote, darüber je 2; höchstens 30 Angebote.
+ * Ein Markt mit weniger als 2 Angeboten (mit Preis) fällt raus und steht in den Hinweisen.
+ */
+export function selectByMarket(offers: ExtractedOffer[], markets: string[], opts: Omit<SelectOptions, 'count'> & { per?: number } = {}) {
+  const per = opts.per ?? (markets.length <= 5 ? 3 : 2);
+  const offersOut: ExtractedOffer[] = [];
+  const warnings: string[] = [];
+  // Gleiches Produkt in mehreren Märkten: nur beim günstigsten (Dubletten-Regel aus selectOffers über alle Märkte)
+  const pool = offers.filter((o) => o.price);
+  const cheapest = new Map<string, ExtractedOffer>();
+  for (const o of pool) {
+    const k = offerKey({ ...o, price: null });
+    const best = cheapest.get(k);
+    if (!best || priceValue(o.price!) < priceValue(best.price!)) cheapest.set(k, o);
+  }
+  for (const m of markets) {
+    if (offersOut.length + 2 > 30) {
+      warnings.push(`${m}: nicht mehr im Video (höchstens 30 Angebote)`);
+      continue;
+    }
+    const mine = pool.filter((o) => o.market === m && cheapest.get(offerKey({ ...o, price: null })) === o);
+    try {
+      const sel = selectOffers(mine, { ...opts, count: Math.min(per, 30 - offersOut.length) });
+      offersOut.push(...sel.offers);
+      warnings.push(...sel.warnings.filter((w) => !/Story wird kürzer/.test(w)));
+    } catch {
+      warnings.push(`${m}: zu wenige Angebote mit Preis – nicht im Video`);
+    }
+  }
+  if (offersOut.length < 2) throw new Error('Zu wenige Angebote mit Preis in den gewählten Prospekten.');
+  return { offers: offersOut, warnings };
+}
+
 export function offerToStory(o: ExtractedOffer) {
   return {
     id: o.id,

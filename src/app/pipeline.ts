@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { RecordedReader, type PageReader } from '../extract/claude';
 import { makeMatcher, makeReader } from '../ai/provider';
-import { extractJob } from '../extract/extract';
+import { checkPrices, extractJob } from '../extract/extract';
 import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
@@ -13,7 +13,7 @@ import { markBestPrices } from '../library/bestprice';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
-import { buildStory, findTopic, offerBoosts, selectOffers } from '../select/select';
+import { buildStory, findTopic, offerBoosts, selectByMarket, selectOffers } from '../select/select';
 
 export interface JobSettings {
   market: string;
@@ -69,6 +69,17 @@ export function applyFirestoreMarkets(ex: { offers: { pageFile: string; market?:
   }
 }
 
+/** Märkte eines Videos aus mehreren Märkten, in der gewählten Reihenfolge (leer bei einem Markt). */
+export function firestoreMarkets(jobDir: string): { name: string; logo?: string; address?: string }[] {
+  const f = join(jobDir, 'firestore-prospekt.json');
+  if (!existsSync(f)) return [];
+  const raw = JSON.parse(readFileSync(f, 'utf8'));
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string; marketLogo?: string; marketAddress?: string }[];
+  const out = new Map<string, { name: string; logo?: string; address?: string }>();
+  for (const p of prs) if (p.marketName && !out.has(p.marketName)) out.set(p.marketName, { name: p.marketName, ...(p.marketLogo ? { logo: p.marketLogo } : {}), ...(p.marketAddress ? { address: p.marketAddress } : {}) });
+  return out.size >= 2 ? [...out.values()] : [];
+}
+
 /** Produktnamen, die in Firestore zum Prospekt gepflegt sind (DE, TR und Fundstellen-Beschriftungen). */
 export function firestoreProductNames(jobDir: string): string[] {
   const f = join(jobDir, 'firestore-prospekt.json');
@@ -89,14 +100,18 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const reader: PageReader = s.recorded ? new RecordedReader(s.recorded) : makeReader();
   onProgress({ step: 'extract', message: 'Prospektseiten werden vorbereitet …', fraction: 0.02 });
   let pagesTotal = 1;
+  // Preise werden erst nach der Vorauswahl gegengeprüft (siehe unten) – nicht alle 180 Angebote eines dicken Prospekts
+  let pagesRead = 0;
   const ex = await extractJob({
     jobDir,
     reader,
+    priceCheck: false,
     log: (m) => {
       const n = m.match(/^(\d+) Seite\(n\) vorbereitet/);
       if (n) pagesTotal = Number(n[1]);
-      const page = m.match(/^Seite (\d+): (.*)$/);
-      if (page) onProgress({ step: 'extract', message: `Seite ${page[1]} von ${pagesTotal}: ${page[2].replace(/ …$/, '')}`, fraction: 0.05 + 0.45 * ((Number(page[1]) - (page[2].includes('Angebot') ? 0 : 0.5)) / pagesTotal) });
+      // Seiten laufen parallel: Fortschritt nach Anzahl fertiger Seiten
+      const page = m.match(/^Seite (\d+): (\d+) Angebot/);
+      if (page) onProgress({ step: 'extract', message: `${++pagesRead} von ${pagesTotal} Seiten gelesen (Seite ${page[1]}: ${page[2]} Angebote)`, fraction: 0.05 + 0.4 * (pagesRead / pagesTotal) });
     },
   });
   applyFirestoreDates(ex, jobDir);
@@ -107,8 +122,20 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
     throw new Error(`Keine Angebote erkannt. ${ex.warnings.join(' ')}`.trim());
   }
 
-  onProgress({ step: 'images', message: `${ex.offers.length} Angebote erkannt – Auswahl und Produktbilder …`, fraction: 0.5 });
-  const sel = selectOffers(ex.offers, { topic, count: s.count, boost: offerBoosts(ex, firestoreProductNames(jobDir)) });
+  // Vorauswahl mit Reserve, nur deren Preise gegenprüfen, dann daraus die endgültige Auswahl
+  const boost = offerBoosts(ex, firestoreProductNames(jobDir));
+  const markets = firestoreMarkets(jobDir);
+  const names = markets.map((m) => m.name);
+  const want = s.count ?? 8;
+  // mehrere Märkte: pro Markt 2–3 Angebote (eine Seite je Markt), Reserve von 2 je Markt
+  const per = names.length <= 5 ? 3 : 2;
+  const shortlist = names.length
+    ? selectByMarket(ex.offers, names, { topic, boost, per: per + 2 }).offers
+    : selectOffers(ex.offers, { topic, count: Math.min(15, want + Math.max(4, Math.ceil(want / 2))), boost }).offers;
+  onProgress({ step: 'extract', message: `${ex.offers.length} Angebote erkannt – Preise der besten ${shortlist.length} werden gegengeprüft …`, fraction: 0.47 });
+  ex.warnings.push(...(await checkPrices(shortlist, ex.pages, reader, join(jobDir, 'work'))));
+  onProgress({ step: 'images', message: 'Auswahl und Produktbilder …', fraction: 0.5 });
+  const sel = names.length ? selectByMarket(shortlist, names, { topic, boost, per }) : selectOffers(shortlist, { topic, count: s.count, boost });
   let done = 0;
   const { notes } = await resolveImages(sel.offers, {
     jobDir,
@@ -129,6 +156,11 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
 
   onProgress({ step: 'story', message: 'Story wird zusammengestellt …', fraction: 0.97 });
   const { story, warnings } = buildStory(ex, marketRaw, usable, topic);
+  if (markets.length) {
+    // nur Märkte, die noch Angebote im Video haben; Seiten ergeben sich aus den Märkten der Angebote
+    story.markets = markets.filter((m) => story.offers.some((o) => o.market === m.name));
+    delete story.pages;
+  }
   // Gespeichertes Design des Markts übernehmen
   const design = await readMarketDesign(story.market.slug).catch(() => null);
   // ohne gespeichertes Design: die Vorlage nach dem sincapp Design System
