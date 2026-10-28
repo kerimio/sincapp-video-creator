@@ -6,7 +6,7 @@ import { buildScenes, deriveTimeline, storyDurations, warp, type Timeline } from
 import { pagesFor } from '../core/pages';
 import { resolveDesign, SPEED_FACTOR } from '../core/design';
 import { LAYOUTS, type Format } from '../core/layout';
-import { StoryView, type Urls } from './Story';
+import { OfferPost, StoryView, type Urls } from './Story';
 
 // Seiten-API für Renderer und Review-UI:
 //   await window.sincapp.ready  → { duration, fps }
@@ -26,6 +26,7 @@ declare global {
 const params = new URLSearchParams(location.search);
 const lang = (params.get('lang') === 'tr' ? 'tr' : 'de') as Lang;
 const format = (params.get('format') && params.get('format')! in LAYOUTS ? params.get('format') : 'story') as Format;
+const offerIndex = params.get('view') === 'offer' ? Number(params.get('offer') ?? 0) : null;
 const storyUrl = params.get('story') ?? '/job/story.json';
 const jobBase = storyUrl.slice(0, storyUrl.lastIndexOf('/') + 1);
 
@@ -43,7 +44,13 @@ function draw() {
   if (!state) return;
   const T = warp(state.tl, t);
   flushSync(() => {
-    root.render(<StoryView story={state!.story} lang={lang} format={format} T={T} cues={state!.tl.cues} logoSize={state!.logoSize} urls={urls} />);
+    root.render(
+      offerIndex !== null ? (
+        <OfferPost story={state!.story} lang={lang} format={format} index={offerIndex} logoSize={state!.logoSize} urls={urls} />
+      ) : (
+        <StoryView story={state!.story} lang={lang} format={format} T={T} cues={state!.tl.cues} logoSize={state!.logoSize} urls={urls} />
+      ),
+    );
   });
 }
 

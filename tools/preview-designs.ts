@@ -41,6 +41,13 @@ try {
         await page.screenshot({ path: join(out, `${preset}-${format}-${s.name}.png`) });
       }
       await page.close();
+      if (format !== 'story') {
+        for (const i of [0, 3]) {
+          const { page: op } = await openStoryPage(browser, server.url, lang, format, `&view=offer&offer=${i}`);
+          await op.screenshot({ path: join(out, `${preset}-${format}-angebot${i}.png`) });
+          await op.close();
+        }
+      }
       console.log(`${preset} ${format}: ${shots.length} Bilder`);
     }
   }

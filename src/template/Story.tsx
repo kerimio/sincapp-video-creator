@@ -462,3 +462,55 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
     </div>
   );
 }
+
+/**
+ * Einzelnes Angebot als Bild (Feed-Beitrag 4:5 oder Quadrat): große Produktkarte,
+ * Preis, Markt und Gültigkeit. Statisch, ohne Animation.
+ */
+export function OfferPost({ story, lang, index, logoSize, urls, format = 'feed' }: Omit<StoryProps, 'T' | 'cues'> & { index: number }) {
+  const d = resolveDesign(story.design);
+  const c = d.colors;
+  const Lay = LAYOUTS[format];
+  const look: Look = { d, c, L: { ...Lay, page: { ...Lay.page, tagScale: 1 } } };
+  const { W, H } = Lay;
+  const o = story.offers[index] ?? story.offers[0];
+  const themes = pageThemes(story, c);
+  const theme = themes[index % themes.length];
+  const light = theme.mode !== 'light';
+  const dates = formatDateRange(story.dates.from, story.dates.to);
+  const name = o.name[lang];
+  const note = o.note ? o.note[lang] : joinName(o.name[lang === 'tr' ? 'de' : 'tr']);
+  const square = format === 'quadrat';
+  const cardTop = square ? 150 : 170;
+  const cardBottom = square ? 190 : 230;
+  const cardH = H - cardTop - cardBottom;
+  const fs = fitSize(name, 860, { weight: 900, size: square ? 72 : 84, tracking: -0.035, upper: true, lang });
+  const textH = name.length * fs * 1.02 + 44 + 40;
+  const addr = story.market.addresses[0];
+  return (
+    <div lang={lang} style={{ position: 'absolute', inset: 0, width: W, height: H, overflow: 'hidden', background: theme.bg, fontFamily: 'Archivo, system-ui, sans-serif' }}>
+      <Backdrop look={look} T={0} urls={urls} mode={theme.mode} />
+      <div style={abs({ left: 70, top: square ? 52 : 62 })}><Lockup dark={theme.dark} white={theme.white} h={square ? 56 : 64} urls={urls} /></div>
+      <div style={abs({ right: 70, top: square ? 44 : 56 })}><Pill light={light} white={theme.white} value={dates} urls={urls} c={c} /></div>
+      <div style={abs({ left: 70, right: 70, top: cardTop, height: cardH, background: '#fff', borderRadius: 48, boxShadow: theme.shadow, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 28, boxSizing: 'border-box' })}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+          <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', transform: `scale(${o.imgZoom})` }} />
+        </div>
+        <div style={{ height: textH, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 12px 8px' }}>
+          {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: 1.02, letterSpacing: '-0.035em', textTransform: 'uppercase', color: c.ink, whiteSpace: 'nowrap' }}>{l}</div>)}
+          <div style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.3, color: c.ink2, marginTop: 6 }}>{note}</div>
+        </div>
+      </div>
+      <div style={abs(d.price === 'kreis' ? { right: 40, top: cardTop + cardH - textH - 230 } : { right: 56, top: cardTop + cardH - textH - 150, transform: 'scale(1.3)', transformOrigin: '100% 50%' })}>
+        {d.price === 'kreis' ? <PriceCircle o={o} lang={lang} theme={theme} p={1} size={250} /> : <PriceTag o={o} lang={lang} theme={theme} p={1} look={look} />}
+      </div>
+      <div style={abs({ left: 70, right: 70, bottom: square ? 30 : 44, height: square ? 130 : 150, display: 'flex', alignItems: 'center', gap: 28 })}>
+        <MarketChip story={story} logoSize={logoSize} urls={urls} style={{ position: 'relative', flexShrink: 0, transform: `scale(${square ? 0.6 : 0.7})`, transformOrigin: '0 50%', marginRight: square ? -168 : -126, border: theme.dark ? undefined : 'none' }} />
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'right', color: light ? '#FAF6F1' : c.ink2 }}>
+          <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.25 }}>{addr}</div>
+          {story.market.instagram && <div style={{ fontSize: 30, fontWeight: 800, marginTop: 6, color: light ? (theme.white ? '#fff' : c.accent2) : c.accent }}>@{story.market.instagram}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}

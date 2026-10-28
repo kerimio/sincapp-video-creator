@@ -8,7 +8,8 @@ import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
 import { Library } from '../library/library';
-import { readMarket } from '../firestore/firestore';
+import { readMarket, readMarketDesign } from '../firestore/firestore';
+import { Design } from '../core/design';
 import { extractionReport } from '../report';
 import { buildStory, findTopic, selectOffers } from '../select/select';
 
@@ -77,6 +78,9 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
 
   onProgress({ step: 'story', message: 'Story wird zusammengestellt …', fraction: 0.97 });
   const { story, warnings } = buildStory(ex, marketRaw, usable, topic);
+  // Gespeichertes Design des Markts übernehmen
+  const design = await readMarketDesign(story.market.slug).catch(() => null);
+  if (design) story.design = Design.parse(design);
   await writeFile(join(jobDir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] }));

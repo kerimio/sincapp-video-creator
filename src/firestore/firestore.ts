@@ -4,7 +4,7 @@
  * Geschrieben wird hier nie etwas.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ROOT } from '../paths';
 
@@ -122,7 +122,9 @@ export async function cacheMarket(m: FsMarket, fetchImpl: Fetch = fetch) {
   const dir = marketsCacheDir();
   await mkdir(join(dir, slug), { recursive: true });
   let logo = `${slug}/logo.jpg`;
-  if (m.logoUrl) {
+  const own = ownLogo(slug);
+  if (own) logo = own;
+  else if (m.logoUrl) {
     const res = await fetchImpl(m.logoUrl, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`Logo von ${m.name} nicht ladbar (HTTP ${res.status})`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -141,6 +143,39 @@ export async function cacheMarket(m: FsMarket, fetchImpl: Fetch = fetch) {
   };
   await writeFile(join(dir, `${slug}.json`), JSON.stringify(market, null, 2) + '\n');
   return market;
+}
+
+/** Eigenes Logo (in der App hochgeladen) hat Vorrang vor dem Firestore-Bild. */
+export function ownLogo(slug: string): string | null {
+  for (const ext of ['png', 'jpg']) if (existsSync(join(marketsCacheDir(), slug, `logo-eigenes.${ext}`))) return `${slug}/logo-eigenes.${ext}`;
+  return null;
+}
+
+export async function saveOwnLogo(slug: string, buf: Buffer) {
+  const dir = join(marketsCacheDir(), slug);
+  await mkdir(dir, { recursive: true });
+  const ext = buf[0] === 0x89 ? 'png' : 'jpg';
+  for (const e of ['png', 'jpg']) await rm(join(dir, `logo-eigenes.${e}`), { force: true });
+  await writeFile(join(dir, `logo-eigenes.${ext}`), buf);
+  const f = marketFile(slug);
+  if (f && f.startsWith(marketsCacheDir())) {
+    const market = JSON.parse(await readFile(f, 'utf8'));
+    market.logo = `${slug}/logo-eigenes.${ext}`;
+    delete market.logoCrop;
+    await writeFile(f, JSON.stringify(market, null, 2) + '\n');
+  }
+  return `${slug}/logo-eigenes.${ext}`;
+}
+
+/** Gespeichertes Standard-Design eines Markts (oder null). */
+export async function readMarketDesign(slug: string): Promise<unknown | null> {
+  const f = join(marketsCacheDir(), `${slug}.design.json`);
+  return existsSync(f) ? JSON.parse(await readFile(f, 'utf8')) : null;
+}
+
+export async function saveMarketDesign(slug: string, design: unknown) {
+  await mkdir(marketsCacheDir(), { recursive: true });
+  await writeFile(join(marketsCacheDir(), `${slug}.design.json`), JSON.stringify(design, null, 2) + '\n');
 }
 
 /** Markt-Datei suchen: erst markets/ im Repo, dann der Firestore-Cache. */
