@@ -3,7 +3,11 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pagesToRead } from '../src/firestore/firestore';
-import { applyFirestoreDates, firestoreProductNames } from '../src/app/pipeline';
+import { applyFirestoreDates, applyFirestoreMarkets, firestoreProductNames } from '../src/app/pipeline';
+import { caption } from '../src/core/captions';
+import { parseStory } from '../src/core/schema';
+import { offerToStory } from '../src/select/select';
+import { readFileSync } from 'node:fs';
 import { offerBoosts, selectOffers } from '../src/select/select';
 import { CachingReader } from '../src/ai/cache';
 import type { ExtractedOffer } from '../src/extract/schema';
@@ -79,5 +83,37 @@ describe('KI-Antworten merken', () => {
     await r.readPrices([page], page);
     expect(calls).toBe(2);
     expect(r.hits).toBe(2);
+  });
+});
+
+describe('Prospekte mehrerer Märkte', () => {
+  it('jedes Angebot bekommt den Markt seines Prospekts', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fs-'));
+    writeFileSync(join(dir, 'firestore-prospekt.json'), JSON.stringify([{ marketName: 'Saray Market' }, { marketName: 'Yıldız Market' }]));
+    const ex = { offers: [{ pageFile: 'work/pages/p1-seite-01.png' }, { pageFile: 'work/pages/p2-seite-03.png' }] as { pageFile: string; market?: string }[] };
+    applyFirestoreMarkets(ex, dir);
+    expect(ex.offers.map((o) => o.market)).toEqual(['Saray Market', 'Yıldız Market']);
+    // ein Markt (auch mit mehreren Prospekten): kein Markt am Angebot
+    writeFileSync(join(dir, 'firestore-prospekt.json'), JSON.stringify([{ marketName: 'Saray Market' }, { marketName: 'Saray Market' }]));
+    const one = { offers: [{ pageFile: 'work/pages/p2-seite-01.png' }] as { pageFile: string; market?: string }[] };
+    applyFirestoreMarkets(one, dir);
+    expect(one.offers[0].market).toBeUndefined();
+  });
+
+  it('gleiches Produkt in zwei Märkten: nur das günstigste', () => {
+    const a = { ...offer('a', 'Sucuk', [0, 0, 100, 100]), brand: 'Egetürk', price: '9,99', market: 'Saray Market' };
+    const b = { ...offer('b', 'Sucuk', [0, 0, 100, 100]), brand: 'Egetürk', price: '8,49', market: 'Yıldız Market' };
+    const c = { ...offer('c', 'Tahin', [0, 0, 100, 100], 'konserven'), market: 'Saray Market' };
+    const sel = selectOffers([a, b, c], { count: 8 });
+    expect(sel.offers.map((o) => o.id)).toEqual(['b', 'c']);
+    expect(offerToStory(b).market).toBe('Yıldız Market');
+  });
+
+  it('Bildtext nennt den Markt je Angebot', () => {
+    const story = parseStory(JSON.parse(readFileSync(join(__dirname, 'fixtures/reference-job/story.json'), 'utf8')));
+    story.offers[0].market = 'Yıldız Market';
+    expect(caption(story, 'de')).toContain('bei Yıldız Market');
+    expect(caption(story, 'tr')).toContain('Yıldız Market’te');
+    expect(caption(story, 'de')).toContain('#yildizmarket');
   });
 });

@@ -110,6 +110,7 @@ Optionen: `--no-price-check`, `--images` (gleich alle Bilder holen), `--recorded
 ./bin/sincapp-story.mjs select saray-kw44 --market saray --topic fleisch --count 6
 ```
 
+- **Mehrere Märkte:** Beim neuen Video lassen sich Prospekte verschiedener Märkte zusammen wählen (nacheinander die Märkte antippen). Daraus wird ein sincapp-Video: Bei jedem Angebot steht der Markt („bei Saray Market“), gleiche Produkte kommen nur mit dem günstigsten Preis rein.
 - **Auswahl:** Angebote ohne Preis und Dubletten fallen raus, sichere Preise und saubere Bilder zuerst. Fleisch und Wurst kommen immer vorn in die Story, der Rest reihum aus den Warengruppen. Die Marke steht im Produktnamen, wenn alles in 2 Zeilen passt („Egetürk Sırma / Knoblauchwurst“). Themen (`fleisch`, `snacks`, `vorrat`, `getraenke`, `frische`, `milch`, `haushalt`) filtern und setzen die passende Überschrift.
 - **Produktbilder**, in dieser Reihenfolge:
   1. **Produkt-Katalog** (`library/`, Ort änderbar mit `SINCAPP_LIBRARY`): einmal gefundene Produkte werden wiederverwendet – gleiche Marke, gleicher Name (DE oder TR), gleiche Menge. Eigene Bilder gehen vor Internet-Fotos, beide werden ohne Suche und ohne KI genommen. Liegt nur ein Prospekt-Ausschnitt vor, wird einmal im Internet gesucht; ohne Treffer merkt sich der Katalog das.

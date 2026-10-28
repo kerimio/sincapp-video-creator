@@ -276,6 +276,10 @@
                 "type": "integer",
                 "exclusiveMinimum": 0,
                 "maximum": 104
+              },
+              "market": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [

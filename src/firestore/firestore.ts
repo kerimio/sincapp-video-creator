@@ -4,7 +4,7 @@
  * Geschrieben wird hier nie etwas.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ROOT } from '../paths';
 
@@ -178,6 +178,26 @@ export async function cacheMarket(m: FsMarket, fetchImpl: Fetch = fetch) {
     firestoreId: m.id,
   };
   await writeFile(join(dir, `${slug}.json`), JSON.stringify(market, null, 2) + '\n');
+  return market;
+}
+
+/**
+ * „Markt“ für ein Video aus Prospekten mehrerer Märkte: sincapp selbst, mit der Wortmarke als Logo.
+ * Statt Adressen stehen die beteiligten Märkte da ("Saray Market · Hannover"), bei mehr als 3:
+ * die ersten 2 und "+ 3 weitere Märkte". Ein fester Slug, damit ein gespeichertes Design für alle Misch-Videos gilt.
+ */
+export async function mixMarket(markets: FsMarket[]) {
+  const dir = marketsCacheDir();
+  await mkdir(join(dir, 'sincapp'), { recursive: true });
+  const logo = ownLogo('sincapp') ?? 'sincapp/logo.svg';
+  if (logo === 'sincapp/logo.svg') await copyFile(join(ROOT, 'assets/logo/wortmarke-dunkel-rot.svg'), join(dir, logo));
+  const line = (m: FsMarket) => {
+    const city = m.address?.match(/\b\d{5}\s+([A-Za-zÄÖÜäöüß]+)/)?.[1];
+    return city && !m.name.includes(city) ? `${m.name} · ${city}` : m.name;
+  };
+  const addresses = markets.length <= 3 ? markets.map(line) : [...markets.slice(0, 2).map(line), `+ ${markets.length - 2} weitere Märkte`];
+  const market = { name: 'sincapp', slug: 'sincapp', logo, addresses };
+  await writeFile(join(dir, 'sincapp.json'), JSON.stringify(market, null, 2) + '\n');
   return market;
 }
 

@@ -1,7 +1,7 @@
 // HTTP-Server der Web-App: Jobs anlegen und starten, Einstellungen, Märkte; Katalog- und Job-Routen kommen aus catalog-api.ts und review/server.ts.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { cacheMarket, listMarkets, listProspects, marketDirs, marketsCacheDir, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
+import { cacheMarket, mixMarket, listMarkets, listProspects, marketDirs, marketsCacheDir, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -166,24 +166,27 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     }
     if (method === 'POST' && p === '/api/jobs/from-firestore') {
       // ohne Prospekt: nur der Markt kommt aus Firestore, die Seiten lädt man danach selbst hoch.
-      // Mehrere Prospekte desselben Markts werden zusammen gelesen; die besten Angebote kommen in die Story.
-      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId: string; prospectId?: string; prospectIds?: string[]; topic?: string | null; count?: number };
+      // Mehrere Prospekte werden zusammen gelesen; die besten Angebote kommen in die Story.
+      // Prospekte verschiedener Märkte ("picks") ergeben ein sincapp-Video, jedes Angebot mit seinem Markt.
+      const b = JSON.parse((await readBody(req)).toString('utf8')) as { marketId?: string; prospectId?: string; prospectIds?: string[]; picks?: { marketId: string; prospectId: string }[]; topic?: string | null; count?: number };
+      const picks = b.picks?.length ? b.picks : [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])].map((prospectId) => ({ marketId: b.marketId ?? '', prospectId }));
+      const marketIds = [...new Set(picks.length ? picks.map((x) => x.marketId) : [b.marketId ?? ''])];
       let { markets, prospects } = await firestore();
-      const known = (id: string) => prospects.some((x) => x.id === id);
       // gerade erst in Firestore angelegt? Dann einmal frisch laden
-      if (!markets.some((x) => x.id === b.marketId) || [...(b.prospectIds ?? []), ...(b.prospectId ? [b.prospectId] : [])].some((id) => !known(id))) ({ markets, prospects } = await firestore(true));
-      const m = markets.find((x) => x.id === b.marketId);
-      const ids = [...new Set(b.prospectIds?.length ? b.prospectIds : b.prospectId ? [b.prospectId] : [])];
-      const prs = ids.map((id) => prospects.find((x) => x.id === id));
-      if (!m || prs.some((x) => !x)) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
-      const chosen = prs as FsProspect[];
-      const market = await cacheMarket(m, fetchImpl);
-      const title = chosen.length ? `${m.name} – ${chosen.map((x) => x.title).join(' + ')}` : m.name;
+      const complete = () => marketIds.every((id) => markets.some((x) => x.id === id)) && picks.every((x) => prospects.some((y) => y.id === x.prospectId));
+      if (!complete()) ({ markets, prospects } = await firestore(true));
+      if (!complete()) return sendJson(res, { error: 'Markt oder Prospekt nicht (mehr) in Firestore' }, 404);
+      const ms = marketIds.map((id) => markets.find((x) => x.id === id)!);
+      const chosen = picks.map((x) => ({ ...prospects.find((y) => y.id === x.prospectId)!, marketName: ms.find((m) => m.id === x.marketId)!.name }));
+      const mixed = ms.length > 1;
+      const market = mixed ? await mixMarket(ms) : await cacheMarket(ms[0], fetchImpl);
+      const title = mixed ? `sincapp – ${ms.map((m) => m.name).join(' + ')}` : chosen.length ? `${ms[0].name} – ${chosen.map((x) => x.title).join(' + ')}` : ms[0].name;
       const meta = await createJob({ market: market.slug, topic: b.topic || null, count: b.count || undefined }, title);
       if (!chosen.length) return sendJson(res, meta, 201);
-      meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: m.id };
+      meta.source = { firestoreProspect: chosen[0].id, firestoreProspects: chosen.map((x) => x.id), marketId: ms[0].id, ...(mixed ? { marketIds } : {}) };
       await saveJob(meta);
-      // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind
+      // Seiten laden (1200 px aus dem Admin-Tool); Seiten ohne Produkte werden übersprungen, wenn Fundstellen da sind.
+      // Bei mehreren Prospekten steht die Nummer vorn ("p2-seite-03.jpg"), daran hängt später der Markt des Angebots.
       const dir = jobPath(meta.id);
       const skipped: string[] = [];
       await Promise.all(

@@ -55,6 +55,8 @@ export const Offer = z.object({
   badge: z.enum(BADGES).optional(),
   /** Günstigster Preis seit so vielen Wochen (aus dem Preisverlauf im Katalog) */
   bestWeeks: z.number().int().positive().max(104).optional(),
+  /** Markt des Angebots, wenn ein Video Prospekte mehrerer Märkte zeigt ("Saray Market") */
+  market: z.string().min(1).optional(),
 });
 export type Offer = z.infer<typeof Offer>;
 

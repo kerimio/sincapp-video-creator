@@ -83,6 +83,8 @@ export interface ExtractedOffer {
   imgSource?: 'library' | 'web' | 'prospekt' | 'removebg' | 'manual';
   /** Fundstücke aus dem Internet; `file` relativ zum Job-Ordner, `verdict` vom Abgleich mit dem Prospekt */
   imgAlternatives?: { source: string; url: string; title: string; file?: string; match?: boolean; verdict?: string }[];
+  /** Markt, aus dessen Prospekt das Angebot stammt – nur bei Videos aus mehreren Märkten */
+  market?: string;
   warnings: string[];
 }
 

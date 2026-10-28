@@ -103,6 +103,7 @@ export function Home() {
 interface FsMarket { id: string; name: string; address: string | null; logoUrl: string | null; current: number }
 const fsImg = (u: string) => `/api/firestore/image?url=${encodeURIComponent(u)}`;
 interface FsProspect { id: string; title: string; validFrom: string; validUntil: string; pages: number; thumb: string; current: boolean }
+interface Pick { marketId: string; marketName: string; prospectId: string; title: string; pages: number }
 
 export function NewJob() {
   const [fsMarkets, setFsMarkets] = useState<FsMarket[] | null>(null);
@@ -110,7 +111,8 @@ export function NewJob() {
   const [q, setQ] = useState('');
   const [marketId, setMarketId] = useState('');
   const [prospects, setProspects] = useState<FsProspect[] | null>(null);
-  const [prospectIds, setProspectIds] = useState<string[]>([]);
+  // gewählte Prospekte, auch über mehrere Märkte hinweg (dann wird es ein sincapp-Video)
+  const [picks, setPicks] = useState<Pick[]>([]);
   const [upload, setUpload] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [topic, setTopic] = useState('');
@@ -130,12 +132,11 @@ export function NewJob() {
 
   useEffect(() => {
     setProspects(null);
-    setProspectIds([]);
     if (!marketId) return;
     call<FsProspect[]>('GET', `/api/firestore/markets/${encodeURIComponent(marketId)}/prospects`).then((list) => {
       setProspects(list);
-      // alle aktuellen Prospekte vorauswählen – die besten Angebote aus allen kommen ins Video
-      setProspectIds(list.filter((x) => x.current).map((x) => x.id));
+      // erster Markt: alle aktuellen Prospekte vorauswählen; danach wählt man weitere Märkte selbst dazu
+      setPicks((p) => (p.length ? p : list.filter((x) => x.current).map((x) => ({ marketId, marketName: fsMarkets?.find((m) => m.id === marketId)?.name ?? '', prospectId: x.id, title: x.title, pages: x.pages }))));
       if (!list.length) setUpload(true);
     }, (e) => setErr(e.message));
   }, [marketId]);
@@ -156,7 +157,7 @@ export function NewJob() {
     setErr('');
     try {
       setBusy(upload ? 'Job wird angelegt …' : 'Prospektseiten werden aus Firestore geladen …');
-      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, prospectIds: upload ? [] : prospectIds, topic: topic || null, count });
+      const job = await call<Job>('POST', '/api/jobs/from-firestore', { marketId, picks: upload ? [] : picks.map(({ marketId, prospectId }) => ({ marketId, prospectId })), topic: topic || null, count });
       if (upload) {
         for (const [i, f] of files.entries()) {
           setBusy(`Lade hoch: ${i + 1} von ${files.length} (${f.name})`);
@@ -173,9 +174,12 @@ export function NewJob() {
   };
 
   const noKey = settings && !settings.ai;
-  const ready = !!marketId && (upload ? files.length > 0 : prospectIds.length > 0);
-  const toggle = (id: string) => setProspectIds((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
-  const pagesChosen = (prospects ?? []).filter((x) => prospectIds.includes(x.id)).reduce((a, x) => a + x.pages, 0);
+  const ready = upload ? !!marketId && files.length > 0 : picks.length > 0;
+  const isPicked = (id: string) => picks.some((x) => x.marketId === marketId && x.prospectId === id);
+  const toggle = (x: FsProspect) =>
+    setPicks((p) => (isPicked(x.id) ? p.filter((y) => !(y.marketId === marketId && y.prospectId === x.id)) : [...p, { marketId, marketName: market?.name ?? '', prospectId: x.id, title: x.title, pages: x.pages }]));
+  const pagesChosen = picks.reduce((a, x) => a + x.pages, 0);
+  const pickedMarkets = [...new Set(picks.map((x) => x.marketName))];
   return (
     <Shell>
       <Steps current={0} />
@@ -194,11 +198,11 @@ export function NewJob() {
           {!fsMarkets && !fsError && <p className="muted">Lade Märkte aus Firestore …</p>}
           <div className="markets">
             {shown.map((m) => (
-              <button key={m.id} className={`market ${marketId === m.id ? 'on' : ''}`} onClick={() => setMarketId(m.id)}>
+              <button key={m.id} className={`market ${marketId === m.id ? 'on' : ''} ${picks.some((x) => x.marketId === m.id) ? 'picked' : ''}`} onClick={() => setMarketId(m.id)}>
                 {m.logoUrl ? <img src={fsImg(m.logoUrl)} loading="lazy" /> : <div className="nologo">{m.name.slice(0, 1)}</div>}
                 <span>{m.name}</span>
                 <small className="muted">{m.address}</small>
-                {m.current > 0 && <small className="badge">{m.current} aktuell</small>}
+                {picks.some((x) => x.marketId === m.id) ? <small className="badge on">✓ {picks.filter((x) => x.marketId === m.id).length} gewählt</small> : m.current > 0 && <small className="badge">{m.current} aktuell</small>}
               </button>
             ))}
           </div>
@@ -216,8 +220,8 @@ export function NewJob() {
                 {prospects && !prospects.length && <p className="muted">Für diesen Markt ist kein Prospekt in Firestore.</p>}
                 <div className="prospects">
                   {prospects?.map((x) => (
-                    <button key={x.id} className={`prospect ${prospectIds.includes(x.id) ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => toggle(x.id)}>
-                      <span className="tick">{prospectIds.includes(x.id) ? '✓' : ''}</span>
+                    <button key={x.id} className={`prospect ${isPicked(x.id) ? 'on' : ''} ${x.current ? '' : 'old'}`} onClick={() => toggle(x)}>
+                      <span className="tick">{isPicked(x.id) ? '✓' : ''}</span>
                       <img src={fsImg(x.thumb)} loading="lazy" />
                       <b>{x.title}</b>
                       <small>{formatDateRange(x.validFrom, x.validUntil)} · {x.pages} Seite{x.pages === 1 ? '' : 'n'}</small>
@@ -225,11 +229,23 @@ export function NewJob() {
                     </button>
                   ))}
                 </div>
-                {prospects && prospects.length > 1 && (
-                  <p className="muted small">
-                    Du kannst mehrere Prospekte wählen – die App nimmt automatisch die besten Angebote aus allen (große Angebote im Prospekt und deine Firestore-Produkte zuerst).
-                    {prospectIds.length > 0 && ` Ausgewählt: ${prospectIds.length} Prospekt${prospectIds.length === 1 ? '' : 'e'}, bis zu ${pagesChosen} Seiten; Seiten ohne Produkte und schon gelesene Seiten kosten nichts.`}
-                  </p>
+                <p className="muted small">
+                  Du kannst mehrere Prospekte wählen, auch von anderen Märkten (oben einfach den nächsten Markt antippen). Die App nimmt automatisch die besten Angebote aus allen.
+                </p>
+                {picks.length > 0 && (
+                  <div className="picked">
+                    <b>Ausgewählt: {picks.length} Prospekt{picks.length === 1 ? '' : 'e'}{pickedMarkets.length > 1 ? ` aus ${pickedMarkets.length} Märkten` : ''}, bis zu {pagesChosen} Seiten</b>
+                    <div className="chips">
+                      {picks.map((x) => (
+                        <span key={`${x.marketId}/${x.prospectId}`} className="chip">
+                          {x.marketName}: {x.title}
+                          <button className="ghost" title="Abwählen" onClick={() => setPicks((p) => p.filter((y) => y !== x))}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                    {pickedMarkets.length > 1 && <p className="muted small">Mehrere Märkte ergeben ein sincapp-Video: Bei jedem Angebot steht, in welchem Markt es das gibt. Gibt es ein Produkt in mehreren Märkten, kommt das günstigste ins Video.</p>}
+                    <p className="muted small">Seiten ohne Produkte und schon gelesene Seiten kosten nichts.</p>
+                  </div>
                 )}
               </>
             )}

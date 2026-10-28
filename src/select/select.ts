@@ -1,5 +1,5 @@
 // Aus allen gelesenen Angeboten die besten für die Story wählen und Überschriften bauen.
-import { defaultEyebrow } from '../core/format';
+import { defaultEyebrow, priceValue } from '../core/format';
 import { Market, parseStory, type Story } from '../core/schema';
 import { offerKey } from '../extract/normalize';
 import type { Category, ExtractedOffer, Extraction } from '../extract/schema';
@@ -87,6 +87,14 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
   }
   const seen = new Set<string>();
   pool = pool.filter((o) => (seen.has(offerKey(o)) ? false : (seen.add(offerKey(o)), true)));
+  // Gleiches Produkt in mehreren Märkten: nur das günstigste zeigen (darum geht es bei sincapp)
+  const cheapest = new Map<string, ExtractedOffer>();
+  for (const o of pool.filter((x) => x.market)) {
+    const k = offerKey({ ...o, price: null });
+    const best = cheapest.get(k);
+    if (!best || priceValue(o.price!) < priceValue(best.price!)) cheapest.set(k, o);
+  }
+  pool = pool.filter((o) => !o.market || cheapest.get(offerKey({ ...o, price: null })) === o);
   if (pool.length < 2) throw new Error(`Nur ${pool.length} Angebot(e) mit Preis gefunden – mindestens 2 nötig.`);
 
   const want = Math.max(2, Math.min(opts.count ?? 8, 15, pool.length));
@@ -125,6 +133,7 @@ export function offerToStory(o: ExtractedOffer) {
     ...(o.unit ? { unit: o.unit } : {}),
     name: { de: o.lines.de, tr: o.lines.tr },
     ...(o.note ? { note: o.note } : {}),
+    ...(o.market ? { market: o.market } : {}),
     imgZoom: 1,
   };
 }
