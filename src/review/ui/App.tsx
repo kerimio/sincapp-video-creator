@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+// Seite „Prüfen“: Angebote, Namen, Preise und Bilder einer Story korrigieren.
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BADGES, Story as StorySchema } from '../../core/schema';
 import { BADGE_TEXT } from '../../core/badges';
 import { formatDateRange } from '../../core/format';

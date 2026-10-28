@@ -87,7 +87,6 @@
             "name",
             "slug",
             "logo",
-            "instagram",
             "addresses"
           ],
           "additionalProperties": false
@@ -257,6 +256,26 @@
                 "exclusiveMinimum": 0,
                 "maximum": 3,
                 "default": 1
+              },
+              "badge": {
+                "type": "string",
+                "enum": [
+                  "knaller",
+                  "woche",
+                  "neu",
+                  "halal",
+                  "bio",
+                  "bestpreis",
+                  "frisch",
+                  "aktion",
+                  "vorrat",
+                  "xxl"
+                ]
+              },
+              "bestWeeks": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 104
               }
             },
             "required": [
@@ -303,6 +322,139 @@
           },
           "additionalProperties": false,
           "default": {}
+        },
+        "banner": {
+          "type": "object",
+          "properties": {
+            "de": {
+              "type": "string"
+            },
+            "tr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "de",
+            "tr"
+          ],
+          "additionalProperties": false
+        },
+        "design": {
+          "type": "object",
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": [
+                "marke",
+                "klassik",
+                "frisch",
+                "premium",
+                "knallig",
+                "minimal",
+                "blackweek",
+                "bayram",
+                "sommer"
+              ],
+              "default": "klassik"
+            },
+            "colors": {
+              "type": "object",
+              "properties": {
+                "paper": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "ink": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "ink2": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "accent": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "accent2": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "pages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 4
+                }
+              },
+              "additionalProperties": false
+            },
+            "background": {
+              "type": "string",
+              "enum": [
+                "logo",
+                "punkte",
+                "verlauf",
+                "sterne",
+                "streifen",
+                "ohne"
+              ]
+            },
+            "price": {
+              "type": "string",
+              "enum": [
+                "etikett",
+                "kreis",
+                "flach"
+              ]
+            },
+            "enter": {
+              "type": "string",
+              "enum": [
+                "wischen",
+                "hoch",
+                "blende",
+                "pop"
+              ]
+            },
+            "speed": {
+              "type": "string",
+              "enum": [
+                "ruhig",
+                "normal",
+                "schnell"
+              ]
+            },
+            "wobble": {
+              "type": "boolean"
+            },
+            "transition": {
+              "type": "string",
+              "enum": [
+                "kreis",
+                "schieben",
+                "blende"
+              ]
+            },
+            "qr": {
+              "type": "string",
+              "enum": [
+                "aus",
+                "route",
+                "instagram",
+                "link"
+              ]
+            },
+            "qrLink": {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 500
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [

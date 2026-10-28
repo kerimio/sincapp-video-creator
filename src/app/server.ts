@@ -1,3 +1,4 @@
+// HTTP-Server der Web-App: Jobs anlegen und starten, Einstellungen, Märkte; Katalog- und Job-Routen kommen aus catalog-api.ts und review/server.ts.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { cacheMarket, listMarkets, listProspects, marketDirs, marketsCacheDir, pagesToRead, todayBerlin, type FsMarket, type FsProspect } from '../firestore/firestore';

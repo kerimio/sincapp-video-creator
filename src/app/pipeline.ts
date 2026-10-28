@@ -1,5 +1,6 @@
+// Ablauf Prospekt → Story: lesen, Angebote wählen, Bilder holen, Bestpreis markieren, Bericht schreiben.
 import { existsSync, readFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RecordedReader, type PageReader } from '../extract/claude';
 import { makeMatcher, makeReader } from '../ai/provider';

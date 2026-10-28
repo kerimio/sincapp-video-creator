@@ -2,7 +2,7 @@
 // geordnet, durchsuchbar und von Hand zu pflegen. Füllt sich beim Prüfen von selbst.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bestPriceWeeks, CATEGORIES, CATEGORY_LABEL, parseSize, unitPrice, type Category, type Size } from '../../core/catalog';
-import { formatDateRange } from '../../core/format';
+import { formatDateRange, priceValue } from '../../core/format';
 import { call } from './api';
 import { go, Shell } from './pages';
 
@@ -29,7 +29,6 @@ type Sort = keyof typeof SORTS;
 const SOURCE: Record<string, string> = { web: 'Internet', openfoodfacts: 'Open Food Facts', prospekt: 'Prospekt-Ausschnitt', manual: 'eigenes Bild' };
 const STORE = 'sincapp.katalog';
 const coll = new Intl.Collator('de', { sensitivity: 'base' });
-const priceNum = (p: string | null | undefined) => (p ? Number(p.replace(',', '.')) : NaN);
 const fullName = (e: Entry) => `${e.brand ? `${e.brand} ` : ''}${e.name.de}`;
 
 function loadPrefs(): { sort: Sort; view: 'raster' | 'liste' } {
@@ -101,7 +100,7 @@ export function CatalogPage() {
       case 'marke': return coll.compare(a.brand ?? '~', b.brand ?? '~') || byName(a, b);
       case 'name': return byName(a, b);
       case 'menge': return (a.size?.base ?? 'z').localeCompare(b.size?.base ?? 'z') || (a.size?.total ?? Infinity) - (b.size?.total ?? Infinity);
-      case 'preis': return (priceNum(a.last?.price) || Infinity) - (priceNum(b.last?.price) || Infinity);
+      case 'preis': return (priceValue(a.last?.price) || Infinity) - (priceValue(b.last?.price) || Infinity);
       case 'neu': return b.addedAt.localeCompare(a.addedAt);
       case 'oft': return b.uses - a.uses;
       default: return CATEGORIES.indexOf(a.cat) - CATEGORIES.indexOf(b.cat) || coll.compare(a.brand ?? '~', b.brand ?? '~') || byName(a, b);
@@ -523,7 +522,7 @@ function CampaignDialog({ rows, onClose }: { rows: Row[]; onClose: () => void })
         <h3>Aktionspreise</h3>
         <div className="camp-items">
           {rows.map((r) => {
-            const weeks = bestPriceWeeks(prices[r.img]?.replace(',', '.'), r.seen, from);
+            const weeks = bestPriceWeeks(prices[r.img], r.seen, from);
             return (
               <div key={r.img} className="camp-item">
                 <img src={r.url} alt="" />

@@ -1,4 +1,4 @@
-import { formatDateRange, turkishLocative } from './format';
+import { formatDateRange, hashtag, joinLines as lineName, turkishLocative } from './format';
 import type { Lang, Story } from './schema';
 import { badgeText } from './badges';
 
@@ -6,10 +6,7 @@ import { badgeText } from './badges';
  * Instagram-Bildtext (DE/TR) mit Angeboten und Hashtags. Ohne KI – kostet nichts
  * und ist sofort da. Nach dem Design System: kein Imperativ, als Emoji höchstens 🐿. Wird beim Export als Textdatei mitgeliefert.
  */
-const lineName = (lines: string[]) =>
-  lines.reduce((acc, l) => (!acc ? l : acc.endsWith('-') ? (/^\p{Lu}/u.test(l) ? acc + l : acc.slice(0, -1) + l.toLowerCase()) : `${acc} ${l}`), '');
-
-const tag = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/ı/g, 'i').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+const tag = hashtag;
 
 export function cityOf(address: string): string | null {
   const m = address.match(/\b\d{5}\s+([A-Za-zÄÖÜäöüß-]+)/);

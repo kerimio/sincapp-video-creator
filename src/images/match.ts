@@ -1,3 +1,4 @@
+// KI-Abgleich: passt ein Internet-Bild zum Produkt im Prospekt? Kleine Bilder (512 px), Antwort gecacht.
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { readFile } from 'node:fs/promises';

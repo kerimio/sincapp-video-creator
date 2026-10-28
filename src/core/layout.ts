@@ -2,7 +2,8 @@
  * Maße je Format. "story" sind exakt die Werte der Referenz (1080×1920);
  * "feed" (Instagram-Beitrag 4:5) und "quadrat" (1:1) sind daraus abgeleitet.
  */
-export type Format = 'story' | 'feed' | 'quadrat';
+export const FORMATS = ['story', 'feed', 'quadrat'] as const;
+export type Format = (typeof FORMATS)[number];
 
 export interface Layout {
   W: number;

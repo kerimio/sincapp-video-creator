@@ -1,3 +1,4 @@
+// Jobs auf der Platte: Ordner anlegen, job.json lesen/schreiben, Liste für die Startseite.
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

@@ -1,3 +1,4 @@
+// Prospekt-Ausschnitte freistellen: gebündelt über tools/cutout.py (lokal), optional remove.bg.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runPython } from '../python';

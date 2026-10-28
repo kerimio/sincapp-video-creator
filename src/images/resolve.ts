@@ -1,3 +1,4 @@
+// Produktbild für jedes Angebot finden: Katalog → Internet → Prospekt-Ausschnitt (siehe AGENTS.md, Bildquellen-Reihenfolge).
 import { copyFile, mkdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { cutoutOffers } from '../cutout/cutout';

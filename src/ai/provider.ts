@@ -1,3 +1,4 @@
+// Wählt den KI-Anbieter (Claude oder Gemini) anhand der Einstellungen und hängt immer den Antwort-Cache davor.
 import { CachingMatcher, CachingReader } from './cache';
 import { ClaudeReader, type PageReader } from '../extract/claude';
 import { ClaudeMatcher, type ProductMatcher } from '../images/match';

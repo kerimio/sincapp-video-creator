@@ -51,7 +51,6 @@ export interface ExportResult {
 }
 
 const FORMAT_LABEL: Record<Format, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1' };
-export const formatLabel = (f: Format) => FORMAT_LABEL[f];
 
 /** Zeitpunkte, an denen Intro, Seiten und Schluss fertig aufgebaut sind. */
 export function stillTimes(story: Story, format: Format) {

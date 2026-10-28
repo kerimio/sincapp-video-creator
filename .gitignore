@@ -8,3 +8,4 @@ jobs/*/
 tmp/
 .venv/
 /library/
+__pycache__/

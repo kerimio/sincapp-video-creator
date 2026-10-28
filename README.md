@@ -2,7 +2,9 @@
 
 Prospekt rein, Instagram-Story (MP4, 1080×1920) raus.
 
-> Stand: **Meilenstein 4** – Template + MP4 (M1), Extraktion + Freisteller (M2), Produktbilder aus dem Internet mit Bibliothek, Auswahl und Review-Oberfläche (M3), Web-App mit Assistent und `new`-Befehl (M4).
+> Stand: **Meilenstein 7** – Template + MP4 (M1), Extraktion + Freisteller (M2), Produktbilder und Auswahl (M3), Web-App (M4), Studio mit Design und Export (M5), Produkt-Katalog (M6), Kampagne aus dem Katalog mit Bestpreis (M7).
+>
+> Für Entwickler und KI-Assistenten: Aufbau, Regeln und Konventionen stehen in [`AGENTS.md`](AGENTS.md).
 
 ## Schnellstart auf dem Mac (Web-App)
 
@@ -136,10 +138,18 @@ pnpm eval:saray              # echter Lauf mit Claude
 pnpm eval:saray --recorded   # offline mit handannotierten Antworten (prüft nur die Pipeline)
 ```
 
+## Produkt-Katalog und Kampagnen (Meilenstein 6 und 7)
+
+- **Katalog** (Web-App → Katalog): jedes Produkt genau einmal, mit Marke, Namen DE/TR, Sorte, Menge, Grundpreis, Warengruppe, EAN und allen Prospekt-Preisen („gesehen bei Saray für 3,79 €“). Bildquelle: eigenes Bild > Internet > Prospekt; ein schlechteres Bild ersetzt nie ein besseres.
+- **Bilder verbessern:** sucht für alle Prospekt-Bilder einmal im Internet und schneidet sonst genau eine Packung sauber zu. „Eigenes Bild“ lädt ein Foto hoch und stellt es frei.
+- **Kampagne aus dem Katalog:** im Katalog „Kampagne“ antippen, Produkte wählen, Markt, Zeitraum und Preise eintragen, dann „Erst prüfen“ oder „🐿 Zauberknopf“ (gleich alle Videos). Braucht keinen Prospekt und keine KI.
+- **Bester Preis:** liegt der neue Preis unter allen Prospekt-Preisen der letzten mindestens 4 Wochen, bekommt das Angebot den Sticker „Bester Preis seit X Wochen“ (auch im Bildtext). Läuft ohne KI, aus den bisherigen Jobs.
+
 ## Datenmodell
 
 - `markets/<slug>.json` – Markt: `name`, `slug`, `logo` (Pfad relativ zu `markets/`), optional `logoCrop {w,h,offsetX,offsetY}`, `instagram`, `addresses` (1–3), optional `theme.pages` (`red`/`nut`).
-- `story.json` – alles, was im Video steht: `market`, `lang`, `dates {from,to}`, `headline {de[],tr[]}`, optional `eyebrow`, `offers[]` (`img`, `price` „13,99“, `unit`, `name {de[2],tr[2]}`, `note`, `imgZoom`), optional `pages`, `appScreenshot`, `scenes {intro,page,cta}`.
+- `story.json` – alles, was im Video steht: `market`, `lang`, `dates {from,to}`, `headline {de[],tr[]}`, optional `eyebrow`, `offers[]` (`img`, `price` „13,99“, `unit`, `name {de[2],tr[2]}`, `note`, `imgZoom`, optional `badge` (Sticker) und `bestWeeks` (Bestpreis seit X Wochen)), optional `pages`, `appScreenshot`, `scenes {intro,page,cta}`.
+- `library/index.json` – Produkt-Katalog: pro Eintrag `img`, `brand`, `name {de,tr}`, `unit`, `category`, `source {type: manual|web|openfoodfacts|prospekt}`, `verified`, `seen[]` (Prospekt-Preise), optional `webTried` (Internet schon versucht), `single` (Packung zugeschnitten); Bilder als PNG daneben.
 - Schemas: `src/core/schema.ts` (zod), exportiert nach `schemas/*.schema.json` (`pnpm schemas`).
 
 Seitenaufteilung automatisch: 3 oder 2 Angebote pro Seite, nie 1 (5 = 3+2, 7 = 3+2+2, 8 = 3+3+2).

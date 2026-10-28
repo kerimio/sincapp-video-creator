@@ -1,3 +1,4 @@
+// Statische Dateien (gebaute Web-App, Bilder, Videos) mit passendem Content-Type ausliefern.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';

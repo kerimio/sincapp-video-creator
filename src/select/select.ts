@@ -1,3 +1,4 @@
+// Aus allen gelesenen Angeboten die besten für die Story wählen und Überschriften bauen.
 import { defaultEyebrow } from '../core/format';
 import { Market, parseStory, type Story } from '../core/schema';
 import { offerKey } from '../extract/normalize';
