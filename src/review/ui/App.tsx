@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { BADGES, Story as StorySchema } from '../../core/schema';
 import { BADGE_TEXT } from '../../core/badges';
 import { formatDateRange } from '../../core/format';
+import { CATEGORY_LABEL } from '../../core/catalog';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
 import { type ExportOptions, type JobClient, type RenderState, type State, type StoryOffer } from './api';
 import { DesignPanel, ExportPanel, Preview, type View } from './studio';
@@ -104,17 +105,21 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
     say(warnings.length ? `Bild übernommen – Hinweis: ${warnings.join('; ')}` : 'Bild übernommen und im Produkt-Katalog gespeichert');
   };
 
-  const addOffer = (id: string) =>
+  // at: Stelle, an der ein ausgewähltes Angebot ersetzt wird (Tauschen); ohne: hinten anhängen
+  const addOffer = (id: string, at?: number) =>
     run(id, 'Bild wird gesucht …', async () => {
       const r = await api.auto(id);
       replaceExOffer(r.offer);
       setImgV((v) => ({ ...v, [id]: Date.now() }));
       update((s) => {
-        s.offers.push(r.story as StoryOffer);
+        if (at === undefined) s.offers.push(r.story as StoryOffer);
+        else s.offers[at] = r.story as StoryOffer;
         return s;
       });
+      setSwap(null);
       if (r.notes.length) say(r.notes.join(' '));
     });
+  const [swap, setSwap] = useState<number | null>(null);
 
   const save = async () => {
     if (!story) return;
@@ -192,22 +197,20 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
             setOffer={setOffer}
             update={update}
             openImage={(id) => setDialog(id)}
+            swapping={swap}
+            onSwap={(i) => {
+              setSwap(swap === i ? null : i);
+              if (swap !== i) setTimeout(() => document.getElementById('weitere')?.scrollIntoView({ behavior: 'smooth' }), 50);
+            }}
           />
-          <h2>Weitere Angebote aus dem Prospekt</h2>
-          {!others.length && <p className="muted">Alle erkannten Angebote sind in der Story.</p>}
-          <div className="others">
-            {others.map((o) => (
-              <div key={o.id} className="other">
-                <div>
-                  <b>{o.price} €</b> {o.brand} {o.name.de} {o.unit && <span className="muted">· {o.unit}</span>}
-                  {o.priceConfidence < 0.9 && <span className="warn"> · Preis prüfen</span>}
-                </div>
-                <button disabled={!!busy[o.id] || story.offers.length >= 15} onClick={() => addOffer(o.id)}>
-                  {busy[o.id] ?? 'Hinzufügen'}
-                </button>
-              </div>
-            ))}
-          </div>
+          <OtherOffers
+            others={others}
+            story={story}
+            busy={busy}
+            swap={swap}
+            onAdd={(id) => addOffer(id, swap ?? undefined)}
+            onCancel={() => setSwap(null)}
+          />
           <div className="next"><button className="primary" onClick={() => setTab('design')}>Weiter zum Design →</button></div>
           </>}
         </section>
@@ -322,6 +325,9 @@ function OfferList(p: {
   setOffer: (i: number, fn: (o: StoryOffer) => void) => void;
   update: (fn: (s: Story) => Story) => void;
   openImage: (id: string) => void;
+  /** Angebot an dieser Stelle gegen eines aus „Weitere Angebote“ tauschen */
+  onSwap: (i: number) => void;
+  swapping: number | null;
 }) {
   const { base } = useContext(JobCtx);
   const drag = useRef<number | null>(null);
@@ -378,6 +384,7 @@ function OfferList(p: {
                 </label>
                 <div className="spacer" />
                 <button className="ghost" onClick={() => o.id && p.openImage(o.id)}>Bild ändern</button>
+                <button className={p.swapping === i ? 'primary' : 'ghost'} onClick={() => p.onSwap(i)}>{p.swapping === i ? 'Wählt …' : 'Tauschen'}</button>
                 <button
                   className="ghost danger"
                   disabled={p.story.offers.length <= 2}
@@ -690,3 +697,68 @@ function CropTool({ offer, busy, onCrop }: { offer: ExtractedOffer; busy: boolea
 }
 
 export type { Extraction };
+
+const MEAT_FIRST = ['fleisch', 'wurst'];
+
+/**
+ * „Weitere Angebote“: nach Markt gruppiert (bei Videos aus mehreren Märkten), sonst nach Warengruppe,
+ * Fleisch zuerst; mit Suche. Im Tausch-Modus nur der Markt des getauschten Angebots, Knopf „Einsetzen“.
+ */
+function OtherOffers(p: { others: ExtractedOffer[]; story: Story; busy: Busy; swap: number | null; onAdd: (id: string) => void; onCancel: () => void }) {
+  const [q, setQ] = useState('');
+  const max = p.story.markets?.length ? 30 : 15;
+  const target = p.swap !== null ? p.story.offers[p.swap] : null;
+  const byMarket = !!p.story.markets?.length;
+  const needle = q.trim().toLocaleLowerCase('de');
+  const list = p.others
+    .filter((o) => !target?.market || o.market === target.market)
+    .filter((o) => !needle || `${o.brand ?? ''} ${o.name.de} ${o.name.tr}`.toLocaleLowerCase('de').includes(needle));
+  const key = (o: ExtractedOffer) => (byMarket ? (o.market ?? 'Ohne Markt') : (CATEGORY_LABEL[o.category]?.de ?? o.category));
+  const groups = new Map<string, ExtractedOffer[]>();
+  const rank = (o: ExtractedOffer) => (MEAT_FIRST.includes(o.category) ? 0 : 1);
+  for (const o of [...list].sort((a, b) => rank(a) - rank(b))) groups.set(key(o), [...(groups.get(key(o)) ?? []), o]);
+  // Märkte in Video-Reihenfolge, Warengruppen: Fleisch und Wurst vorn (schon durch die Sortierung)
+  const order = byMarket ? [...(p.story.markets ?? []).map((m) => m.name), ...groups.keys()] : [...groups.keys()];
+  const names = [...new Set(order)].filter((k) => groups.has(k));
+  // Preis nur dann rot, wenn der Gegencheck wirklich widersprochen hat (ungeprüft heißt nicht falsch)
+  const doubtful = (o: ExtractedOffer) => o.warnings.some((w) => w.startsWith('Preis unsicher'));
+  return (
+    <div id="weitere">
+      <div className="row others-head">
+        <h2 className="grow">Weitere Angebote</h2>
+        <input placeholder="Suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {target && (
+        <div className="swapbar">
+          <span>
+            Tauschen: <b>{target.name.de.join(' ')}</b>
+            {target.market ? ` (${target.market})` : ''} – unten ein Angebot wählen.
+          </span>
+          <button className="ghost" onClick={p.onCancel}>Abbrechen</button>
+        </div>
+      )}
+      {!list.length && <p className="muted">{q ? 'Nichts gefunden.' : 'Keine weiteren Angebote.'}</p>}
+      {names.map((name, gi) => (
+        <details key={name} className="other-group" open={!!target || !!needle || gi < 2}>
+          <summary>
+            {name} <span className="muted">· {groups.get(name)!.length}</span>
+          </summary>
+          <div className="others">
+            {groups.get(name)!.map((o) => (
+              <div key={o.id} className="other">
+                <div>
+                  <b>{o.price} €</b> {o.brand} {o.name.de} {o.unit && <span className="muted">· {o.unit}</span>}
+                  {doubtful(o) && <span className="warn"> · Preis prüfen</span>}
+                </div>
+                <button className={target ? 'primary' : ''} disabled={!!p.busy[o.id] || (!target && p.story.offers.length >= max)} onClick={() => p.onAdd(o.id)}>
+                  {p.busy[o.id] ?? (target ? 'Einsetzen' : 'Hinzufügen')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      ))}
+      {!target && p.story.offers.length >= max && <p className="muted small">Die Story ist voll ({max} Angebote) – mit „Tauschen“ ein Angebot ersetzen.</p>}
+    </div>
+  );
+}

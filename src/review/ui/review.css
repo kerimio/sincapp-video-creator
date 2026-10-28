@@ -36,7 +36,17 @@ header .hint { color: var(--amber); font-weight: 600; }
 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
 
 main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; padding: 20px; max-width: 1400px; margin: 0 auto; }
-@media (max-width: 1000px) { main { grid-template-columns: 1fr; } aside { order: -1; } }
+/* Auf schmalen Bildschirmen steht die Vorschau oben und scrollt mit weg – sticky würde die Liste darunter verdecken */
+@media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); } aside { order: -1; } main > aside { position: static; } }
+@media (max-width: 640px) {
+  main { padding: 12px; }
+  .offer { grid-template-columns: 18px 84px minmax(0, 1fr); gap: 8px; }
+  .fields .row, .card.head .row { flex-wrap: wrap; }
+  .lines { flex-wrap: wrap; }
+  .line { flex: 1 1 130px; min-width: 0; }
+  .lines input, .fields .lines input { width: 100%; }
+  .field { min-width: 0; max-width: 100%; }
+}
 aside { position: sticky; top: 72px; align-self: start; display: flex; flex-direction: column; gap: 12px; }
 
 .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
@@ -61,6 +71,12 @@ aside { position: sticky; top: 72px; align-self: start; display: flex; flex-dire
 
 .others { display: flex; flex-direction: column; gap: 6px; }
 .other { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.others-head { justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.others-head input { flex: 1 1 160px; max-width: 260px; }
+.swapbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; background: #fdf0ea; border: 1px solid var(--red); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.other-group { margin-top: 8px; }
+.other-group summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.other > div { min-width: 0; overflow-wrap: anywhere; }
 
 .preview { display: flex; flex-direction: column; gap: 8px; }
 .phone { width: 360px; height: 640px; border-radius: 18px; overflow: hidden; background: #000; box-shadow: 0 10px 30px rgba(41, 32, 25, 0.25); }
