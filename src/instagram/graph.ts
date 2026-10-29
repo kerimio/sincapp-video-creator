@@ -1,8 +1,13 @@
-// Instagram-API (Instagram-Login, graph.instagram.com): Konto lesen, Container anlegen, veröffentlichen, Token verlängern.
+// Instagram-API: Konto lesen, Container anlegen, veröffentlichen, Token verlängern.
+// Zwei Arten von Token: Instagram-Login (graph.instagram.com) und Facebook-Login / „Unified Login“ bei neueren Meta-Apps
+// (graph.facebook.com, z. B. Systemnutzer-Token). Welche es ist, merkt `me()` beim ersten Aufruf – die Endpunkte sind gleich.
 // Der Token steht nie in einer Fehlermeldung oder im Log – Meldungen kommen nur aus dem Fehlertext von Instagram.
 
-const HOST = 'https://graph.instagram.com';
+const IG_HOST = 'https://graph.instagram.com';
+const FB_HOST = 'https://graph.facebook.com';
 const VERSION = 'v25.0';
+/** Token → Host, damit nicht jeder neue Client erneut ausprobiert */
+const hosts = new Map<string, string>();
 
 type Fetch = typeof fetch;
 type Params = Record<string, string | number | boolean | object | undefined>;
@@ -32,11 +37,13 @@ export class InstagramClient {
     private wait: (ms: number) => Promise<void> = sleep,
   ) {}
 
-  private async call<T>(method: 'GET' | 'POST', path: string, params: Params = {}): Promise<T> {
+  private async call<T>(method: 'GET' | 'POST', path: string, params: Params = {}, host?: string): Promise<T> {
+    if (!host && !hosts.has(this.token)) await this.me();
+    host ??= hosts.get(this.token)!;
     const body = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined) body.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
     body.set('access_token', this.token);
-    const url = `${HOST}${path.startsWith('/refresh') ? '' : `/${VERSION}`}${path}`;
+    const url = `${host}${path.startsWith('/refresh') ? '' : `/${VERSION}`}${path}`;
     let res: Response;
     try {
       res = method === 'GET' ? await this.fetchImpl(`${url}?${body}`, { signal: AbortSignal.timeout(60_000) }) : await this.fetchImpl(url, { method, body, signal: AbortSignal.timeout(120_000) });
@@ -48,10 +55,38 @@ export class InstagramClient {
     return data;
   }
 
-  /** Eigenes Konto; `user_id` ist die ID, unter der veröffentlicht wird. */
+  /**
+   * Eigenes Instagram-Konto, unter dem veröffentlicht wird. Erst Instagram-Login probieren, sonst Facebook-Login:
+   * dort hängt das Instagram-Konto an einer Facebook-Seite (`/me/accounts`) oder der Token gehört direkt zum Instagram-Konto.
+   */
   async me(): Promise<IgAccount> {
-    const r = await this.call<{ user_id?: string; id: string; username: string }>('GET', '/me', { fields: 'user_id,username' });
-    return { id: r.user_id ?? r.id, username: r.username };
+    let first: Error;
+    try {
+      const r = await this.call<{ user_id?: string; id: string; username: string }>('GET', '/me', { fields: 'user_id,username' }, IG_HOST);
+      hosts.set(this.token, IG_HOST);
+      return { id: r.user_id ?? r.id, username: r.username };
+    } catch (e) {
+      first = e as Error;
+      if (/nicht erreichbar/.test(first.message)) throw first;
+    }
+    const direct = await this.call<{ id: string; username?: string }>('GET', '/me', { fields: 'id,username' }, FB_HOST).catch(() => null);
+    if (direct?.username) {
+      hosts.set(this.token, FB_HOST);
+      return { id: direct.id, username: direct.username };
+    }
+    const pages = await this.call<{ data?: { instagram_business_account?: { id: string; username?: string } }[] }>('GET', '/me/accounts', { fields: 'instagram_business_account{id,username}' }, FB_HOST).catch(() => null);
+    const ig = pages?.data?.find((p) => p.instagram_business_account)?.instagram_business_account;
+    if (ig) {
+      hosts.set(this.token, FB_HOST);
+      return { id: ig.id, username: ig.username ?? ig.id };
+    }
+    if (pages) throw new Error('Der Token gehört zu keinem Instagram-Business-Konto. Beim Erzeugen des Tokens das Instagram-Konto (bzw. die Facebook-Seite mit dem Instagram-Konto) auswählen.');
+    throw first;
+  }
+
+  /** Instagram-Login-Token lassen sich verlängern; Facebook-/Systemnutzer-Token nicht (laufen 60 Tage bzw. nie ab). */
+  get refreshable() {
+    return hosts.get(this.token) === IG_HOST;
   }
 
   async createContainer(igId: string, params: Params): Promise<string> {
@@ -91,6 +126,8 @@ export class InstagramClient {
 
   /** Langlebigen Token um 60 Tage verlängern (geht, sobald er mindestens 24 h alt ist). */
   async refresh(): Promise<string> {
+    if (!hosts.has(this.token)) await this.me();
+    if (!this.refreshable) return this.token;
     return (await this.call<{ access_token: string }>('GET', '/refresh_access_token', { grant_type: 'ig_refresh_token' })).access_token;
   }
 }

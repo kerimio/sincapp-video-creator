@@ -51,6 +51,25 @@ describe('Instagram-API', () => {
     expect(err).not.toContain(TOKEN);
   });
 
+  it('erkennt Facebook-/Unified-Login-Token und nutzt dann graph.facebook.com', async () => {
+    const hostsSeen: string[] = [];
+    const f = (async (input: string | URL) => {
+      const url = new URL(String(input));
+      hostsSeen.push(`${url.host}${url.pathname.replace(/^\/v[\d.]+/, '')}`);
+      const json = (b: object, status = 200) => new Response(JSON.stringify(b), { status });
+      if (url.host === 'graph.instagram.com') return json({ error: { code: 190, message: 'Invalid OAuth access token' } }, 400);
+      if (url.pathname.endsWith('/me')) return json({ id: '42' });
+      if (url.pathname.endsWith('/me/accounts')) return json({ data: [{}, { instagram_business_account: { id: '1789', username: 'sincapp.de' } }] });
+      return json({ id: 'c1' });
+    }) as unknown as typeof fetch;
+    const c = new InstagramClient('FB-TOKEN', f, async () => {});
+    expect(await c.me()).toEqual({ id: '1789', username: 'sincapp.de' });
+    expect(c.refreshable).toBe(false);
+    expect(await c.refresh()).toBe('FB-TOKEN');
+    await c.createContainer('1789', { image_url: 'https://x/a.jpg' });
+    expect(hostsSeen.at(-1)).toBe('graph.facebook.com/1789/media');
+  });
+
   it('wartet auf die Verarbeitung und meldet Fehler verständlich', async () => {
     let polls = 0;
     const f = (async () => new Response(JSON.stringify({ status_code: ++polls < 3 ? 'IN_PROGRESS' : 'ERROR', status: 'Video zu lang' }))) as unknown as typeof fetch;
