@@ -226,6 +226,62 @@ describe('Konzept fürs Wochenvideo', () => {
   });
 });
 
+describe('Süßes und Snacks zuletzt', () => {
+  const o = (id: string, name: string, cat: string, price: string, unit: string | null, market = 'A', pageFile = 'work/pages/p1-seite-05.png') =>
+    ({ ...offer(id, name, [0, 0, 100, 100], cat), price, unit, market, pageFile });
+  it('Tomatenmark und Konserven vor Chips und Schokolade, auch wenn die Chips günstiger sind', () => {
+    const all = [
+      o('fleisch', 'Hähnchenschenkel', 'fleisch', '4,99', '1 kg'),
+      o('hack', 'Gemischtes Hack', 'fleisch', '6,99', '1 kg'),
+      o('takis', 'Takis Blue Heat', 'snacks', '1,49', '93 g', 'A', 'work/pages/p1-seite-01.png'),
+      o('schoko', 'Schokolade', 'suesses', '0,99', '100 g', 'A', 'work/pages/p1-seite-01.png'),
+      o('mark', 'Tomatenmark', 'konserven', '2,49', '830 g'),
+      o('bohnen', 'Weiße Bohnen', 'konserven', '1,29', '800 g'),
+      o('oel', 'Sonnenblumenöl', 'grundnahrung', '3,99', '2 l'),
+    ];
+    const sel = selectByMarket(all, ['A'], { boost: offerBoosts({ pages: [], offers: all }) });
+    expect(sel.offers.map((x) => x.id)).not.toContain('takis');
+    expect(sel.offers.map((x) => x.id)).not.toContain('schoko');
+    expect(sel.offers.map((x) => x.id)).toContain('mark');
+    // nichts anderes mehr da: dann dürfen Snacks die Seite füllen
+    const few = selectByMarket(all.filter((x) => !['mark', 'bohnen', 'oel'].includes(x.id)), ['A'], { boost: new Map() });
+    expect(few.offers.map((x) => x.id).slice(-2).sort()).toEqual(['schoko', 'takis']);
+  });
+});
+
+describe('Einheitliche Namen', () => {
+  it('Schwarztee heißt immer Schwarztee, die Marke steht davor; frisches Fleisch hat keine Marke', async () => {
+    const { findGlossary, DEFAULT_GLOSSARY } = await import('../src/core/glossary');
+    const { applyGlossary, applyCatalogNames } = await import('../src/library/glossar');
+    const { Library } = await import('../src/library/library');
+    expect(findGlossary({ de: 'Goran Tee Mevlana Çay', tr: 'Mevlana Çay' }, DEFAULT_GLOSSARY)?.de).toBe('Schwarztee');
+    expect(findGlossary({ de: 'Grüner Tee', tr: 'Yeşil Çay' }, DEFAULT_GLOSSARY)?.de).toBe('Grüner Tee');
+    expect(findGlossary({ de: 'Pfefferminztee', tr: 'Nane Çayı' }, DEFAULT_GLOSSARY)).toBeNull();
+
+    // Katalog kennt die Marke "Mevlana": sie wird zur Marke, auch wenn die KI "Goran" las
+    const dir = mkdtempSync(join(tmpdir(), 'lib-'));
+    const lib = await Library.open(dir);
+    const png = join(dir, 'x.png');
+    writeFileSync(png, 'bild');
+    await lib.put({ brand: 'Mevlana', name: { de: 'Schwarztee', tr: 'Siyah Çay' }, unit: '1 kg' }, png, { type: 'web' }, true);
+    const tee = { ...offer('t', 'Tee Mevlana Çay', [0, 0, 1, 1], 'getraenke'), brand: 'Goran', name: { de: 'Tee Mevlana Çay', tr: 'Mevlana Çay' } };
+    applyCatalogNames([tee], lib);
+    applyGlossary([tee], DEFAULT_GLOSSARY);
+    expect([tee.brand, tee.name.de, tee.name.tr]).toEqual(['Mevlana', 'Schwarztee', 'Siyah Çay']);
+
+    // Katalog-Treffer: Name wie im Katalog (nach eigener Korrektur jede Woche gleich)
+    await lib.put({ brand: 'Tat', name: { de: 'Tomatenmark', tr: 'Domates Salçası' }, unit: '830 g' }, png, { type: 'web' }, true);
+    lib.entries[1].aliases.push('tat|tomatenmark-3-fach');
+    const mark = { ...offer('m', 'Tomatenmark 3-fach', [0, 0, 1, 1], 'konserven'), brand: 'Tat', unit: '830 g', name: { de: 'Tomatenmark 3-fach', tr: 'Salça' } };
+    applyCatalogNames([mark], lib);
+    expect(mark.name).toEqual({ de: 'Tomatenmark', tr: 'Domates Salçası' });
+
+    const hack = { ...offer('h', 'Gemischtes Hackfleisch', [0, 0, 1, 1]), brand: 'Saray' };
+    applyGlossary([hack], DEFAULT_GLOSSARY);
+    expect([hack.brand, hack.lines.de]).toEqual([null, ['Gemischtes Hack']]);
+  });
+});
+
 describe('Glossar', () => {
   it('setzt feste Namen ein, egal wie der Prospekt schreibt; die längste Schreibweise gewinnt', async () => {
     const { findGlossary, mergeGlossary, DEFAULT_GLOSSARY } = await import('../src/core/glossary');

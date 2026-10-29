@@ -27,9 +27,9 @@ export const PAGE_PROMPT = (w: number, h: number) => `Das ist eine Seite aus ein
 Erfasse jedes Angebot auf der Seite – auch kleine und solche am Rand. Ein Angebot ist ein Produkt (oder eine Produktgruppe wie "diverse Sorten") mit eigenem Preisschild.
 
 Je Angebot:
-- brand: Marke wie gedruckt (z. B. "Egetürk"), sonst null.
-- name_de: deutscher Produktname ohne Marke und ohne Menge, so wie im Prospekt (Schreibweise behalten, z. B. "Sırma Knoblauchwurst").
-- name_tr: türkischer Name, so wie ihn eine türkische Kundin im Laden sagen würde, kurz (z. B. "Parmak Sucuk"). Nicht wörtlich übersetzen, wenn es einen üblichen Namen gibt.
+- brand: die Produktmarke wie gedruckt (z. B. "Egetürk", "Mevlana") – nicht Hersteller, Importeur oder Markt; sonst null. Frisches Fleisch von der Theke hat keine Marke (null).
+- name_de: die übliche deutsche Produktart, kurz und einheitlich – ohne Marke, ohne Menge, ohne Hersteller, ohne türkische Wörter (z. B. "Schwarztee" statt "Goran Tee Mevlana Çay", "Gemischtes Hack" statt "Rinderhackfleisch-Mischung (Gemischtes Hackfleisch)", "Knoblauchwurst"). Sorte oder Geschmack gehört in note_de.
+- name_tr: der übliche türkische Name, so wie ihn eine türkische Kundin im Laden sagt, kurz (z. B. "Siyah Çay", "Karışık Kıyma", "Parmak Sucuk"). Nicht wörtlich übersetzen, wenn es einen üblichen Namen gibt.
 - unit: Menge genau wie gedruckt ("1 kg", "5×140 g", "950 ml"), sonst null.
 - price: Angebotspreis vom Preisschild, Ziffern genau wie gedruckt, Cent mit Punkt ("13.99"). Bei hochgestellten Cent: "1.69". Nie raten – wenn unlesbar, trotzdem die beste Lesung und niedrige confidence.
 - note_de / note_tr: kurzer Zusatz wie "diverse Sorten", "scharf oder mild", "Karamell oder Erdbeere", sonst null.

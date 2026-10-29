@@ -13,7 +13,7 @@ import { markBestPrices } from '../library/bestprice';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
-import { applyGlossary, glossary } from '../library/glossar';
+import { applyCatalogNames, applyGlossary, glossary } from '../library/glossar';
 import { buildStory, findTopic, offerBoosts, PER_MARKET, selectByMarket, selectOffers } from '../select/select';
 
 export interface JobSettings {
@@ -126,8 +126,9 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   });
   applyFirestoreDates(ex, jobDir);
   applyFirestoreMarkets(ex, jobDir);
-  // feste Namen aus dem Glossar, bevor ausgewählt wird (Hack bleibt Hack, egal wie der Prospekt es nennt)
-  const glossaryNotes = applyGlossary(ex.offers, await glossary());
+  // feste Namen, bevor ausgewählt wird: erst wie im Katalog, dann das Glossar (Hack bleibt Hack, egal wie der Prospekt es nennt)
+  const library = await Library.open();
+  const glossaryNotes = [...applyCatalogNames(ex.offers, library), ...applyGlossary(ex.offers, await glossary())];
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));
@@ -151,7 +152,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   let done = 0;
   const { notes } = await resolveImages(sel.offers, {
     jobDir,
-    library: await Library.open(),
+    library,
     providers: providersFromEnv(),
     matcher: s.recorded ? null : makeMatcher(),
     log: (m) => {
