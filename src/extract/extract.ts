@@ -1,6 +1,6 @@
 // Prospekt lesen: Seiten vorbereiten, an die KI geben (gecacht), Preise gegenprüfen, extraction.json schreiben.
 import { readdir } from 'node:fs/promises';
-import { extname, join, relative } from 'node:path';
+import { basename, extname, join, relative } from 'node:path';
 import { runPython } from '../python';
 import type { PageReader } from './claude';
 import { DE_SOFT_CHARS, TR_MAX_CHARS, normalizeDate, normalizePrice, normalizeUnit, offerKey, nameLines } from './normalize';
@@ -122,6 +122,11 @@ export interface ExtractOptions {
   priceCheck?: boolean;
   /** So viele Seiten gleichzeitig lesen (Standard 4) – die KI braucht pro Seite einige Sekunden. */
   parallel?: number;
+  /**
+   * So viele Produkte stehen laut Firestore auf der Seite (0 = unbekannt). Liefert die KI dort keins –
+   * auch aus dem Speicher –, wird die Seite einmal frisch gelesen, statt eine leere Antwort für immer zu behalten.
+   */
+  expected?: (page: PreparedPage) => number;
 }
 
 /**
@@ -159,41 +164,55 @@ export async function extractJob(opts: ExtractOptions): Promise<Extraction> {
   const raws: (PageResult | null)[] = new Array(pages.length).fill(null);
   const perPage: ExtractedOffer[][] = pages.map(() => []);
   const pageWarnings: string[][] = pages.map(() => []);
-  let next = 0;
-  const worker = async () => {
-    while (next < pages.length) {
-      const i = next++;
-      const page = pages[i];
-      const no = i + 1;
-      try {
-        log(`Seite ${no}: lese mit ${opts.reader.name} …`);
-        const raw = await opts.reader.readPage(page.file, page);
-        raws[i] = raw;
-        const found = normalizePage(raw, page, no, opts.jobDir);
-        if (opts.priceCheck !== false) {
-          try {
-            await crossCheckPrices(found, page, opts.reader, workDir);
-          } catch (e) {
-            pageWarnings[i].push(`Seite ${no}: Preis-Gegencheck fehlgeschlagen (${(e as Error).message}) – Preise bitte prüfen`);
-          }
-        }
-        perPage[i] = found;
-        log(`Seite ${no}: ${found.length} Angebot(e)`);
-      } catch (e) {
-        pageWarnings[i].push(`Seite ${no} (${page.source}): ${(e as Error).message}`);
+  const errors: (string | null)[] = pages.map(() => null);
+  const readOne = async (i: number) => {
+    const page = pages[i];
+    const no = i + 1;
+    pageWarnings[i] = [];
+    try {
+      log(`Seite ${no}: lese mit ${opts.reader.name} …`);
+      let raw = await opts.reader.readPage(page.file, page);
+      const expected = opts.expected?.(page) ?? 0;
+      if (!raw.offers.length && expected > 0) {
+        // Firestore kennt Produkte auf dieser Seite, die KI keins: einmal neu lesen (eine leere Antwort bliebe sonst gemerkt)
+        log(`Seite ${no}: keine Angebote erkannt, obwohl ${expected} Produkt(e) eingetragen sind – lese neu …`);
+        raw = await opts.reader.readPage(page.file, page, { fresh: true });
+        if (!raw.offers.length) pageWarnings[i].push(`Seite ${no} (${page.source}): keine Angebote erkannt, obwohl in Firestore ${expected} Produkt(e) eingetragen sind`);
       }
+      raws[i] = raw;
+      const found = normalizePage(raw, page, no, opts.jobDir);
+      if (opts.priceCheck !== false) {
+        try {
+          await crossCheckPrices(found, page, opts.reader, workDir);
+        } catch (e) {
+          pageWarnings[i].push(`Seite ${no}: Preis-Gegencheck fehlgeschlagen (${(e as Error).message}) – Preise bitte prüfen`);
+        }
+      }
+      perPage[i] = found;
+      errors[i] = null;
+      log(`Seite ${no}: ${found.length} Angebot(e)`);
+    } catch (e) {
+      errors[i] = (e as Error).message.split('\n')[0];
+      pageWarnings[i].push(`Seite ${no} (${page.source}) nicht gelesen: ${errors[i]}`);
     }
   };
+  let next = 0;
+  const worker = async () => {
+    while (next < pages.length) await readOne(next++);
+  };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(opts.parallel ?? 4, pages.length)) }, worker));
+  // Fehlgeschlagene Seiten (meist Überlast der KI, kostet nichts) am Ende noch einmal einzeln – sonst fehlen ihre Angebote still im Video
+  for (const i of pages.keys()) if (errors[i]) await readOne(i);
   const offers = perPage.flat();
   warnings.push(...pageWarnings.flat());
-  const pageInfo: Extraction['pages'] = pages.map((page, i) => ({ file: page.file, source: page.source, width: page.width, height: page.height, offers: perPage[i].length }));
+  const pageInfo: Extraction['pages'] = pages.map((page, i) => ({ file: page.file, source: page.source, width: page.width, height: page.height, offers: perPage[i].length, ...(errors[i] ? { error: errors[i]! } : {}) }));
 
-  // Doppelte Angebote (gleiche Marke, Name, Preis) zusammenfassen
+  // Doppelte Angebote (gleiche Marke, Name, Preis) zusammenfassen – nur innerhalb eines Prospekts:
+  // "Ankara Nudeln 0,65" bei zwei Märkten sind zwei Angebote ("p1-seite-03" / "p2-seite-02")
   const seen = new Map<string, ExtractedOffer>();
   const unique: ExtractedOffer[] = [];
   for (const o of offers) {
-    const k = offerKey(o);
+    const k = `${basename(o.pageFile).match(/^p\d+-/)?.[0] ?? ''}${offerKey(o)}`;
     const prev = seen.get(k);
     if (prev) {
       warnings.push(`Doppelt: ${o.id} entspricht ${prev.id} (${o.brand ?? ''} ${o.name.de}) – nur einmal übernommen`);
