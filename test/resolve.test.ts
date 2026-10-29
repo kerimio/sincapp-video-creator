@@ -88,4 +88,25 @@ describe.skipIf(!hasPython)('Bildquelle: Bibliothek → Internet → Prospekt', 
     expect(searches).toBe(1);
     expect(tahin[0].imgSource).toBe('library');
   }, 120000);
+
+  it('dasselbe frische Fleisch in zwei Märkten: einmal suchen, überall dasselbe Bild – auch bei anderer Menge', async () => {
+    const { dir, offers } = job();
+    const base = offers.find((o) => o.id === 's4-1')!;
+    const a = { ...base, id: 'a-hack', brand: null, name: { de: 'Gemischtes Hack', tr: 'Karışık Kıyma' }, category: 'fleisch' as const, unit: '1 kg', market: 'A' };
+    const b = { ...a, id: 'b-hack', unit: '500 g', market: 'B' };
+    const lib = await Library.open(mkdtempSync(join(tmpdir(), 'lib-')));
+    let searches = 0;
+    const provider: ImageSearchProvider = { name: 'brave', search: async () => (searches++, [{ url: 'https://img/hack.png', title: 'Hack', provider: 'brave' }]) };
+    const fetchImpl = (async () => new Response(new Uint8Array(transparentProduct()), { headers: { 'content-type': 'image/png' } })) as unknown as typeof fetch;
+    const matcher = { compare: async (_c: string, cands: string[]) => cands.map((_, i) => ({ id: i + 1, same_product: true, same_variant: true, clean_shot: true, note: 'passt' })) };
+    await resolveImages([a, b], { jobDir: dir, library: lib, providers: [provider], matcher, fetchImpl });
+    expect(searches).toBe(1);
+    expect([a.imgSource, b.imgSource]).toEqual(['web', 'web']);
+    expect(readFileSync(join(dir, 'images/b-hack.png')).equals(readFileSync(join(dir, 'images/a-hack.png')))).toBe(true);
+    // nächste Woche, andere Menge: Katalog statt neuer Suche
+    const c = { ...a, id: 'c-hack', unit: '2 kg', img: undefined, imgSource: undefined };
+    await resolveImages([c], { jobDir: dir, library: lib, providers: [provider], matcher, fetchImpl });
+    expect(searches).toBe(1);
+    expect(c.imgSource).toBe('library');
+  }, 120000);
 });

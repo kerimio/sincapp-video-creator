@@ -22,8 +22,9 @@ describe('Auswahl', () => {
     expect(new Set(picked.map((o) => o.id)).size).toBe(8);
     // alle 3 Wurst-Angebote vorn, auch wenn andere Gruppen dafür wegfallen
     expect(picked.slice(0, 3).map((o) => o.category)).toEqual(['wurst', 'wurst', 'wurst']);
-    // der Rest reihum aus verschiedenen Gruppen
-    expect(new Set(picked.slice(3).map((o) => o.category)).size).toBe(5);
+    // der Rest möglichst aus verschiedenen Gruppen, Süßes und Snacks nur zur Not
+    expect(new Set(picked.slice(3).map((o) => o.category)).size).toBeGreaterThanOrEqual(4);
+    expect(picked.filter((o) => o.category === 'suesses' || o.category === 'snacks')).toEqual([]);
   });
 
   it('Konzept: halb Fleisch, halb Preis-Knaller aus dem Grundbedarf – auch bei nur 2 Plätzen', () => {

@@ -93,12 +93,14 @@ export const MEAT: string[] = ['fleisch', 'wurst'];
  * Wie sehr eine Warengruppe im Wochenvideo zieht: Grundbedarf ja, Nischen kaum.
  * 0 = nur, wenn sonst nichts da ist (z. B. ein Kontaktgrill).
  */
+// Süßes und Snacks zuletzt (Chips interessieren im Wochenangebot niemanden), Küchen-Grundbedarf wie Tomatenmark,
+// Öl, Reis und Konserven davor. Werte ≤ 0 kommen nur dran, wenn sonst nichts mehr da ist.
 export const INTEREST: Record<Category, number> = {
-  fleisch: 3, wurst: 1, obst_gemuese: 2, kaese_milch: 2, grundnahrung: 2, getraenke: 1.5, backwaren: 1, tiefkuehl: 1,
-  suesses: 1, snacks: 1, konserven: 0.5, haushalt: 0.5, drogerie: 0.5, sonstiges: 0,
+  fleisch: 3, wurst: 1, obst_gemuese: 2, kaese_milch: 2, grundnahrung: 2.5, konserven: 2, getraenke: 1.5, backwaren: 1, tiefkuehl: 1,
+  haushalt: 0.5, drogerie: 0.5, suesses: -1, snacks: -1, sonstiges: 0,
 };
 // Was fast jeder kauft, zieht mehr als ein Nischenprodukt derselben Gruppe ("Reis 5 kg" vor "Tahin")
-const STAPLE = /(hähnchen|haehnchen|hühner|huhn|tavuk|rind|dana|kalb|lamm|kuzu|hack|kıyma|kiyma|sucuk|reis|pirinç|pirinc|mehl|un |zucker|şeker|seker|öl|oel|yağ|yag|butter|eier|yumurta|milch|süt|sut|joghurt|yoğurt|yogurt|ayran|käse|kaese|peynir|tee|çay|cay|kaffee|brot|ekmek|tomate|domates|gurke|salatalık|kartoffel|patates|zwiebel|soğan|sogan|banane|muz|apfel|elma|orange|portakal|wasser|nudeln|makarna|bulgur|linsen|mercimek)/i;
+const STAPLE = /(tomatenmark|paprikamark|salça|salca|kichererbsen|nohut|bohnen|fasulye|hähnchen|haehnchen|hühner|huhn|tavuk|rind|dana|kalb|lamm|kuzu|hack|kıyma|kiyma|sucuk|reis|pirinç|pirinc|mehl|un |zucker|şeker|seker|öl|oel|yağ|yag|butter|eier|yumurta|milch|süt|sut|joghurt|yoğurt|yogurt|ayran|käse|kaese|peynir|tee|çay|cay|kaffee|brot|ekmek|tomate|domates|gurke|salatalık|kartoffel|patates|zwiebel|soğan|sogan|banane|muz|apfel|elma|orange|portakal|wasser|nudeln|makarna|bulgur|linsen|mercimek)/i;
 const NICHE = /(olive|zeytin|gewürz|gewuerz|baharat|soße|sosse|sauce|sos |essig|sirke|pul biber|sumak|nane|minze|duft|kerze|grill|maschine|topf|pfanne|deko)/i;
 
 /**

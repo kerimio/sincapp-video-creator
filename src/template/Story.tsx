@@ -389,7 +389,9 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   const big = offers.slice(0, Math.min(2, offers.length));
   const small = offers.slice(big.length);
   const bigW = (900 - gap * (big.length - 1)) / big.length;
-  const smallW = small.length ? (900 - gap * (small.length - 1)) / small.length : 0;
+  // kleine Karten immer im Dreier-Raster, auch wenn ein Markt nur 1–2 weitere Angebote hat (dann mittig)
+  const smallW = (900 - gap * 2) / 3;
+  const smallX0 = 90 + ((3 - small.length) * (smallW + gap)) / 2;
   const rows = small.length ? 2 : 1;
   // Große Karten etwa quadratisch, kleine etwas höher als breit. Im hohen 9:16-Format bleibt viel Platz:
   // dann bekommen die Reihen eine Überschrift und die Karten wachsen bis zu einer Obergrenze mit,
@@ -410,7 +412,7 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   const smallY = bigY + bigH + gap + (labels ? labelH : 0);
   const cells = [
     ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: bigY, w: bigW, h: bigH, size: 'big' as const })),
-    ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: smallY, w: smallW, h: smallH, size: 'small' as const })),
+    ...small.map((o, i) => ({ o, x: smallX0 + i * (smallW + gap), y: smallY, w: smallW, h: smallH, size: 'small' as const })),
   ];
   const heads = labels ? [{ y: bigY - labelH, text: text.big, d: s + 0.2 }, ...(small.length ? [{ y: smallY - labelH, text: text.small, d: s + 0.55 }] : [])].filter((h) => h.text) : [];
   const labelColor = theme.dark ? c.accent2 : c.accent;

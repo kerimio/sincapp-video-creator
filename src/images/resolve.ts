@@ -3,7 +3,7 @@ import { copyFile, mkdir, open as openFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { cutoutOffers } from '../cutout/cutout';
 import type { Category, ExtractedOffer } from '../extract/schema';
-import { Library, type LibraryEntry } from '../library/library';
+import { Library, productKey, type LibraryEntry } from '../library/library';
 import { runPython } from '../python';
 import { pickBest, type ProductMatcher } from './match';
 import { downloadImage, searchAll, searchQuery, type ImageSearchProvider } from './search';
@@ -37,7 +37,8 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
   //    Nur ein Prospekt-Ausschnitt wird einmal gegen das Internet getauscht (Internet zuerst).
   const fallback = new Map<string, LibraryEntry>();
   for (const o of offers) {
-    const hit = opts.library.find({ brand: o.brand, name: o.name, unit: o.unit });
+    // frisches Fleisch: ein Bild je Produkt, egal ob 500 g oder 1 kg (Gemischtes Hack sieht überall gleich aus)
+    const hit = opts.library.find({ brand: o.brand, name: o.name, unit: keepAsPhoto(o.category) ? null : o.unit });
     if (hit && (hit.source.type !== 'prospekt' || hit.webTried || !opts.providers.length)) {
       if (keepAsPhoto(o.category) && (hit.source.type === 'web' || hit.source.type === 'openfoodfacts') && hit.source.url && (await hasAlpha(opts.library.path(hit)))) {
         await redoAsPhoto(hit, opts, log);
@@ -52,12 +53,21 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
     }
   }
 
-  // 2. Internet
+  // 2. Internet – dasselbe Produkt aus mehreren Märkten nur einmal suchen; alle bekommen dasselbe Bild
+  const leaderOf = new Map<string, ExtractedOffer>();
+  const byKey = new Map<string, ExtractedOffer>();
+  for (const o of open) {
+    const key = `${productKey(o.brand, o.name.de)}${keepAsPhoto(o.category) ? '' : `|${o.unit ?? ''}`}`;
+    const first = byKey.get(key);
+    if (first) leaderOf.set(o.id, first);
+    else byKey.set(key, o);
+  }
   const chosen: ({ o: ExtractedOffer } & WebFile)[] = [];
   if (open.length && opts.providers.length) {
     if (!opts.matcher) notes.push('Internet-Bilder werden ohne API-Key nicht automatisch mit dem Prospekt abgeglichen – sie stehen im Review zur Auswahl.');
     const searchErrors = new Set<string>();
     for (const o of open) {
+      if (leaderOf.has(o.id)) continue;
       try {
         const r = await findWebImage(o, { image: join(opts.jobDir, o.pageFile), box: o.bbox }, join(opts.jobDir, 'work'), opts);
         r.errors.forEach((e) => searchErrors.add(e));
@@ -89,6 +99,17 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
     }
   }
 
+  const share = async (o: ExtractedOffer, from: ExtractedOffer) => {
+    await copyFile(join(opts.jobDir, from.img!), join(imagesDir, `${o.id}.png`));
+    o.img = `images/${o.id}.png`;
+    o.imgSource = from.imgSource;
+    o.imgAlternatives = from.imgAlternatives;
+  };
+  for (const [id, leader] of leaderOf) {
+    const o = open.find((x) => x.id === id)!;
+    if (leader.imgSource === 'web') await share(o, leader);
+  }
+
   // Kein Internet-Foto: vorhandener Prospekt-Ausschnitt aus dem Katalog, nicht bei jedem Video neu suchen
   const today = new Date().toISOString().slice(0, 10);
   for (const o of open) {
@@ -116,6 +137,11 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
         if (opts.providers.length) e.webTried = today;
       }
     }
+  }
+  // gleiches Produkt in mehreren Märkten ohne Internet-Foto: frisches Fleisch trotzdem überall mit demselben Bild
+  for (const [id, leader] of leaderOf) {
+    const o = open.find((x) => x.id === id)!;
+    if (leader.img && o.imgSource !== 'web' && o.imgSource !== 'library' && keepAsPhoto(o.category)) await share(o, leader);
   }
   await opts.library.save();
   return { notes };

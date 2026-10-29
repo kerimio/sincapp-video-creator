@@ -5,7 +5,10 @@ import type { Category } from '../extract/schema';
 export interface GlossaryEntry {
   de: string;
   tr: string;
-  /** weitere Schreibweisen aus Prospekten (DE oder TR); der feste Name selbst zählt immer mit */
+  /**
+   * weitere Schreibweisen aus Prospekten (DE oder TR); der feste Name selbst zählt immer mit.
+   * "tee+cay" = beide Wörter irgendwo im Namen ("Goran Tee Mevlana Çay").
+   */
   match: string[];
   /** Warengruppe erzwingen, z. B. "fleisch" für Hack */
   category?: Category;
@@ -24,6 +27,18 @@ export const DEFAULT_GLOSSARY: GlossaryEntry[] = [
   { de: 'Lammgulasch', tr: 'Kuzu Kuşbaşı', category: 'fleisch', match: ['lammgulasch', 'gulasch vom lamm', 'kuzu kusbasi'] },
   { de: 'Lammkoteletts', tr: 'Kuzu Pirzola', category: 'fleisch', match: ['lammkotelett', 'lammkoteletts', 'lammkoteletten', 'kuzu pirzola'] },
   { de: 'Lammkeule', tr: 'Kuzu But', category: 'fleisch', match: ['lammkeule', 'kuzu but'] },
+  // Grundbedarf: die Marke bleibt davor stehen ("Mevlana" + "Schwarztee"). Nur eindeutige Namen –
+  // ein einzelnes "Butter" träfe auch "Butter Kekse".
+  { de: 'Schwarztee', tr: 'Siyah Çay', category: 'getraenke', match: ['schwarzer tee', 'siyah cay', 'turkischer tee', 'turk cayi', 'rize cayi', 'tee+cay', 'cay+tee'] },
+  { de: 'Grüner Tee', tr: 'Yeşil Çay', category: 'getraenke', match: ['gruntee', 'yesil cay'] },
+  { de: 'Tomatenmark', tr: 'Domates Salçası', category: 'konserven', match: ['tomatenpaste', 'tomaten paste', 'domates salcasi', 'tomatenmark+salca'] },
+  { de: 'Paprikamark', tr: 'Biber Salçası', category: 'konserven', match: ['paprikapaste', 'paprika paste', 'biber salcasi', 'paprikamark+salca'] },
+  { de: 'Sonnenblumenöl', tr: 'Ayçiçek Yağı', category: 'grundnahrung', match: ['sonnenblumen ol', 'aycicek yagi'] },
+  { de: 'Olivenöl', tr: 'Zeytinyağı', category: 'grundnahrung', match: ['oliven ol', 'zeytinyagi', 'zeytin yagi', 'natives olivenol extra', 'olivenol extra nativ'] },
+  { de: 'Kichererbsen', tr: 'Nohut', match: ['nohut'] },
+  { de: 'Rote Linsen', tr: 'Kırmızı Mercimek', category: 'grundnahrung', match: ['linsen rot', 'kirmizi mercimek'] },
+  { de: 'Weizenmehl', tr: 'Buğday Unu', category: 'grundnahrung', match: ['bugday unu'] },
+  { de: 'Ayran', tr: 'Ayran', category: 'getraenke', match: [] },
 ];
 
 /** Klein, ohne Akzente und Satzzeichen: "Rinderhackfleisch-Mischung" → "rinderhackfleisch mischung" */
@@ -47,8 +62,12 @@ export function findGlossary(name: { de: string; tr: string }, entries: Glossary
   const hay = [glossaryKey(name.de), glossaryKey(name.tr)].map((s) => ` ${s} `);
   let best: { e: GlossaryEntry; len: number } | null = null;
   for (const e of entries) {
-    for (const m of [e.de, e.tr, ...e.match].map(glossaryKey).filter(Boolean)) {
-      if (hay.some((h) => h.includes(` ${m} `)) && (!best || m.length > best.len)) best = { e, len: m.length };
+    for (const raw of [e.de, e.tr, ...e.match]) {
+      const parts = raw.split('+').map(glossaryKey).filter(Boolean);
+      if (!parts.length) continue;
+      const len = parts.join(' ').length;
+      // alle Teile im selben Namen (DE oder TR), jeweils als ganze Wörter
+      if (hay.some((h) => parts.every((m) => h.includes(` ${m} `))) && (!best || len > best.len)) best = { e, len };
     }
   }
   return best?.e ?? null;
