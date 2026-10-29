@@ -380,12 +380,6 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
  * Seite eines Markts: oben zwei große Karten nebeneinander (frisches Fleisch), darunter bis zu drei kleine
  * nebeneinander. Nutzt die Fläche zwischen Kopf und Laufband (bzw. Seitenende), in allen Formaten.
  */
-/** Überschriften der Reihen auf einer Markt-Seite (ohne Imperativ, siehe Design System). */
-const ROW_LABELS = {
-  big: { de: 'Angebote der Woche', tr: 'Haftanın fırsatları' },
-  small: { de: 'Außerdem günstig', tr: 'Ayrıca uygun' },
-} as const;
-
 function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers: Offer[]; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls; look: Look; bottom: number }) {
   const { d: D, c, L } = look;
   const P = L.page;
@@ -402,8 +396,10 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   // der Rest verteilt sich über und unter dem Block (unten etwas mehr, dort liegt in Storys die Antwortleiste).
   const base = { big: bigW * (big.length === 1 ? 0.8 : 1.05), small: small.length ? smallW * 1.4 : 0 };
   const most = { big: bigW * (big.length === 1 ? 0.95 : 1.28), small: small.length ? smallW * 1.7 : 0 };
-  const labelH = Math.round(P.bigName * 1.1);
-  const labels = zone - (rows - 1) * gap - base.big - base.small >= rows * labelH * 1.6;
+  const mp = D.marketPage;
+  const text = { big: mp.labelBig[lang].trim(), small: mp.labelSmall[lang].trim() };
+  const labelH = Math.round(P.bigName * 1.1 * mp.labelScale);
+  const labels = mp.labels && !!(text.big || text.small) && zone - (rows - 1) * gap - base.big - base.small >= rows * labelH * 1.6;
   const avail = zone - (rows - 1) * gap - (labels ? rows * labelH : 0);
   const grow = Math.max(0, Math.min(1, (avail - base.big - base.small) / (most.big + most.small - base.big - base.small || 1)));
   const fit = Math.min(1, avail / (base.big + base.small));
@@ -416,15 +412,18 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
     ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: bigY, w: bigW, h: bigH, size: 'big' as const })),
     ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: smallY, w: smallW, h: smallH, size: 'small' as const })),
   ];
-  const heads = labels ? [{ y: bigY - labelH, text: ROW_LABELS.big[lang], d: s + 0.2 }, ...(small.length ? [{ y: smallY - labelH, text: ROW_LABELS.small[lang], d: s + 0.55 }] : [])] : [];
+  const heads = labels ? [{ y: bigY - labelH, text: text.big, d: s + 0.2 }, ...(small.length ? [{ y: smallY - labelH, text: text.small, d: s + 0.55 }] : [])].filter((h) => h.text) : [];
+  const labelColor = theme.dark ? c.accent2 : c.accent;
+  const lineColor = mp.lineColor === 'akzent' ? labelColor : theme.dark || theme.white ? 'rgba(255,255,255,.22)' : 'rgba(41,32,25,.16)';
+  const lineStyle = ({ durchgezogen: 'solid', gestrichelt: 'dashed', gepunktet: 'dotted', aus: 'none' } as const)[mp.line];
   return (
     <>
       {heads.map(({ y, text, d }, k) => {
         const p = tw(T, d, d + 0.6, 0, 1, MOTION.enter);
         return (
           <div key={`h${k}`} style={abs({ left: 90, top: y, width: 900, height: labelH - 14, display: 'flex', alignItems: 'center', gap: 22, opacity: p })}>
-            <div style={{ fontSize: Math.round(labelH * 0.5), fontWeight: 900, letterSpacing: '0.04em', textTransform: 'uppercase', color: theme.dark ? c.accent2 : c.accent, whiteSpace: 'nowrap', transform: `translateX(${(1 - p) * -30}px)` }}>{text}</div>
-            <div style={{ flex: 1, height: 3, borderRadius: 2, background: theme.dark ? 'rgba(255,255,255,.18)' : 'rgba(41,32,25,.14)', transform: `scaleX(${p})`, transformOrigin: '0 50%' }} />
+            <div style={{ fontSize: Math.round(labelH * 0.5), fontWeight: 900, letterSpacing: '0.04em', textTransform: 'uppercase', color: labelColor, whiteSpace: 'nowrap', transform: `translateX(${(1 - p) * -30}px)` }}>{text}</div>
+            {lineStyle !== 'none' && <div style={{ flex: 1, height: 0, borderTop: `${mp.lineWidth}px ${lineStyle} ${lineColor}`, transform: `scaleX(${p})`, transformOrigin: '0 50%' }} />}
           </div>
         );
       })}
@@ -442,7 +441,7 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
         const fs = fitSize(name, w - pad * 2 - 8, { weight: 900, tracking: -0.035, upper: true, lang, size: size === 'big' ? Math.min(54, P.bigName) : 30 }, 14);
         const lines = name.length;
         // Preis groß genug, dass man ihn im Vorbeiwischen liest; bei schmalen Karten nur so groß, wie er hineinpasst
-        const tagK = Math.min(size === 'big' ? 0.82 : 0.6, (w - pad * 2 - 8) / tagWidth(o, lang, P.tagScale));
+        const tagK = Math.min((size === 'big' ? 0.82 : 0.6) * mp.priceScale, (w - pad * 2 - 8) / tagWidth(o, lang, P.tagScale));
         const nameH = lines * fs * 1.02;
         return (
           <div key={k} style={abs({ left: x, top: y, width: w, height: h, transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
@@ -662,7 +661,7 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
               ) : (
                 <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
               )}
-              <MarketInfo theme={theme} dates={pm?.dates ? formatDateRange(pm.dates.from, pm.dates.to) : dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: undefined } } : story} lang={lang} hd={hd} urls={urls} look={look} />
+              <MarketInfo theme={theme} dates={pm?.dates ? formatDateRange(pm.dates.from, pm.dates.to) : dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: pm.instagram } } : story} lang={lang} hd={hd} urls={urls} look={look} />
               {pm ? (
                 <MarketGrid offers={offers} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} bottom={(story.banner?.[lang] ? P.bannerTop : Lay.H) - Math.round(P.rowGap * 1.4)} />
               ) : (
