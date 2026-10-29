@@ -8,7 +8,7 @@ import { safeName } from '../src/app/jobs';
 let server: Awaited<ReturnType<typeof startAppServer>>;
 let jobs = '';
 const saved: Record<string, string | undefined> = {};
-const ENV = ['SINCAPP_JOBS', 'SINCAPP_LIBRARY', 'SINCAPP_ENV_FILE', 'SINCAPP_NO_OPENFOODFACTS', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'SINCAPP_AI'];
+const ENV = ['SINCAPP_JOBS', 'SINCAPP_LIBRARY', 'SINCAPP_ENV_FILE', 'SINCAPP_NO_OPENFOODFACTS', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'SINCAPP_AI', 'INSTAGRAM_ACCESS_TOKEN'];
 
 beforeAll(async () => {
   for (const k of ENV) saved[k] = process.env[k];
@@ -20,6 +20,7 @@ beforeAll(async () => {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.GEMINI_API_KEY;
   delete process.env.BRAVE_API_KEY;
+  delete process.env.INSTAGRAM_ACCESS_TOKEN;
   server = await startAppServer(0, () => {});
 });
 afterAll(async () => {
@@ -43,7 +44,7 @@ describe('App-Server', () => {
   it('speichert Keys in der .env, ohne sie zurückzugeben', async () => {
     expect((await api('GET', '/api/settings')).data.BRAVE_API_KEY).toBe(false);
     const { data } = await api('PUT', '/api/settings', { BRAVE_API_KEY: ' test-key\n', EVIL: 'x' });
-    expect(data).toEqual({ ANTHROPIC_API_KEY: false, GEMINI_API_KEY: false, BRAVE_API_KEY: true, REMOVEBG_API_KEY: false, ai: null });
+    expect(data).toEqual({ ANTHROPIC_API_KEY: false, GEMINI_API_KEY: false, BRAVE_API_KEY: true, REMOVEBG_API_KEY: false, INSTAGRAM_ACCESS_TOKEN: false, ai: null });
     const env = readFileSync(process.env.SINCAPP_ENV_FILE!, 'utf8');
     expect(env).toBe('BRAVE_API_KEY=test-key\n');
     await api('PUT', '/api/settings', { BRAVE_API_KEY: '' });

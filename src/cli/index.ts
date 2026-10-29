@@ -25,7 +25,8 @@ import { prepareStory } from '../app/pipeline';
 import { readMarket } from '../firestore/firestore';
 
 // .env laden (Node ≥ 20.12)
-if (existsSync(join(ROOT, '.env'))) process.loadEnvFile?.(join(ROOT, '.env'));
+const envFile = process.env.SINCAPP_ENV_FILE || join(ROOT, '.env');
+if (existsSync(envFile)) process.loadEnvFile?.(envFile);
 
 const program = new Command();
 program.name('sincapp-story').description('Prospekt rein, Instagram-Story (MP4) raus');

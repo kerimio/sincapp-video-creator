@@ -18,9 +18,14 @@ import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summ
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
 import { MAGIC_PACK } from '../core/packs';
 import { checkCampaign, prepareCampaign, type CatalogCampaign } from './campaign';
+import { InstagramClient, type IgAccount } from '../instagram/graph';
+import { publishFiles, type Tunnel } from '../instagram/host';
+import { checkPost, IgPost, publishPost } from '../instagram/post';
+import { readPosts, Scheduler, updatePosts } from '../instagram/schedule';
+import { randomUUID } from 'node:crypto';
 
 const INPUT_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.pdf']);
-const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY'] as const;
+const KEYS = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'BRAVE_API_KEY', 'REMOVEBG_API_KEY', 'INSTAGRAM_ACCESS_TOKEN'] as const;
 const SAMPLES = join(ROOT, 'reference/samples/saray-2026-10-28');
 
 interface Run {
@@ -54,8 +59,47 @@ export function appVersion() {
   return r.status === 0 ? r.stdout.trim() : JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 }
 
-export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch) {
+export async function startAppServer(port = 4321, log: (m: string) => void = console.log, fetchImpl: typeof fetch = fetch, opts: { tunnel?: Tunnel; scheduler?: boolean } = {}) {
   const runs = new Map<string, Run>();
+
+  // ---------- Instagram ----------
+  // Konto 10 min merken, damit nicht jeder Seitenaufruf Instagram fragt
+  let igCache: { token: string; at: number; account: IgAccount | null; error?: string } | null = null;
+  const igClient = () => (process.env.INSTAGRAM_ACCESS_TOKEN ? new InstagramClient(process.env.INSTAGRAM_ACCESS_TOKEN, fetchImpl) : null);
+  const igAccount = async (fresh = false): Promise<{ account: IgAccount | null; error?: string }> => {
+    const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+    if (!token) return { account: null };
+    if (!fresh && igCache && igCache.token === token && Date.now() - igCache.at < 10 * 60_000) return igCache;
+    const r = await igClient()!.me().then((account) => ({ account }), (e: Error) => ({ account: null, error: e.message }));
+    igCache = { token, at: Date.now(), ...r };
+    return r;
+  };
+  // Der Token hält 60 Tage; die App verlängert ihn einmal am Tag (geht ab 24 h Alter, vorher meldet Instagram einen Fehler)
+  const refreshToken = async () => {
+    const c = igClient();
+    if (!c) return;
+    const t = await c.refresh().catch(() => null);
+    if (t && t !== process.env.INSTAGRAM_ACCESS_TOKEN) await writeEnv({ INSTAGRAM_ACCESS_TOKEN: t });
+  };
+  const scheduler = new Scheduler({
+    jobDirs: async () => (await listJobs()).map((j) => jobPath(j.id)),
+    log,
+    publish: async (jobDir, post, say) => {
+      const { account, error } = await igAccount(true);
+      if (!account) throw new Error(error ?? 'Instagram ist nicht verbunden (Einstellungen)');
+      return publishPost(post, post.files.map((f) => join(jobDir, f)), {
+        client: igClient()!,
+        igId: account.id,
+        host: (files) => publishFiles(files, join(jobDir, 'work', 'instagram'), { log: say, tunnel: opts.tunnel, fetchImpl }),
+        log: say,
+      });
+    },
+  });
+  if (opts.scheduler !== false) {
+    scheduler.start();
+    void refreshToken();
+    setInterval(() => void refreshToken(), 24 * 3600_000).unref();
+  }
   // Firestore kostet pro gelesenem Dokument: Listen zwischenspeichern (auch über Neustarts),
   // Märkte 6 h, Prospekte 15 min; nur Prospekte der letzten 3 Wochen lesen. "Neu laden" holt sofort frisch.
   const listFile = join(marketsCacheDir(), 'firestore-listen.json');
@@ -191,7 +235,7 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
       const chosen = picks.map((x) => {
         const m = ms.find((y) => y.id === x.marketId)!;
         const c = own.get(m.id);
-        return { ...prospects.find((y) => y.id === x.prospectId)!, marketName: m.name, ...(c ? { marketLogo: trimmed.get(c.slug) ?? c.logo, marketAddress: c.addresses[0] } : {}) };
+        return { ...prospects.find((y) => y.id === x.prospectId)!, marketName: m.name, ...(c ? { marketLogo: trimmed.get(c.slug) ?? c.logo, marketAddress: c.addresses[0], ...(c.instagram ? { marketInstagram: c.instagram } : {}) } : {}) };
       });
       const market = mixed ? await mixMarket(ms) : await cacheMarket(ms[0], fetchImpl);
       const title = mixed ? `sincapp – ${ms.map((m) => m.name).join(' + ')}` : chosen.length ? `${ms[0].name} – ${chosen.map((x) => x.title).join(' + ')}` : ms[0].name;
@@ -230,6 +274,19 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     }
 
     if (p.startsWith('/api/library') && (await catalogApi(method, p, req, res))) return true;
+
+    if (method === 'GET' && p === '/api/instagram') {
+      const { account, error } = await igAccount(url.searchParams.has('fresh'));
+      const quota = account ? await igClient()!.quota(account.id) : null;
+      // „problem“ statt „error“: die App wertet ein error-Feld als fehlgeschlagene Anfrage
+      return sendJson(res, { configured: !!process.env.INSTAGRAM_ACCESS_TOKEN, username: account?.username ?? null, problem: error ?? null, quota });
+    }
+    if (method === 'GET' && p === '/api/instagram/plan') {
+      // Alle geplanten Beiträge über alle Jobs – für die Übersicht
+      const all = [];
+      for (const j of await listJobs()) for (const post of await readPosts(jobPath(j.id))) all.push({ ...post, jobId: j.id, jobTitle: j.title });
+      return sendJson(res, all.sort((a, b) => a.at.localeCompare(b.at)));
+    }
 
     if (p === '/api/jobs') {
       if (method === 'GET') return sendJson(res, await listJobs());
@@ -308,6 +365,53 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
         return sendJson(res, runs.get(id), 202);
       }
       if (sub === 'progress' && method === 'GET') return sendJson(res, runs.get(id) ?? null);
+
+      if (sub === 'instagram') {
+        if (method === 'GET') return sendJson(res, await readPosts(dir));
+        if (method === 'POST') {
+          if (!process.env.INSTAGRAM_ACCESS_TOKEN) throw new Error('Instagram ist noch nicht verbunden – bitte in den Einstellungen den Zugang eintragen');
+          const b = JSON.parse((await readBody(req)).toString('utf8')) as Partial<IgPost>;
+          const files = (b.files ?? []).map(String);
+          // nur fertige Export-Dateien dieses Jobs
+          if (files.some((f) => !/^output\/[\w./-]+$/.test(f) || f.includes('..') || !existsSync(join(dir, f)))) throw new Error('Datei nicht gefunden – bitte zuerst exportieren');
+          const at = b.at ? new Date(b.at) : new Date();
+          if (Number.isNaN(at.getTime())) throw new Error('Ungültiger Zeitpunkt');
+          const post = IgPost.parse({ id: randomUUID().slice(0, 8), kind: b.kind, files, caption: b.caption ?? '', tags: b.tags ?? [], at: at.toISOString(), label: b.label, status: 'geplant', createdAt: new Date().toISOString() });
+          const err = checkPost(post);
+          if (err) throw new Error(err);
+          await updatePosts(dir, (posts) => posts.push(post));
+          if (at.getTime() <= Date.now() + 1000) scheduler.kick();
+          return sendJson(res, post, 201);
+        }
+      }
+      const ig = sub.match(/^instagram\/([\w-]+)(?:\/(retry))?$/);
+      if (ig) {
+        const [, pid, action] = ig;
+        if (method === 'DELETE') {
+          const r = await updatePosts(dir, (posts) => {
+            const i = posts.findIndex((x) => x.id === pid);
+            if (i < 0) return 'weg';
+            if (posts[i].status === 'läuft') return 'läuft';
+            posts.splice(i, 1);
+            return 'ok';
+          });
+          if (r === 'läuft') throw new Error('Wird gerade geteilt – bitte kurz warten');
+          return sendJson(res, { ok: true });
+        }
+        if (method === 'POST' && action === 'retry') {
+          const b = (await readBody(req)).toString('utf8');
+          const at = b && JSON.parse(b).at ? new Date(JSON.parse(b).at) : new Date();
+          if (Number.isNaN(at.getTime())) throw new Error('Ungültiger Zeitpunkt');
+          const post = await updatePosts(dir, (posts) => {
+            const x = posts.find((y) => y.id === pid);
+            if (x && x.status !== 'läuft' && x.status !== 'veröffentlicht') Object.assign(x, { status: 'geplant', at: at.toISOString(), message: undefined });
+            return x;
+          });
+          if (!post) return sendJson(res, { error: 'Beitrag nicht gefunden' }, 404);
+          if (at.getTime() <= Date.now() + 1000) scheduler.kick();
+          return sendJson(res, post);
+        }
+      }
 
       if (await apiFor(id)(method, sub, req, res)) return true;
     }

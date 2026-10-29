@@ -74,9 +74,9 @@ export function firestoreMarkets(jobDir: string): { name: string; logo?: string;
   const f = join(jobDir, 'firestore-prospekt.json');
   if (!existsSync(f)) return [];
   const raw = JSON.parse(readFileSync(f, 'utf8'));
-  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string; marketLogo?: string; marketAddress?: string }[];
-  const out = new Map<string, { name: string; logo?: string; address?: string }>();
-  for (const p of prs) if (p.marketName && !out.has(p.marketName)) out.set(p.marketName, { name: p.marketName, ...(p.marketLogo ? { logo: p.marketLogo } : {}), ...(p.marketAddress ? { address: p.marketAddress } : {}) });
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string; marketLogo?: string; marketAddress?: string; marketInstagram?: string }[];
+  const out = new Map<string, { name: string; logo?: string; address?: string; instagram?: string }>();
+  for (const p of prs) if (p.marketName && !out.has(p.marketName)) out.set(p.marketName, { name: p.marketName, ...(p.marketLogo ? { logo: p.marketLogo } : {}), ...(p.marketAddress ? { address: p.marketAddress } : {}), ...(p.marketInstagram ? { instagram: p.marketInstagram } : {}) });
   return out.size >= 2 ? [...out.values()] : [];
 }
 

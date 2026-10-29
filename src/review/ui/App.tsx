@@ -4,6 +4,7 @@ import { BADGES, Story as StorySchema } from '../../core/schema';
 import { BADGE_TEXT } from '../../core/badges';
 import { formatDateRange } from '../../core/format';
 import { CATEGORY_LABEL } from '../../core/catalog';
+import { SharePanel } from './share';
 import type { ExtractedOffer, Extraction } from '../../extract/schema';
 import { type ExportOptions, type JobClient, type RenderState, type State, type StoryOffer } from './api';
 import { DesignPanel, ExportPanel, Preview, type View } from './studio';
@@ -15,7 +16,10 @@ const TR_MAX = 14;
 const JobCtx = createContext<{ api: JobClient; base: string }>(null!);
 type Busy = Record<string, string | undefined>;
 
-export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { api: JobClient; title?: string; onBack?: () => void; initialTab?: 'angebote' | 'design' | 'export' }) {
+type Tab = 'angebote' | 'design' | 'export' | 'teilen';
+
+/** `jobId` nur in der App: dann gibt es den Schritt „Teilen“ (Instagram). */
+export function ReviewPage({ api, title, onBack, initialTab = 'angebote', jobId }: { api: JobClient; title?: string; onBack?: () => void; initialTab?: Tab; jobId?: string }) {
   const [state, setState] = useState<State | null>(null);
   const [story, setStory] = useState<Story | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -25,7 +29,7 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
   const [dialog, setDialog] = useState<string | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'angebote' | 'design' | 'export'>(initialTab);
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [view, setView] = useState<View>('story');
 
   useEffect(() => {
@@ -162,7 +166,7 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
         <div className="spacer" />
         {dirty && <span className="hint">ungespeichert</span>}
         <button onClick={save} disabled={!!validation || rendering || !dirty}>{dirty ? 'Speichern' : '✓ Gespeichert'}</button>
-        {tab !== 'export' && (
+        {(tab === 'angebote' || tab === 'design') && (
           <button className="primary" onClick={() => setTab('export')} disabled={!!validation}>
             {rendering ? `Export läuft … ${Math.round((render?.fraction ?? 0) * 100)} %` : 'Weiter zum Export →'}
           </button>
@@ -176,6 +180,7 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
             <button className={tab === 'angebote' ? 'on' : ''} onClick={() => setTab('angebote')}><i>1</i> Angebote</button>
             <button className={tab === 'design' ? 'on' : ''} onClick={() => setTab('design')}><i>2</i> Design</button>
             <button className={tab === 'export' ? 'on' : ''} onClick={() => setTab('export')}><i>3</i> Export</button>
+            {jobId && <button className={tab === 'teilen' ? 'on' : ''} onClick={() => setTab('teilen')}><i>4</i> Teilen</button>}
           </div>
           {validation && (
             <div className="errors">
@@ -186,6 +191,8 @@ export function ReviewPage({ api, title, onBack, initialTab = 'angebote' }: { ap
           )}
           {tab === 'design' && <DesignPanel story={story} update={update} api={api} say={say} onStory={(s) => { setStory(s); setDirty(false); }} />}
           {tab === 'export' && <ExportPanel story={story} base={state.urlBase} api={api} render={render} start={doExport} dirty={dirty} disabled={!!validation} />}
+          {tab === 'export' && jobId && render?.result && !rendering && <div className="next"><button className="primary" onClick={() => setTab('teilen')}>Weiter zum Teilen →</button></div>}
+          {tab === 'teilen' && jobId && <SharePanel jobId={jobId} story={story} render={render} toExport={() => setTab('export')} say={say} />}
           {tab === 'angebote' && <>
           <StoryHeader story={story} update={update} />
           <OfferCount n={story.offers.length} />

@@ -42,6 +42,7 @@ Prospekt (PDF/Bilder, Firestore)
 | `src/template/` | Das Video-Template (`Story.tsx`), gerendert von Vite + Playwright |
 | `src/render/` | Frames rendern, MP4 bauen, Export-Pakete, ZIP |
 | `src/firestore/` | Lesender Zugriff auf Firestore (REST, öffentlich): Märkte und Prospekte |
+| `src/instagram/` | Teilen auf Instagram: `graph.ts` (API), `post.ts` (Beitrag prüfen und veröffentlichen), `host.ts` (Dateien per Cloudflare-Tunnel öffentlich), `schedule.ts` (geplante Beiträge in `jobs/<id>/instagram.json`, Taktgeber), `drafts.ts` (Vorschläge für die UI) |
 | `tools/*.py` | Bildverarbeitung in Python: `cutout.py` (Freisteller), `single.py` (eine Packung aus Mehrfachabbildung), `crops.py`, `prep.py` |
 
 **Python-Werkzeuge** sprechen immer dasselbe Protokoll: JSON-Liste von Aufträgen auf stdin, pro Auftrag eine JSON-Zeile auf stdout. Aufruf aus TypeScript nur über `runPython(script, args, jobs, onLine)` (`src/python.ts`). Das Modell wird einmal pro Prozess geladen – Aufträge bündeln statt pro Bild einen Prozess starten.
@@ -75,4 +76,5 @@ Prospekt (PDF/Bilder, Firestore)
 - **Neues Export-Paket:** `PACKS` in `src/core/packs.ts`; was gerendert wird, steht in `src/render/export.ts`.
 - **Neuer KI-Anbieter:** `PageReader`/`ProductMatcher` implementieren und in `src/ai/provider.ts` eintragen; immer über `CachingReader`/`CachingMatcher` laufen lassen.
 - **Neue Bildquelle:** `ImageSearchProvider` in `src/images/search.ts`.
+- **Instagram-Beitragsart oder Markierung:** `publishPost` in `src/instagram/post.ts`; UI in `src/review/ui/share.tsx`. Tests nutzen eine Instagram-Attrappe (`test/instagram.test.ts`), nie das echte Konto.
 - **Neue API-Route:** App-weit in `src/app/server.ts`, Katalog in `src/library/catalog-api.ts`, pro Job in `src/review/server.ts` (`jobApi`).

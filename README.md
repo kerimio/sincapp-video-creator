@@ -25,13 +25,23 @@ Märkte (Name, Adresse, Logo, Instagram) und Prospekte (Seiten, Gültigkeit) kom
 
 ## Studio: Design, Formate, Export (Meilenstein 5)
 
-Ein Video entsteht in drei Schritten: **Angebote** prüfen → **Design** wählen → **Export**.
+Ein Video entsteht in vier Schritten: **Angebote** prüfen → **Design** wählen → **Export** → **Teilen** auf Instagram.
 
 - **Neues Video:** Markt wählen, ein oder mehrere Prospekte anhaken. Aus allen Prospekten kommen automatisch die besten Angebote ins Video (groß abgebildete Angebote und in Firestore gepflegte Produkte zuerst).
 - **Design:** 9 Vorlagen (sincapp Marke – Standard für neue Videos, genau nach dem Design System; Klassik, Frisch, Premium, Knallig, Minimal, Black Week, Bayram, Sommer), Sticker pro Angebot, Laufband, alle Farben einzeln oder „Farben aus dem Markt-Logo“, Hintergrund (Logo, Punkte, Verlauf, schlicht), Preis (Etikett, Kreis, flach), Effekte (Einflug, Seitenwechsel, Tempo, Wippen). „Als Standard für <Markt> speichern“ – neue Videos dieses Markts starten dann damit. Eigenes Logo pro Markt hochladbar.
 - **Formate:** Story 9:16, Feed 4:5, Quadrat 1:1, jedes Angebot einzeln als Bild. Die Vorschau rechts schaltet zwischen allen um.
 - **Export:** Pakete („Wochenpaket“, „Nur Story“, „Feed-Beitrag“, „Nur Bilder“) oder frei wählbar; Instagram-Texte mit Hashtags (DE/TR); alles als ZIP. Der Export kostet keine KI-Tokens.
 - **Bild aus dem Prospekt:** Rechteck ziehen oder mit dem Pen umranden – der Ausschnitt wird so übernommen, wie er ist. Hintergrund nur auf Wunsch entfernen.
+
+**Teilen auf Instagram** (Schritt 4, Business- oder Creator-Konto):
+
+- **Story, Reel oder Beitrag** (Bild, Video oder Karussell bis 10) aus den fertigen Dateien wählen, Sprache DE/TR.
+- **Text:** Vorschlag aus dem Export (Wochentext, Text zum Angebot oder Text des Plantags), frei änderbar. Storys haben keinen Text.
+- **Märkte markieren:** Instagram-Namen kommen aus sincapp (Firestore); bei mehreren Märkten nur der Markt des gezeigten Angebots. Weitere Konten von Hand. Markierte Märkte stehen zusätzlich als @Name im Text.
+- **Jetzt teilen oder einplanen** (Datum + Uhrzeit). „7-Tage-Plan einplanen“ legt mit einem Klick für jeden Tag Reel und/oder Story zur gleichen Uhrzeit an, inkl. „Letzte Chance“.
+- Instagram kann über die Schnittstelle nicht selbst planen: Die App teilt zum Termin und muss dafür laufen. War sie aus, holt sie bis zu 3 Stunden nach, danach steht der Beitrag als „verpasst“ da.
+- Einrichtung einmalig in Einstellungen → Instagram (Zugangs-Token aus einer eigenen Meta-App, Anleitung in der App). Der Token liegt in `.env` und wird täglich verlängert.
+- Instagram lädt Dateien nur von einer öffentlichen Adresse. Dafür öffnet die App beim Teilen kurz einen Cloudflare-Schnelltunnel (`cloudflared`, ohne Konto; wird beim ersten Mal nach `.tools/` geladen), der nur diese Dateien unter einem Zufallspfad zeigt. Bilder gehen als JPEG raus, Videos bekommen eine stille Tonspur.
 
 **Zaubern (ohne Zwischenschritte):**
 

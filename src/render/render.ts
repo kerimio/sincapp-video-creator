@@ -42,7 +42,7 @@ export function ffmpegBin() {
   return process.env.FFMPEG_PATH || 'ffmpeg';
 }
 
-function run(cmd: string, args: string[]): Promise<void> {
+export function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((ok, fail) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
