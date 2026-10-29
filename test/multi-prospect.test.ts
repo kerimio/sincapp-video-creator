@@ -21,7 +21,7 @@ const urls = ['a', 'b', 'c', 'd'];
 describe('Seiten ohne Produkte überspringen', () => {
   it('nur wenn alle Produkte Fundstellen haben', () => {
     const loc = (page: number) => ({ page, box: [0, 0, 10, 10] });
-    expect(pagesToRead({ imageUrls: urls, products: [{ name_de: 'A', locations: [loc(2)] }, { name_de: 'B', locations: [loc(3)] }] })).toEqual([2, 3]);
+    expect(pagesToRead({ imageUrls: urls, products: [{ name_de: 'A', locations: [loc(2)] }, { name_de: 'B', locations: [loc(3)] }] })).toEqual([1, 2, 3]); // Seite 1 immer
     expect(pagesToRead({ imageUrls: urls, products: [{ name_de: 'A', locations: [loc(2)] }, { name_de: 'B' }] })).toEqual([1, 2, 3, 4]);
     expect(pagesToRead({ imageUrls: urls, products: [] })).toEqual([1, 2, 3, 4]);
   });

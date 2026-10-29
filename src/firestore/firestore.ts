@@ -129,14 +129,16 @@ export async function listProspects(fetchImpl: Fetch = fetch, since?: string): P
 
 /**
  * Seiten, die gelesen werden müssen (1-basiert). Haben alle Produkte des Prospekts Fundstellen,
- * werden Seiten ohne Produkte (Titelblatt, Rückseite mit Adressen …) übersprungen – das spart KI-Kosten.
+ * werden Seiten ohne Produkte (Rückseite mit Adressen …) übersprungen – das spart KI-Kosten.
+ * Seite 1 wird immer gelesen: Dort stehen die wichtigsten Angebote, auch wenn in Firestore keins davon gepflegt ist
+ * (Saray: 17 Produkte auf den Seiten 2–7, die Titelseite voller Angebote wäre sonst weggefallen).
  * Sonst (keine oder unvollständige Fundstellen) alle Seiten.
  */
 export function pagesToRead(pr: Pick<FsProspect, 'imageUrls' | 'products'>): number[] {
   const all = pr.imageUrls.map((_, i) => i + 1);
   const prods = pr.products ?? [];
   if (!prods.length || prods.some((p) => !p.locations?.length)) return all;
-  const used = new Set(prods.flatMap((p) => p.locations!.map((l) => l.page)));
+  const used = new Set([1, ...prods.flatMap((p) => p.locations!.map((l) => l.page))]);
   const pages = all.filter((n) => used.has(n));
   return pages.length ? pages : all;
 }
