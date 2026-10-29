@@ -1,8 +1,8 @@
 // Produktbild für jedes Angebot finden: Katalog → Internet → Prospekt-Ausschnitt (siehe AGENTS.md, Bildquellen-Reihenfolge).
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, open as openFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { cutoutOffers } from '../cutout/cutout';
-import type { ExtractedOffer } from '../extract/schema';
+import type { Category, ExtractedOffer } from '../extract/schema';
 import { Library, type LibraryEntry } from '../library/library';
 import { runPython } from '../python';
 import { pickBest, type ProductMatcher } from './match';
@@ -39,6 +39,9 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
   for (const o of offers) {
     const hit = opts.library.find({ brand: o.brand, name: o.name, unit: o.unit });
     if (hit && (hit.source.type !== 'prospekt' || hit.webTried || !opts.providers.length)) {
+      if (keepAsPhoto(o.category) && (hit.source.type === 'web' || hit.source.type === 'openfoodfacts') && hit.source.url && (await hasAlpha(opts.library.path(hit)))) {
+        await redoAsPhoto(hit, opts, log);
+      }
       await opts.library.use(hit, join(imagesDir, `${o.id}.png`));
       o.img = `images/${o.id}.png`;
       o.imgSource = 'library';
@@ -70,7 +73,7 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
 
   // Gewählte Internet-Bilder freistellen (oder vorhandene Transparenz übernehmen)
   if (chosen.length) {
-    const results = await cutoutWeb(chosen.map((c) => ({ image: c.file, out: join(imagesDir, `${c.o.id}.png`) }))).catch((e) => {
+    const results = await cutoutWeb(chosen.map((c) => ({ image: c.file, out: join(imagesDir, `${c.o.id}.png`), photo: keepAsPhoto(c.o.category) }))).catch((e) => {
       notes.push(`Freisteller für Internet-Bilder abgebrochen: ${(e as Error).message.split('\n')[0]}`);
       return new Map<string, { ok: boolean; warnings: string[]; width?: number }>();
     });
@@ -172,8 +175,38 @@ export async function findWebImage(
   return { files, errors, rated, best: i === null ? null : files[i] };
 }
 
-/** Internet-Foto freistellen (oder vorhandene Transparenz übernehmen). */
-export async function cutoutWeb(items: { image: string; out: string }[]) {
+/**
+ * Frisches Fleisch bleibt ein Foto mit Hintergrund: Kräuter, Zitrone und Brett schneidet der Freisteller
+ * zackig und mit Löchern aus. Abgepacktes auf weißem Grund wird trotzdem sauber freigestellt (cutout.py).
+ */
+export const keepAsPhoto = (category: Category | undefined) => category === 'fleisch';
+
+/** Hat die PNG einen Alphakanal? (Fotos speichert cutout.py ohne, Freisteller mit.) Byte 25 = Farbtyp. */
+export async function hasAlpha(png: string) {
+  const f = await openFile(png, 'r').catch(() => null);
+  if (!f) return false;
+  try {
+    const buf = Buffer.alloc(26);
+    await f.read(buf, 0, 26, 0);
+    return buf[25] === 6 || buf[25] === 4;
+  } finally {
+    await f.close();
+  }
+}
+
+/** Älteren Freisteller eines Fleisch-Fotos aus dem Katalog neu laden und als Foto speichern (kostenlos, ohne KI). */
+async function redoAsPhoto(e: LibraryEntry, opts: ResolveOptions, log: (m: string) => void) {
+  try {
+    const file = await downloadImage(e.source.url!, join(opts.jobDir, 'work', 'foto', e.img.replace(/\.png$/, '')), opts.fetchImpl);
+    const r = (await cutoutWeb([{ image: file, out: opts.library.path(e), photo: true }])).get(opts.library.path(e));
+    if (r?.ok) log(`${e.name.de}: Foto statt Freisteller`);
+  } catch {
+    /* Bild nicht mehr erreichbar – der alte Freisteller bleibt */
+  }
+}
+
+/** Internet-Foto freistellen (oder vorhandene Transparenz übernehmen); `photo` = als Foto behalten (siehe keepAsPhoto). */
+export async function cutoutWeb(items: { image: string; out: string; photo?: boolean }[]) {
   const results = new Map<string, { ok: boolean; warnings: string[]; width?: number }>();
   if (!items.length) return results;
   await runPython('cutout.py', [], items.map((c) => ({ ...c, bbox: null })), (line) => {

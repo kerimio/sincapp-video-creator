@@ -16,6 +16,39 @@ export const TRANSITIONS = ['kreis', 'schieben', 'blende'] as const;
 /** Ziel des QR-Codes am Schluss */
 export const QR_TARGETS = ['aus', 'route', 'instagram', 'link'] as const;
 
+/** Linie neben den Reihen-Überschriften der Markt-Seiten */
+export const LINE_STYLES = ['durchgezogen', 'gestrichelt', 'gepunktet', 'aus'] as const;
+export const LINE_COLORS = ['dezent', 'akzent'] as const;
+
+const Label = z.object({ de: z.string().max(40), tr: z.string().max(40) });
+
+/** Einstellungen der Markt-Seiten (2 große + 3 kleine Karten je Markt). Leerer Überschriften-Text = diese Überschrift weglassen. */
+export const MarketPage = z.object({
+  /** Preisschild-Größe, 1 = Standard */
+  priceScale: z.number().min(0.5).max(1.6),
+  /** Überschriften über den Reihen */
+  labels: z.boolean(),
+  labelBig: Label,
+  labelSmall: Label,
+  labelScale: z.number().min(0.6).max(1.6),
+  line: z.enum(LINE_STYLES),
+  lineColor: z.enum(LINE_COLORS),
+  /** Linienstärke in Pixeln (bei 1080 px Breite) */
+  lineWidth: z.number().int().min(1).max(12),
+});
+export type MarketPage = z.infer<typeof MarketPage>;
+
+export const MARKET_PAGE_DEFAULT: MarketPage = {
+  priceScale: 1,
+  labels: true,
+  labelBig: { de: 'Angebote der Woche', tr: 'Haftanın fırsatları' },
+  labelSmall: { de: 'Außerdem günstig', tr: 'Ayrıca uygun' },
+  labelScale: 1,
+  line: 'durchgezogen',
+  lineColor: 'dezent',
+  lineWidth: 3,
+};
+
 export const Palette = z.object({
   /** Hintergrund von Intro und Schluss */
   paper: Hex,
@@ -45,6 +78,7 @@ export const Design = z.object({
   qr: z.enum(QR_TARGETS).optional(),
   /** eigener Link für qr = "link" */
   qrLink: z.string().url().max(500).optional(),
+  marketPage: MarketPage.partial().optional(),
 });
 export type Design = z.infer<typeof Design>;
 export type DesignInput = z.input<typeof Design>;
@@ -60,9 +94,10 @@ export interface ResolvedDesign {
   transition: (typeof TRANSITIONS)[number];
   qr: (typeof QR_TARGETS)[number];
   qrLink?: string;
+  marketPage: MarketPage;
 }
 
-type PresetDef = Omit<ResolvedDesign, 'preset' | 'qr' | 'qrLink'> & { label: string; hint: string };
+type PresetDef = Omit<ResolvedDesign, 'preset' | 'qr' | 'qrLink' | 'marketPage'> & { label: string; hint: string };
 
 export const PRESET_DEFS: Record<(typeof PRESETS)[number], PresetDef> = {
   marke: {
@@ -138,6 +173,7 @@ export function resolveDesign(d?: DesignInput | null): ResolvedDesign {
     transition: pick('transition'),
     qr: parsed.qr ?? 'aus',
     qrLink: parsed.qrLink,
+    marketPage: { ...MARKET_PAGE_DEFAULT, ...(parsed.marketPage ?? {}) },
   };
 }
 

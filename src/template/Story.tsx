@@ -240,6 +240,13 @@ function PriceTag({ o, lang, theme, p, look }: { o: Offer; lang: Lang; theme: Pa
   );
 }
 
+/** Breite des Preisschilds bei Maßstab 1 (ohne Animation), damit es in schmale Karten passt. */
+function tagWidth(o: Offer, lang: Lang, k: number) {
+  const unit = unitOf(o, lang);
+  const w = 48 + textWidth(o.price, { weight: 900, size: 80, tracking: -0.05, lang }) + 6 + textWidth('€', { weight: 900, size: 40, lang }) + (unit ? 14 + textWidth(unit, { weight: 800, size: 28, lang }) : 0);
+  return Math.max(1, w * k);
+}
+
 /** Runder Preis-Sticker, sitzt auf der Kartenecke. */
 function PriceCircle({ o, lang, theme, p, size }: { o: Offer; lang: Lang; theme: PageTheme; p: number; size: number }) {
   const unit = unitOf(o, lang);
@@ -381,15 +388,45 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   const zone = bottom - top;
   const big = offers.slice(0, Math.min(2, offers.length));
   const small = offers.slice(big.length);
-  // ohne kleine Reihe dürfen die großen Karten die ganze Fläche nehmen
-  const bigH = small.length ? Math.round((zone - gap) * 0.57) : zone;
-  const smallH = zone - bigH - gap;
+  const bigW = (900 - gap * (big.length - 1)) / big.length;
+  const smallW = small.length ? (900 - gap * (small.length - 1)) / small.length : 0;
+  const rows = small.length ? 2 : 1;
+  // Große Karten etwa quadratisch, kleine etwas höher als breit. Im hohen 9:16-Format bleibt viel Platz:
+  // dann bekommen die Reihen eine Überschrift und die Karten wachsen bis zu einer Obergrenze mit,
+  // der Rest verteilt sich über und unter dem Block (unten etwas mehr, dort liegt in Storys die Antwortleiste).
+  const base = { big: bigW * (big.length === 1 ? 0.8 : 1.05), small: small.length ? smallW * 1.4 : 0 };
+  const most = { big: bigW * (big.length === 1 ? 0.95 : 1.28), small: small.length ? smallW * 1.7 : 0 };
+  const mp = D.marketPage;
+  const text = { big: mp.labelBig[lang].trim(), small: mp.labelSmall[lang].trim() };
+  const labelH = Math.round(P.bigName * 1.1 * mp.labelScale);
+  const labels = mp.labels && !!(text.big || text.small) && zone - (rows - 1) * gap - base.big - base.small >= rows * labelH * 1.6;
+  const avail = zone - (rows - 1) * gap - (labels ? rows * labelH : 0);
+  const grow = Math.max(0, Math.min(1, (avail - base.big - base.small) / (most.big + most.small - base.big - base.small || 1)));
+  const fit = Math.min(1, avail / (base.big + base.small));
+  const bigH = Math.round((base.big + (most.big - base.big) * grow) * fit);
+  const smallH = Math.round((base.small + (most.small - base.small) * grow) * fit);
+  const y0 = top + Math.max(0, Math.round((avail - bigH - smallH) * 0.4));
+  const bigY = y0 + (labels ? labelH : 0);
+  const smallY = bigY + bigH + gap + (labels ? labelH : 0);
   const cells = [
-    ...big.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / big.length), y: top, w: (900 - gap * (big.length - 1)) / big.length, h: bigH, size: 'big' as const })),
-    ...small.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / small.length), y: top + bigH + gap, w: (900 - gap * (small.length - 1)) / small.length, h: smallH, size: 'small' as const })),
+    ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: bigY, w: bigW, h: bigH, size: 'big' as const })),
+    ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: smallY, w: smallW, h: smallH, size: 'small' as const })),
   ];
+  const heads = labels ? [{ y: bigY - labelH, text: text.big, d: s + 0.2 }, ...(small.length ? [{ y: smallY - labelH, text: text.small, d: s + 0.55 }] : [])].filter((h) => h.text) : [];
+  const labelColor = theme.dark ? c.accent2 : c.accent;
+  const lineColor = mp.lineColor === 'akzent' ? labelColor : theme.dark || theme.white ? 'rgba(255,255,255,.22)' : 'rgba(41,32,25,.16)';
+  const lineStyle = ({ durchgezogen: 'solid', gestrichelt: 'dashed', gepunktet: 'dotted', aus: 'none' } as const)[mp.line];
   return (
     <>
+      {heads.map(({ y, text, d }, k) => {
+        const p = tw(T, d, d + 0.6, 0, 1, MOTION.enter);
+        return (
+          <div key={`h${k}`} style={abs({ left: 90, top: y, width: 900, height: labelH - 14, display: 'flex', alignItems: 'center', gap: 22, opacity: p })}>
+            <div style={{ fontSize: Math.round(labelH * 0.5), fontWeight: 900, letterSpacing: '0.04em', textTransform: 'uppercase', color: labelColor, whiteSpace: 'nowrap', transform: `translateX(${(1 - p) * -30}px)` }}>{text}</div>
+            {lineStyle !== 'none' && <div style={{ flex: 1, height: 0, borderTop: `${mp.lineWidth}px ${lineStyle} ${lineColor}`, transform: `scaleX(${p})`, transformOrigin: '0 50%' }} />}
+          </div>
+        );
+      })}
       {cells.map(({ o, x, y, w, h, size }, k) => {
         const d = s + 0.35 + k * 0.16;
         const ent = MOTION.enter;
@@ -403,7 +440,8 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
         const pad = size === 'big' ? 18 : 12;
         const fs = fitSize(name, w - pad * 2 - 8, { weight: 900, tracking: -0.035, upper: true, lang, size: size === 'big' ? Math.min(54, P.bigName) : 30 }, 14);
         const lines = name.length;
-        const tagK = (size === 'big' ? 0.62 : 0.4) * Math.min(1, h / (size === 'big' ? 680 : 500) + 0.25);
+        // Preis groß genug, dass man ihn im Vorbeiwischen liest; bei schmalen Karten nur so groß, wie er hineinpasst
+        const tagK = Math.min((size === 'big' ? 0.82 : 0.6) * mp.priceScale, (w - pad * 2 - 8) / tagWidth(o, lang, P.tagScale));
         const nameH = lines * fs * 1.02;
         return (
           <div key={k} style={abs({ left: x, top: y, width: w, height: h, transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
@@ -623,7 +661,7 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
               ) : (
                 <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
               )}
-              <MarketInfo theme={theme} dates={pm?.dates ? formatDateRange(pm.dates.from, pm.dates.to) : dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: undefined } } : story} lang={lang} hd={hd} urls={urls} look={look} />
+              <MarketInfo theme={theme} dates={pm?.dates ? formatDateRange(pm.dates.from, pm.dates.to) : dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: pm.instagram } } : story} lang={lang} hd={hd} urls={urls} look={look} />
               {pm ? (
                 <MarketGrid offers={offers} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} bottom={(story.banner?.[lang] ? P.bannerTop : Lay.H) - Math.round(P.rowGap * 1.4)} />
               ) : (

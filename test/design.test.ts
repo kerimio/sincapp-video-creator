@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { contrast, pageMode, PRESET_DEFS, PRESETS, resolveDesign, textOn } from '../src/core/design';
+import { contrast, MARKET_PAGE_DEFAULT, pageMode, PRESET_DEFS, PRESETS, resolveDesign, textOn } from '../src/core/design';
 import { pagesFor } from '../src/core/pages';
 import { caption, cityOf } from '../src/core/captions';
 import { parseStory } from '../src/core/schema';
@@ -98,5 +98,19 @@ describe('Sticker und Laufband', () => {
   it('Laufband-Vorschlag nennt den letzten Tag', async () => {
     const { bannerSuggestions } = await import('../src/core/badges');
     expect(bannerSuggestions('2026-11-07')[0]).toEqual({ de: 'Nur bis Samstag!', tr: 'Sadece Cumartesi gününe kadar!' });
+  });
+});
+
+describe('Markt-Seiten-Einstellungen', () => {
+  it('ohne Angabe gelten die Standardwerte, einzelne Werte überschreiben nur sich selbst', () => {
+    expect(resolveDesign({ preset: 'marke' }).marketPage).toEqual(MARKET_PAGE_DEFAULT);
+    const mp = resolveDesign({ preset: 'marke', marketPage: { priceScale: 1.3, line: 'gestrichelt', labelBig: { de: 'Frisch vom Metzger', tr: 'Kasaptan taze' } } }).marketPage;
+    expect(mp).toMatchObject({ priceScale: 1.3, line: 'gestrichelt', lineWidth: 3, labels: true, labelSmall: MARKET_PAGE_DEFAULT.labelSmall });
+    expect(mp.labelBig.tr).toBe('Kasaptan taze');
+  });
+
+  it('lehnt unsinnige Werte ab', () => {
+    expect(() => resolveDesign({ preset: 'marke', marketPage: { priceScale: 5 } })).toThrow();
+    expect(() => resolveDesign({ preset: 'marke', marketPage: { lineWidth: 0 } })).toThrow();
   });
 });

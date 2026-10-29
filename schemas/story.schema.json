@@ -455,6 +455,82 @@
               "type": "string",
               "format": "uri",
               "maxLength": 500
+            },
+            "marketPage": {
+              "type": "object",
+              "properties": {
+                "priceScale": {
+                  "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 1.6
+                },
+                "labels": {
+                  "type": "boolean"
+                },
+                "labelBig": {
+                  "type": "object",
+                  "properties": {
+                    "de": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "tr": {
+                      "type": "string",
+                      "maxLength": 40
+                    }
+                  },
+                  "required": [
+                    "de",
+                    "tr"
+                  ],
+                  "additionalProperties": false
+                },
+                "labelSmall": {
+                  "type": "object",
+                  "properties": {
+                    "de": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "tr": {
+                      "type": "string",
+                      "maxLength": 40
+                    }
+                  },
+                  "required": [
+                    "de",
+                    "tr"
+                  ],
+                  "additionalProperties": false
+                },
+                "labelScale": {
+                  "type": "number",
+                  "minimum": 0.6,
+                  "maximum": 1.6
+                },
+                "line": {
+                  "type": "string",
+                  "enum": [
+                    "durchgezogen",
+                    "gestrichelt",
+                    "gepunktet",
+                    "aus"
+                  ]
+                },
+                "lineColor": {
+                  "type": "string",
+                  "enum": [
+                    "dezent",
+                    "akzent"
+                  ]
+                },
+                "lineWidth": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

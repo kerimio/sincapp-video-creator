@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Story } from '../../core/schema';
 import {
-  BACKGROUNDS, ENTERS, PRESET_DEFS, PRESETS, PRICE_STYLES, QR_TARGETS, SPEEDS, TRANSITIONS, resolveDesign,
-  type DesignInput, type Palette,
+  BACKGROUNDS, ENTERS, LINE_COLORS, LINE_STYLES, MARKET_PAGE_DEFAULT, PRESET_DEFS, PRESETS, PRICE_STYLES, QR_TARGETS, SPEEDS, TRANSITIONS, resolveDesign,
+  type DesignInput, type MarketPage, type Palette,
 } from '../../core/design';
 import { FORMATS, LAYOUTS, type Format } from '../../core/layout';
 import { caption } from '../../core/captions';
@@ -130,6 +130,8 @@ const BG_LABEL: Record<(typeof BACKGROUNDS)[number], string> = { logo: 'Logo-Was
 const PRICE_LABEL: Record<(typeof PRICE_STYLES)[number], string> = { etikett: 'Etikett (schräg)', kreis: 'Kreis-Sticker', flach: 'Flach' };
 const ENTER_LABEL: Record<(typeof ENTERS)[number], string> = { wischen: 'Reinwischen', hoch: 'Von unten', blende: 'Einblenden', pop: 'Aufploppen' };
 const TRANS_LABEL: Record<(typeof TRANSITIONS)[number], string> = { kreis: 'Kreis', schieben: 'Schieben', blende: 'Überblenden' };
+const LINE_LABEL: Record<(typeof LINE_STYLES)[number], string> = { durchgezogen: 'Durchgezogen', gestrichelt: 'Gestrichelt', gepunktet: 'Gepunktet', aus: 'Keine Linie' };
+const LINE_COLOR_LABEL: Record<(typeof LINE_COLORS)[number], string> = { dezent: 'Dezent', akzent: 'Akzentfarbe' };
 const SPEED_LABEL: Record<(typeof SPEEDS)[number], string> = { ruhig: 'Ruhig', normal: 'Normal', schnell: 'Schnell' };
 
 function Chips<T extends string>({ value, options, labels, onChange }: { value: T; options: readonly T[]; labels: Record<T, string>; onChange: (v: T) => void }) {
@@ -214,6 +216,15 @@ export function DesignPanel(p: {
       return { ...d, colors };
     });
 
+  const mp = r.marketPage;
+  const setMp = (patch: Partial<MarketPage>) => set((d) => ({ ...d, marketPage: { ...(d.marketPage ?? {}), ...patch } }));
+  const labelInput = (row: 'labelBig' | 'labelSmall', lang: 'de' | 'tr') => (
+    <label className="grow">
+      {row === 'labelBig' ? 'Große Reihe' : 'Kleine Reihe'} {lang.toUpperCase()}
+      <input value={mp[row][lang]} maxLength={40} placeholder="leer = keine Überschrift" onChange={(e) => setMp({ [row]: { ...mp[row], [lang]: e.target.value } })} />
+    </label>
+  );
+
   const fromLogo = async () => {
     try {
       const cols = await logoColors(`/markets/${p.story.market.logo}`);
@@ -238,7 +249,7 @@ export function DesignPanel(p: {
       <h2>Vorlage</h2>
       <div className="presets">
         {PRESETS.map((k) => (
-          <button key={k} className={`preset ${r.preset === k ? 'on' : ''}`} onClick={() => p.update((s) => ((s.design = { preset: k, qr: s.design?.qr, qrLink: s.design?.qrLink } as Story['design']), s))}>
+          <button key={k} className={`preset ${r.preset === k ? 'on' : ''}`} onClick={() => p.update((s) => ((s.design = { preset: k, qr: s.design?.qr, qrLink: s.design?.qrLink, marketPage: s.design?.marketPage } as Story['design']), s))}>
             <Swatches c={PRESET_DEFS[k].colors} />
             <b>{PRESET_DEFS[k].label}</b>
             <small>{PRESET_DEFS[k].hint}</small>
@@ -264,6 +275,44 @@ export function DesignPanel(p: {
       <Chips value={r.background} options={BACKGROUNDS} labels={BG_LABEL} onChange={(v) => set((d) => ({ ...d, background: v }))} />
       <h2>Preis</h2>
       <Chips value={r.price} options={PRICE_STYLES} labels={PRICE_LABEL} onChange={(v) => set((d) => ({ ...d, price: v }))} />
+      {!!p.story.markets?.length && (
+        <>
+          <h2>Markt-Seiten</h2>
+          <div className="card banner-edit">
+            <label>
+              Preisgröße: <b>{Math.round(mp.priceScale * 100)} %</b>
+              <input type="range" min={0.5} max={1.6} step={0.05} value={mp.priceScale} onChange={(e) => setMp({ priceScale: Number(e.target.value) })} />
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={mp.labels} onChange={(e) => setMp({ labels: e.target.checked })} /> Überschriften über den Reihen
+            </label>
+            {mp.labels && (
+              <>
+                <div className="row">{labelInput('labelBig', 'de')}{labelInput('labelBig', 'tr')}</div>
+                <div className="row">{labelInput('labelSmall', 'de')}{labelInput('labelSmall', 'tr')}</div>
+                <label>
+                  Schriftgröße: <b>{Math.round(mp.labelScale * 100)} %</b>
+                  <input type="range" min={0.6} max={1.6} step={0.05} value={mp.labelScale} onChange={(e) => setMp({ labelScale: Number(e.target.value) })} />
+                </label>
+                <div className="field"><span>Linie</span><Chips value={mp.line} options={LINE_STYLES} labels={LINE_LABEL} onChange={(v) => setMp({ line: v })} /></div>
+                {mp.line !== 'aus' && (
+                  <>
+                    <div className="field"><span>Linienfarbe</span><Chips value={mp.lineColor} options={LINE_COLORS} labels={LINE_COLOR_LABEL} onChange={(v) => setMp({ lineColor: v })} /></div>
+                    <label>
+                      Linienstärke: <b>{mp.lineWidth} px</b>
+                      <input type="range" min={1} max={12} step={1} value={mp.lineWidth} onChange={(e) => setMp({ lineWidth: Number(e.target.value) })} />
+                    </label>
+                  </>
+                )}
+              </>
+            )}
+            <div className="row">
+              <button className="ghost" disabled={!design.marketPage} onClick={() => set((d) => ({ ...d, marketPage: undefined }))}>Zurücksetzen</button>
+            </div>
+            <small className="muted">Gilt für die Seiten mit 2 großen und 3 kleinen Angeboten je Markt. Standard: {MARKET_PAGE_DEFAULT.labelBig.de} / {MARKET_PAGE_DEFAULT.labelSmall.de}.</small>
+          </div>
+        </>
+      )}
       <h2>Effekte</h2>
       <div className="effects">
         <div className="field"><span>Angebote erscheinen</span><Chips value={r.enter} options={ENTERS} labels={ENTER_LABEL} onChange={(v) => set((d) => ({ ...d, enter: v }))} /></div>
