@@ -26,9 +26,9 @@ describe('Auswahl', () => {
     expect(new Set(picked.slice(3).map((o) => o.category)).size).toBe(5);
   });
 
-  it('Fleisch füllt die Story, wenn es mehr gibt als Platz ist', () => {
+  it('Konzept: halb Fleisch, halb Preis-Knaller aus dem Grundbedarf – auch bei nur 2 Plätzen', () => {
     const { offers: picked } = selectOffers(offers, { count: 2 });
-    expect(picked.map((o) => o.category)).toEqual(['wurst', 'wurst']);
+    expect(picked.map((o) => o.category)).toEqual(['wurst', 'grundnahrung']);
   });
 
   it('Thema filtert und ändert die Überschrift', () => {
@@ -50,7 +50,8 @@ describe('Auswahl', () => {
     const copy = offers.map((o) => ({ ...o, priceConfidence: o.id === 's1-1' ? 0.5 : 0.98 }));
     const all = selectOffers(copy, { count: 18 });
     // Wurst bleibt vorn, aber das unsichere Angebot hinter den sicheren Wurst-Angeboten
-    expect(all.offers.slice(0, 3).map((o) => o.id)).toEqual(['s1-2', 's1-3', 's1-1']);
+    expect(all.offers.slice(0, 3).map((o) => o.id).sort()).toEqual(['s1-1', 's1-2', 's1-3']);
+    expect(all.offers[2].id).toBe('s1-1');
     expect(all.warnings.join()).toMatch(/s1-1/);
   });
 

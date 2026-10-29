@@ -13,7 +13,7 @@ import { markBestPrices } from '../library/bestprice';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
-import { buildStory, findTopic, offerBoosts, selectByMarket, selectOffers } from '../select/select';
+import { buildStory, findTopic, offerBoosts, perMarket, selectByMarket, selectOffers } from '../select/select';
 
 export interface JobSettings {
   market: string;
@@ -127,8 +127,8 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const markets = firestoreMarkets(jobDir);
   const names = markets.map((m) => m.name);
   const want = s.count ?? 8;
-  // mehrere Märkte: pro Markt 2–3 Angebote (eine Seite je Markt), Reserve von 2 je Markt
-  const per = names.length <= 5 ? 3 : 2;
+  // mehrere Märkte: pro Markt 2 Fleisch + 2 Preis-Knaller (ab 8 Märkten 1 + 1), Reserve von 2 je Markt
+  const per = perMarket(names.length);
   const shortlist = names.length
     ? selectByMarket(ex.offers, names, { topic, boost, per: per + 2 }).offers
     : selectOffers(ex.offers, { topic, count: Math.min(15, want + Math.max(4, Math.ceil(want / 2))), boost }).offers;
