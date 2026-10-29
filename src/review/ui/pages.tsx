@@ -532,11 +532,12 @@ function InstagramSettings() {
         <details>
           <summary>So bekommst du den Zugangs-Token (einmalig, ca. 10 Minuten)</summary>
           <ol className="small">
-            <li>Das Instagram-Konto muss ein <b>Business- oder Creator-Konto</b> sein (Instagram-App → Einstellungen → Kontotyp und Tools).</li>
-            <li>Auf <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer">developers.facebook.com/apps</a> mit Facebook anmelden und <b>App erstellen</b>. Als Anwendungsfall „Nachrichten und Inhalte auf Instagram verwalten“ wählen.</li>
-            <li>In der App unter <b>App-Rollen → Rollen</b> dein Instagram-Konto als <b>Instagram-Tester</b> hinzufügen und die Einladung in Instagram annehmen (Einstellungen → Website-Berechtigungen → Apps und Websites → Testereinladungen).</li>
-            <li>In der App unter <b>Instagram → API-Einrichtung mit Instagram-Login</b> bei „Zugriffstoken generieren“ dein Konto hinzufügen, bei Instagram anmelden und alle Berechtigungen erlauben (wichtig: Inhalte veröffentlichen).</li>
-            <li>Den angezeigten Token kopieren, hier einfügen und <b>Verbinden</b> klicken.</li>
+            <li>Das Instagram-Konto muss ein öffentliches <b>Business- oder Creator-Konto</b> sein (Instagram-App → Einstellungen → Kontotyp und Tools).</li>
+            <li>Einmalig als Entwickler registrieren: <a href="https://developers.facebook.com/async/registration" target="_blank" rel="noreferrer">developers.facebook.com/async/registration</a>, mit Facebook anmelden, Konto bestätigen, Rolle „Developer“. Ohne Registrierung landet man nur auf der Startseite.</li>
+            <li><b>App erstellen</b> (bzw. „Erste App erstellen“): Anwendungsfall <b>„Andere“</b>, App-Typ <b>„Business“</b>, Name und E-Mail eintragen.</li>
+            <li>Im Dashboard bei <b>Instagram</b> auf <b>„Einrichten“</b> klicken.</li>
+            <li>Links <b>Instagram → API-Einrichtung mit Instagram-Login</b>: dein Konto hinzufügen, bei Instagram anmelden, dann <b>„Token generieren“</b> und den Token kopieren.</li>
+            <li>Hier einfügen und <b>Verbinden</b> klicken.</li>
           </ol>
           <p className="muted small">Die App bleibt im Entwicklungsmodus – für das eigene Konto braucht es keine Prüfung durch Meta. Zum Teilen öffnet die App kurz einen sicheren Cloudflare-Tunnel, damit Instagram die Datei abholen kann (nur diese Datei, danach wird er geschlossen). Beim ersten Mal lädt sie dafür das kleine Programm cloudflared herunter.</p>
         </details>
