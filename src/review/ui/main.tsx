@@ -6,8 +6,9 @@ import { ReviewPage } from './App';
 import { jobClient } from './api';
 import { Home, JobPage, NewJob, SettingsPage } from './pages';
 import { CatalogPage } from './catalog';
+import { GlossaryPage } from './glossary';
 
-/** Einfache Hash-Navigation: #/, #/neu, #/job/<id>, #/einstellungen, #/bibliothek, #/review (Einzel-Review) */
+/** Einfache Hash-Navigation: #/, #/neu, #/job/<id>, #/einstellungen, #/bibliothek, #/glossar, #/review (Einzel-Review) */
 function Router() {
   const [hash, setHash] = useState(location.hash || '#/');
   useEffect(() => {
@@ -25,6 +26,7 @@ function Router() {
   if (hash.startsWith('#/neu')) return <NewJob />;
   if (hash.startsWith('#/einstellungen')) return <SettingsPage />;
   if (hash.startsWith('#/bibliothek')) return <CatalogPage />;
+  if (hash.startsWith('#/glossar')) return <GlossaryPage />;
   return <Home />;
 }
 

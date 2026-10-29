@@ -104,12 +104,12 @@ describe('Prospekte mehrerer Märkte', () => {
     expect(one.offers[0].market).toBeUndefined();
   });
 
-  it('gleiches Produkt in zwei Märkten: nur das günstigste', () => {
+  it('gleiches Produkt in zwei Märkten: jeder Markt zeigt seins (kein Vergleich zwischen Märkten)', () => {
     const a = { ...offer('a', 'Sucuk', [0, 0, 100, 100]), brand: 'Egetürk', price: '9,99', market: 'Saray Market' };
     const b = { ...offer('b', 'Sucuk', [0, 0, 100, 100]), brand: 'Egetürk', price: '8,49', market: 'Yıldız Market' };
     const c = { ...offer('c', 'Tahin', [0, 0, 100, 100], 'konserven'), market: 'Saray Market' };
-    const sel = selectOffers([a, b, c], { count: 8 });
-    expect(sel.offers.map((o) => o.id)).toEqual(['b', 'c']);
+    const sel = selectByMarket([a, b, c], ['Saray Market', 'Yıldız Market']);
+    expect(sel.offers.map((o) => o.id)).toEqual(['a', 'c', 'b']);
     expect(offerToStory(b).market).toBe('Yıldız Market');
   });
 
@@ -163,19 +163,20 @@ describe('Eine Seite pro Markt', () => {
   it('jeder Markt bekommt seine besten Angebote, auch wenn ein anderer viel mehr hat', () => {
     const all = [o('a1', 'A'), o('a2', 'A'), o('a3', 'A'), o('a4', 'A'), o('a5', 'A'), o('b1', 'B', 'konserven'), o('b2', 'B', 'snacks'), o('c1', 'C')];
     const sel = selectByMarket(all, ['A', 'B', 'C']);
-    expect(sel.offers.map((x) => x.market)).toEqual(['A', 'A', 'A', 'A', 'B', 'B']);
-    expect(sel.warnings.join()).toMatch(/C: zu wenige/);
-    // bis 7 Märkte je 4, ab 8 Märkten je 2
-    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    const many = names.flatMap((m) => [o(`${m}1`, m), o(`${m}2`, m), o(`${m}3`, m)]);
-    expect(selectByMarket(many, names).offers).toHaveLength(16);
-    expect(selectByMarket(many, names.slice(0, 7)).offers).toHaveLength(21);
+    // jeder Markt kommt rein, je 5 Angebote (C hat nur eins)
+    expect(sel.offers.map((x) => x.market)).toEqual(['A', 'A', 'A', 'A', 'A', 'B', 'B', 'C']);
+    expect(sel.warnings.join()).toMatch(/C: nur 1/);
+    // keine Obergrenze mehr: 12 Märkte × 5
+    const names = Array.from({ length: 12 }, (_, i) => `M${i}`);
+    const many = names.flatMap((m) => [1, 2, 3, 4, 5, 6].map((k) => o(`${m}-${k}`, m)));
+    expect(selectByMarket(many, names).offers).toHaveLength(60);
   });
 
   it('Seiten folgen den Märkten', () => {
     const story = { offers: ['A', 'A', 'A', 'B', 'B', 'C', 'C', 'C', 'C'].map((market) => ({ market, img: 'x.png', price: '1,99', name: { de: ['X'], tr: ['X'] }, imgZoom: 1 })) };
-    expect(pagesFor(story).map((p) => p.map((x) => x.market).join(''))).toEqual(['AAA', 'BB', 'CC', 'CC']);
-    expect(pagesFor(story, 'quadrat').map((p) => p.length)).toEqual([2, 1, 2, 2, 2]);
+    // eine Seite pro Markt (bis 5 Angebote), in allen Formaten
+    expect(pagesFor(story).map((p) => p.map((x) => x.market).join(''))).toEqual(['AAA', 'BB', 'CCCC']);
+    expect(pagesFor(story, 'quadrat').map((p) => p.map((x) => x.market).join(''))).toEqual(['AAA', 'BB', 'CCCC']);
   });
 });
 
@@ -184,14 +185,14 @@ describe('Konzept fürs Wochenvideo', () => {
     ({ ...offer(id, name, [0, 0, 100, 100], cat), price, unit, market, pageFile });
 
   it('vordere Prospektseiten zählen am meisten, hintere kaum', () => {
-    expect(pageBoost(1, 20)).toBe(2.5);
-    expect(pageBoost(2, 20)).toBe(1.5);
-    expect(pageBoost(3, 20)).toBe(1);
-    expect(pageBoost(20, 20)).toBe(-1);
-    expect(pageBoost(11, 20)).toBeLessThan(0.1);
+    expect(pageBoost(1, 20)).toBe(4);
+    expect(pageBoost(2, 20)).toBe(2.5);
+    expect(pageBoost(3, 20)).toBe(1.5);
+    expect(pageBoost(20, 20)).toBe(-2);
+    expect(pageBoost(11, 20)).toBeLessThan(0);
   });
 
-  it('günstig im Vergleich: Grundpreis gegen den Median, teurer bei anderen Märkten', () => {
+  it('günstig im Vergleich: Grundpreis gegen den Median, Märkte werden nicht verglichen', () => {
     const all = [
       o('reis', 'Reis', 'grundnahrung', '4,99', '5 kg'), o('r2', 'Bulgur', 'grundnahrung', '2,99', '1 kg', 'B'),
       o('r3', 'Mehl', 'grundnahrung', '1,99', '1 kg', 'B'), o('r4', 'Linsen', 'grundnahrung', '3,49', '1 kg', 'B'),
@@ -200,11 +201,11 @@ describe('Konzept fürs Wochenvideo', () => {
     const d = dealScores(all);
     expect(d.get('reis')).toBe(1.5); // 1 €/kg statt 2,99 €/kg Median
     expect(d.get('r4')).toBeLessThan(0);
-    expect(d.get('tee')).toBe(1); // bei B teurer
+    expect(d.get('tee')).toBe(0); // bei B teurer – zählt nicht mehr
     expect(d.get('teeB')).toBe(0);
   });
 
-  it('pro Markt 2 Fleisch (frisch vor Wurst) und 2 Knaller aus verschiedenen Gruppen, Oliven nur zur Not', () => {
+  it('pro Markt 5: groß nur frisches Fleisch (sonst das Beste außer Wurst), dann 3 aus verschiedenen Gruppen, Oliven nur zur Not', () => {
     const all = [
       o('wurst1', 'Sucuk', 'wurst', '3,99', '400 g', 'A', 'work/pages/p1-seite-01.png'),
       o('wurst2', 'Salami', 'wurst', '1,99', '200 g'),
@@ -218,6 +219,35 @@ describe('Konzept fürs Wochenvideo', () => {
     const ex = { pages: [], offers: all };
     const boost = offerBoosts(ex);
     const sel = selectByMarket(all, ['A'], { boost });
-    expect(sel.offers.map((x) => x.id)).toEqual(['wurst1', 'fleisch', 'reis', 'milch']);
+    expect(sel.offers.map((x) => x.id)).toEqual(['fleisch', 'reis', 'wurst1', 'milch', 'oliven']);
+    // zwei Mal frisches Fleisch: beide groß vorn, Wurst erst danach
+    const hack = o('hack', 'Gemischtes Hack', 'fleisch', '5,99', '1 kg', 'A', 'work/pages/p1-seite-09.png');
+    expect(selectByMarket([...all, hack], ['A'], { boost: offerBoosts({ pages: [], offers: [...all, hack] }) }).offers.slice(0, 2).map((x) => x.id)).toEqual(['fleisch', 'hack']);
+  });
+});
+
+describe('Glossar', () => {
+  it('setzt feste Namen ein, egal wie der Prospekt schreibt; die längste Schreibweise gewinnt', async () => {
+    const { findGlossary, mergeGlossary, DEFAULT_GLOSSARY } = await import('../src/core/glossary');
+    const { applyGlossary } = await import('../src/library/glossar');
+    expect(findGlossary({ de: 'Rinderhackfleisch-Mischung (Gemischtes Hackfleisch)', tr: 'Dana kıyma karışımı' }, DEFAULT_GLOSSARY)?.tr).toBe('Karışık Kıyma');
+    expect(findGlossary({ de: 'Rinderhackfleisch', tr: 'Dana Kıyma' }, DEFAULT_GLOSSARY)?.de).toBe('Rinderhack');
+    expect(findGlossary({ de: 'Hähnchenschenkel', tr: '' }, DEFAULT_GLOSSARY)?.tr).toBe('Tavuk But');
+    expect(findGlossary({ de: 'Hackbraten-Gewürz', tr: 'Baharat' }, DEFAULT_GLOSSARY)).toBeNull();
+    // eigener Eintrag ersetzt den Grundbestand
+    const own = mergeGlossary([{ de: 'Gemischtes Hack', tr: 'Karışık Kıyma', match: ['mett'] }]);
+    expect(own.filter((e) => e.de === 'Gemischtes Hack')).toHaveLength(1);
+    const offers = [{ ...offer('x', 'Rinderhackfleisch-Mischung', [0, 0, 1, 1], 'sonstiges'), name: { de: 'Rinderhackfleisch-Mischung (Gemischtes Hackfleisch)', tr: 'Karışık dana kıyma' } }];
+    const notes = applyGlossary(offers, DEFAULT_GLOSSARY);
+    expect(offers[0].name).toEqual({ de: 'Gemischtes Hack', tr: 'Karışık Kıyma' });
+    expect(offers[0].lines.tr).toEqual(['Karışık Kıyma']);
+    expect(offers[0].category).toBe('fleisch');
+    expect(notes[0]).toMatch(/Glossar/);
+  });
+
+  it('prüft eigene Einträge', async () => {
+    const { checkGlossary } = await import('../src/library/glossar');
+    expect(checkGlossary([{ de: ' Sucuk ', tr: 'Sucuk', match: 'Knoblauchwurst, Parmak Sucuk' }])).toEqual([{ de: 'Sucuk', tr: 'Sucuk', match: ['Knoblauchwurst', 'Parmak Sucuk'] }]);
+    expect(() => checkGlossary([{ de: 'X', tr: '' }])).toThrow(/Zeile 1/);
   });
 });

@@ -713,7 +713,6 @@ const MEAT_FIRST = ['fleisch', 'wurst'];
  */
 function OtherOffers(p: { others: ExtractedOffer[]; story: Story; busy: Busy; swap: number | null; onAdd: (id: string) => void; onCancel: () => void }) {
   const [q, setQ] = useState('');
-  const max = p.story.markets?.length ? 30 : 15;
   const target = p.swap !== null ? p.story.offers[p.swap] : null;
   const byMarket = !!p.story.markets?.length;
   const needle = q.trim().toLocaleLowerCase('de');
@@ -757,7 +756,7 @@ function OtherOffers(p: { others: ExtractedOffer[]; story: Story; busy: Busy; sw
                   <b>{o.price} €</b> {o.brand} {o.name.de} {o.unit && <span className="muted">· {o.unit}</span>}
                   {doubtful(o) && <span className="warn"> · Preis prüfen</span>}
                 </div>
-                <button className={target ? 'primary' : ''} disabled={!!p.busy[o.id] || (!target && p.story.offers.length >= max)} onClick={() => p.onAdd(o.id)}>
+                <button className={target ? 'primary' : ''} disabled={!!p.busy[o.id]} onClick={() => p.onAdd(o.id)}>
                   {p.busy[o.id] ?? (target ? 'Einsetzen' : 'Hinzufügen')}
                 </button>
               </div>
@@ -765,7 +764,6 @@ function OtherOffers(p: { others: ExtractedOffer[]; story: Story; busy: Busy; sw
           </div>
         </details>
       ))}
-      {!target && p.story.offers.length >= max && <p className="muted small">Die Story ist voll ({max} Angebote) – mit „Tauschen“ ein Angebot ersetzen.</p>}
     </div>
   );
 }

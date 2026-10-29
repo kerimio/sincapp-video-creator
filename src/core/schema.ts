@@ -75,7 +75,7 @@ export const Story = z
     headline: z.object({ de: Lines, tr: Lines }),
     eyebrow: Localized.optional(),
     /** Mehr als 15 nur bei Videos aus mehreren Märkten (eine Seite je Markt) */
-    offers: z.array(Offer).min(2).max(30),
+    offers: z.array(Offer).min(2),
     /** Angebote pro Seite; ohne Angabe automatisch (3/2-Regel). */
     pages: z.array(z.union([z.literal(2), z.literal(3)])).optional(),
     /** Pfad relativ zum Job-Ordner. */
@@ -97,6 +97,8 @@ export const Story = z
           address: z.string().optional(),
           /** Instagram-Name des Markts (ohne @), zum Markieren beim Teilen */
           instagram: z.string().regex(/^[A-Za-z0-9._]+$/).optional(),
+          /** Gültigkeit laut Prospekt dieses Markts; ohne Angabe gilt `dates` der Story */
+          dates: z.object({ from: IsoDate, to: IsoDate }).optional(),
         }),
       )
       .optional(),
