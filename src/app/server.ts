@@ -17,6 +17,8 @@ import { startStaticServer } from '../server/static';
 import { createJob, jobPath, jobsDir, listJobs, readJob, safeName, saveJob, summarize } from './jobs';
 import { prepareStory, type JobSettings, type Progress } from './pipeline';
 import { MAGIC_PACK } from '../core/packs';
+import { readOwnGlossary, saveOwnGlossary } from '../library/glossar';
+import { DEFAULT_GLOSSARY } from '../core/glossary';
 import { checkCampaign, prepareCampaign, type CatalogCampaign } from './campaign';
 import { InstagramClient, type IgAccount } from '../instagram/graph';
 import { publishFiles, type Tunnel } from '../instagram/host';
@@ -274,6 +276,12 @@ export async function startAppServer(port = 4321, log: (m: string) => void = con
     }
 
     if (p.startsWith('/api/library') && (await catalogApi(method, p, req, res))) return true;
+
+    if (p === '/api/glossar') {
+      // eigene Einträge bearbeiten; der Grundbestand kommt zur Ansicht mit
+      if (method === 'PUT') await saveOwnGlossary(JSON.parse((await readBody(req)).toString('utf8')));
+      return sendJson(res, { own: await readOwnGlossary(), base: DEFAULT_GLOSSARY });
+    }
 
     if (method === 'GET' && p === '/api/instagram') {
       const { account, error } = await igAccount(url.searchParams.has('fresh'));

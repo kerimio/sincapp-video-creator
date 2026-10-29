@@ -346,3 +346,9 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 14
 .post .chip.fehler, .post .chip.verpasst { background: #fcece6; border-color: var(--red); color: var(--red); }
 .post .chip.läuft { background: var(--nut); color: var(--paper); border-color: var(--nut); }
 @media (max-width: 640px) { .post { flex-wrap: wrap; } .post-actions { flex-direction: row; width: 100%; justify-content: flex-end; } }
+/* Glossar */
+.glossary { display: flex; flex-direction: column; gap: 8px; }
+.gl-row { display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 8px; align-items: center; }
+.gl-row input { width: 100%; }
+.gl-head { font-size: 12px; font-weight: 700; color: var(--ink2); }
+@media (max-width: 640px) { .gl-row { grid-template-columns: 1fr 1fr; } .gl-row > :nth-child(3) { grid-column: 1 / -1; } .gl-head { display: none; } }

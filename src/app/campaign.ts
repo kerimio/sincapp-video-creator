@@ -26,7 +26,6 @@ const priceOf = (raw: string) => normalizePrice(raw.trim().replace(/^(\d+)[.,](\
 /** Prüft die Eingaben; wirft mit einer verständlichen Meldung. */
 export function checkCampaign(c: CatalogCampaign) {
   if (!Array.isArray(c.items) || c.items.length < 2) throw new Error('Bitte mindestens 2 Produkte wählen');
-  if (c.items.length > 15) throw new Error('Höchstens 15 Produkte pro Kampagne');
   if (!ISO.test(c.from) || !ISO.test(c.to) || c.from > c.to) throw new Error('Bitte einen gültigen Zeitraum angeben');
   for (const it of c.items) if (!priceOf(it.price)) throw new Error(`Preis "${it.price}" nicht lesbar`);
 }

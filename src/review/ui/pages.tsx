@@ -37,6 +37,7 @@ export function Shell({ children, active }: { children: React.ReactNode; active?
         <nav>
           <a className={active === 'home' ? 'on' : ''} href="#/">Übersicht</a>
           <a className={active === 'lib' ? 'on' : ''} href="#/bibliothek">Produkt-Katalog</a>
+          <a className={active === 'glossar' ? 'on' : ''} href="#/glossar">Glossar</a>
           <a className={active === 'set' ? 'on' : ''} href="#/einstellungen">Einstellungen</a>
         </nav>
       </header>
@@ -294,7 +295,7 @@ export function NewJob() {
               </label>
               <label>
                 Angebote im Video: <b>{count}</b>
-                <input type="range" min={2} max={12} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+                <input type="range" min={2} max={30} value={count} onChange={(e) => setCount(Number(e.target.value))} />
               </label>
             </div>
             <p className="muted small">Empfohlen sind 5–8 Angebote (ca. 20–25 Sekunden). Pro Seite im Video stehen 3 oder 2 Angebote. Beim Prüfen kannst du alles noch ändern.</p>

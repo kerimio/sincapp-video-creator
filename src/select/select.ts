@@ -52,14 +52,14 @@ function prospectPage(o: Pick<ExtractedOffer, 'page' | 'pageFile'>): { prospect:
 }
 
 /**
- * Märkte legen die wichtigsten Angebote nach vorn: Titelseite +2,5, Seite 2 +1,5, danach abnehmend,
- * die hinteren Seiten (Restposten, Non-Food) bis −1.
+ * Märkte legen die wichtigsten Angebote nach vorn: Titelseite +4, Seite 2 +2,5, Seite 3 +1,5, danach abnehmend,
+ * die hinteren Seiten (Restposten, Non-Food) bis −2. Das wiegt mehr als alles andere.
  */
 export function pageBoost(n: number, last: number) {
-  if (n <= 1) return 2.5;
-  if (n === 2) return 1.5;
+  if (n <= 1) return 4;
+  if (n === 2) return 2.5;
   const rel = last > 3 ? (n - 3) / (last - 3) : 0;
-  return Number((1 - 2 * rel).toFixed(2));
+  return Number((1.5 - 3.5 * rel).toFixed(2));
 }
 
 /**
@@ -94,7 +94,7 @@ export const MEAT: string[] = ['fleisch', 'wurst'];
  * 0 = nur, wenn sonst nichts da ist (z. B. ein Kontaktgrill).
  */
 export const INTEREST: Record<Category, number> = {
-  fleisch: 3, wurst: 2, obst_gemuese: 2, kaese_milch: 2, grundnahrung: 2, getraenke: 1.5, backwaren: 1, tiefkuehl: 1,
+  fleisch: 3, wurst: 1, obst_gemuese: 2, kaese_milch: 2, grundnahrung: 2, getraenke: 1.5, backwaren: 1, tiefkuehl: 1,
   suesses: 1, snacks: 1, konserven: 0.5, haushalt: 0.5, drogerie: 0.5, sonstiges: 0,
 };
 // Was fast jeder kauft, zieht mehr als ein Nischenprodukt derselben Gruppe ("Reis 5 kg" vor "Tahin")
@@ -102,8 +102,8 @@ const STAPLE = /(hähnchen|haehnchen|hühner|huhn|tavuk|rind|dana|kalb|lamm|kuzu
 const NICHE = /(olive|zeytin|gewürz|gewuerz|baharat|soße|sosse|sauce|sos |essig|sirke|pul biber|sumak|nane|minze|duft|kerze|grill|maschine|topf|pfanne|deko)/i;
 
 /**
- * Wie günstig ein Angebot ist, ohne KI: Grundpreis (€/kg, €/l) gegen den Median derselben Warengruppe in allen
- * Prospekten der Woche (bis ±1,5), plus 1, wenn dasselbe Produkt bei einem anderen Markt teurer ist.
+ * Wie günstig ein Angebot ist, ohne KI: Grundpreis (€/kg, €/l) gegen den Median derselben Warengruppe
+ * im selben Prospekt bzw. Markt (bis ±1,5). Märkte werden nicht untereinander verglichen.
  */
 export function dealScores(offers: ExtractedOffer[], reference: ExtractedOffer[] = offers): Map<string, number> {
   const per = (o: ExtractedOffer) => {
@@ -123,10 +123,6 @@ export function dealScores(offers: ExtractedOffer[], reference: ExtractedOffer[]
     const u = per(o);
     const g = u && groups.get(u.key);
     if (u && g && g.length >= 3) d += Math.max(-1.5, Math.min(1.5, (1 - u.v / median(g)) * 3));
-    if (o.market && o.price) {
-      const k = offerKey({ ...o, price: null });
-      if (reference.some((r) => r.market && r.market !== o.market && r.price && offerKey({ ...r, price: null }) === k && priceValue(r.price) > priceValue(o.price!))) d += 1;
-    }
     out.set(o.id, Number(d.toFixed(2)));
   }
   return out;
@@ -138,8 +134,15 @@ export interface SelectOptions {
   boost?: Map<string, number>;
   /** Standard: 8 (wenn so viele da sind), mindestens 2. */
   count?: number;
-  /** Vergleichsmenge für „günstig“ (Grundpreis-Median, andere Märkte); Standard: die Angebote selbst */
+  /** Vergleichsmenge für „günstig“ (Grundpreis-Median); Standard: die Angebote selbst */
   reference?: ExtractedOffer[];
+  /**
+   * Seite eines Markts: so viele große Plätze vorn, nur mit frischem Fleisch (keine Wurst, kein Sucuk);
+   * fehlt frisches Fleisch, kommen dort die besten anderen Angebote hin.
+   */
+  freshMeat?: number;
+  /** weniger als so viele Angebote ist ein Fehler (Standard 2) */
+  min?: number;
 }
 
 /**
@@ -150,24 +153,19 @@ export interface SelectOptions {
 export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {}) {
   const warnings: string[] = [];
   let pool = offers.filter((o) => o.price);
+  const min = opts.min ?? 2;
   if (opts.topic) {
     const cats = new Set(opts.topic.categories);
     pool = pool.filter((o) => cats.has(o.category));
-    if (pool.length < 2) throw new Error(`Zum Thema "${opts.topic.key}" gibt es nur ${pool.length} Angebot(e) – mindestens 2 nötig.`);
+    if (pool.length < min) throw new Error(`Zum Thema "${opts.topic.key}" gibt es nur ${pool.length} Angebot(e) – mindestens ${min} nötig.`);
   }
+  // Dubletten (gleiches Produkt, gleicher Preis, gleicher Markt) nur einmal
   const seen = new Set<string>();
-  pool = pool.filter((o) => (seen.has(offerKey(o)) ? false : (seen.add(offerKey(o)), true)));
-  // Gleiches Produkt in mehreren Märkten: nur das günstigste zeigen (darum geht es bei sincapp)
-  const cheapest = new Map<string, ExtractedOffer>();
-  for (const o of pool.filter((x) => x.market)) {
-    const k = offerKey({ ...o, price: null });
-    const best = cheapest.get(k);
-    if (!best || priceValue(o.price!) < priceValue(best.price!)) cheapest.set(k, o);
-  }
-  pool = pool.filter((o) => !o.market || cheapest.get(offerKey({ ...o, price: null })) === o);
-  if (pool.length < 2) throw new Error(`Nur ${pool.length} Angebot(e) mit Preis gefunden – mindestens 2 nötig.`);
+  const key = (o: ExtractedOffer) => `${o.market ?? ''}|${offerKey(o)}`;
+  pool = pool.filter((o) => (seen.has(key(o)) ? false : (seen.add(key(o)), true)));
+  if (pool.length < min) throw new Error(`Nur ${pool.length} Angebot(e) mit Preis gefunden – mindestens ${min} nötig.`);
 
-  const want = Math.max(2, Math.min(opts.count ?? 8, 15, pool.length));
+  const want = Math.max(min, Math.min(opts.count ?? 8, pool.length));
   if (want < 5 && pool.length < 5) warnings.push(`Nur ${pool.length} Angebote verfügbar – Story wird kürzer als üblich.`);
 
   const deal = dealScores(pool, opts.reference ?? pool);
@@ -189,6 +187,20 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
     for (const o of [...pool].sort((a, b) => base(b) - base(a))) byCat.set(o.category, [...(byCat.get(o.category) ?? []), o]);
     const queues = [...byCat.values()].sort((a, b) => base(b[0]) - base(a[0]));
     while (picked.length < want && queues.some((q) => q.length)) for (const q of queues) if (q.length && picked.length < want) picked.push(q.shift()!);
+  } else if (opts.freshMeat != null) {
+    // Seite eines Markts: vorn groß frisches Fleisch (Hähnchen, Hack … vor Spezialitäten), Wurst und Sucuk nicht bevorzugt
+    const fresh = pool.filter((o) => o.category === 'fleisch');
+    const rest = pool.filter((o) => o.category !== 'fleisch');
+    const meatScore = (o: ExtractedOffer) => base(o) + (STAPLE.test(text(o)) ? 0.5 : 0);
+    const dealScore = (o: ExtractedOffer) => base(o) + (deal.get(o.id) ?? 0) + INTEREST[o.category] + (STAPLE.test(text(o)) ? 1 : 0) - (NICHE.test(text(o)) ? 2 : 0);
+    take(fresh, opts.freshMeat, meatScore);
+    // zu wenig frisches Fleisch: die großen Plätze bekommen die besten anderen Angebote – Wurst nur, wenn sonst nichts da ist
+    take(rest, opts.freshMeat - picked.length, dealScore, (o) => o.category !== 'wurst' && INTEREST[o.category] > 0 && !NICHE.test(text(o)));
+    take(rest, opts.freshMeat - picked.length, dealScore);
+    const cats = () => new Set(picked.map((p) => p.category));
+    take([...rest, ...fresh], want, dealScore, (o) => INTEREST[o.category] > 0 && !NICHE.test(text(o)) && !cats().has(o.category));
+    take([...rest, ...fresh], want, dealScore, (o) => INTEREST[o.category] > 0);
+    take([...rest, ...fresh], want, dealScore);
   } else {
     // 1. Hälfte Fleisch: frisches Fleisch vor Wurst, Grundbedarf (Hähnchen, Hack …) vor Spezialitäten
     const meat = pool.filter((o) => MEAT.includes(o.category));
@@ -212,39 +224,31 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
   return { offers: picked, warnings };
 }
 
-/** Angebote je Markt im Video: bis 7 Märkte je 4 (2 Fleisch + 2 Preis-Knaller, eine Seite für jedes Paar), darüber je 2. */
-export const perMarket = (markets: number) => (markets <= 7 ? 4 : 2);
+/** Angebote je Markt im Video: eine Seite mit 5 – oben 2× frisches Fleisch groß, darunter 3 weitere klein. */
+export const PER_MARKET = 5;
+/** davon große Plätze für frisches Fleisch */
+export const FRESH_MEAT = 2;
 
 /**
- * Video aus mehreren Märkten: pro Markt dasselbe Konzept (siehe selectOffers), in der Reihenfolge der Märkte.
- * Anzahl je Markt laut perMarket; höchstens 30 Angebote. „Günstig“ wird über alle Märkte verglichen.
- * Ein Markt mit weniger als 2 Angeboten (mit Preis) fällt raus und steht in den Hinweisen.
+ * Video aus mehreren Märkten: jeder Markt kommt rein, mit seiner Seite (siehe PER_MARKET), in der Reihenfolge der Märkte.
+ * Märkte werden nicht verglichen – jeder zeigt seine wichtigsten Angebote, auch wenn ein anderer dasselbe günstiger hat.
+ * Ein Markt ohne Angebot mit Preis fehlt und steht in den Hinweisen.
  */
 export function selectByMarket(offers: ExtractedOffer[], markets: string[], opts: Omit<SelectOptions, 'count'> & { per?: number } = {}) {
-  const per = opts.per ?? perMarket(markets.length);
+  const per = opts.per ?? PER_MARKET;
   const offersOut: ExtractedOffer[] = [];
   const warnings: string[] = [];
-  // Gleiches Produkt in mehreren Märkten: nur beim günstigsten (Dubletten-Regel aus selectOffers über alle Märkte)
   const pool = offers.filter((o) => o.price);
-  const cheapest = new Map<string, ExtractedOffer>();
-  for (const o of pool) {
-    const k = offerKey({ ...o, price: null });
-    const best = cheapest.get(k);
-    if (!best || priceValue(o.price!) < priceValue(best.price!)) cheapest.set(k, o);
-  }
   for (const m of markets) {
-    if (offersOut.length + 2 > 30) {
-      warnings.push(`${m}: nicht mehr im Video (höchstens 30 Angebote)`);
+    const mine = pool.filter((o) => o.market === m);
+    if (!mine.length) {
+      warnings.push(`${m}: kein Angebot mit Preis erkannt – nicht im Video`);
       continue;
     }
-    const mine = pool.filter((o) => o.market === m && cheapest.get(offerKey({ ...o, price: null })) === o);
-    try {
-      const sel = selectOffers(mine, { ...opts, reference: pool, count: Math.min(per, 30 - offersOut.length) });
-      offersOut.push(...sel.offers);
-      warnings.push(...sel.warnings.filter((w) => !/Story wird kürzer/.test(w)));
-    } catch {
-      warnings.push(`${m}: zu wenige Angebote mit Preis – nicht im Video`);
-    }
+    const sel = selectOffers(mine, { ...opts, reference: mine, count: per, freshMeat: opts.freshMeat ?? FRESH_MEAT, min: 1 });
+    offersOut.push(...sel.offers);
+    warnings.push(...sel.warnings.filter((w) => !/Story wird kürzer/.test(w)));
+    if (sel.offers.length < per) warnings.push(`${m}: nur ${sel.offers.length} Angebot(e) mit Preis`);
   }
   if (offersOut.length < 2) throw new Error('Zu wenige Angebote mit Preis in den gewählten Prospekten.');
   return { offers: offersOut, warnings };

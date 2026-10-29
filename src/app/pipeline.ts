@@ -13,7 +13,8 @@ import { markBestPrices } from '../library/bestprice';
 import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
-import { buildStory, findTopic, offerBoosts, perMarket, selectByMarket, selectOffers } from '../select/select';
+import { applyGlossary, glossary } from '../library/glossar';
+import { buildStory, findTopic, offerBoosts, PER_MARKET, selectByMarket, selectOffers } from '../select/select';
 
 export interface JobSettings {
   market: string;
@@ -70,13 +71,22 @@ export function applyFirestoreMarkets(ex: { offers: { pageFile: string; market?:
 }
 
 /** Märkte eines Videos aus mehreren Märkten, in der gewählten Reihenfolge (leer bei einem Markt). */
-export function firestoreMarkets(jobDir: string): { name: string; logo?: string; address?: string }[] {
+export function firestoreMarkets(jobDir: string): { name: string; logo?: string; address?: string; instagram?: string; dates?: { from: string; to: string } }[] {
   const f = join(jobDir, 'firestore-prospekt.json');
   if (!existsSync(f)) return [];
   const raw = JSON.parse(readFileSync(f, 'utf8'));
-  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string; marketLogo?: string; marketAddress?: string; marketInstagram?: string }[];
-  const out = new Map<string, { name: string; logo?: string; address?: string; instagram?: string }>();
-  for (const p of prs) if (p.marketName && !out.has(p.marketName)) out.set(p.marketName, { name: p.marketName, ...(p.marketLogo ? { logo: p.marketLogo } : {}), ...(p.marketAddress ? { address: p.marketAddress } : {}), ...(p.marketInstagram ? { instagram: p.marketInstagram } : {}) });
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { marketName?: string; marketLogo?: string; marketAddress?: string; marketInstagram?: string; validFrom?: string; validUntil?: string }[];
+  const iso = (x?: string) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const out = new Map<string, { name: string; logo?: string; address?: string; instagram?: string; dates?: { from: string; to: string } }>();
+  for (const p of prs) {
+    if (!p.marketName) continue;
+    if (!out.has(p.marketName)) out.set(p.marketName, { name: p.marketName, ...(p.marketLogo ? { logo: p.marketLogo } : {}), ...(p.marketAddress ? { address: p.marketAddress } : {}), ...(p.marketInstagram ? { instagram: p.marketInstagram } : {}) });
+    // Zeitraum je Markt aus seinen Prospekten (frühester Start bis spätestes Ende) – jeder Markt hat seine eigenen Tage
+    const m = out.get(p.marketName)!;
+    const from = iso(p.validFrom);
+    const to = iso(p.validUntil);
+    if (from && to && from <= to) m.dates = { from: m.dates && m.dates.from < from ? m.dates.from : from, to: m.dates && m.dates.to > to ? m.dates.to : to };
+  }
   return out.size >= 2 ? [...out.values()] : [];
 }
 
@@ -116,6 +126,8 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   });
   applyFirestoreDates(ex, jobDir);
   applyFirestoreMarkets(ex, jobDir);
+  // feste Namen aus dem Glossar, bevor ausgewählt wird (Hack bleibt Hack, egal wie der Prospekt es nennt)
+  const glossaryNotes = applyGlossary(ex.offers, await glossary());
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));
@@ -127,11 +139,11 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const markets = firestoreMarkets(jobDir);
   const names = markets.map((m) => m.name);
   const want = s.count ?? 8;
-  // mehrere Märkte: pro Markt 2 Fleisch + 2 Preis-Knaller (ab 8 Märkten 1 + 1), Reserve von 2 je Markt
-  const per = perMarket(names.length);
+  // mehrere Märkte: jeder Markt eine Seite mit 5 Angeboten (2× frisches Fleisch groß, 3 weitere klein), Reserve von 2 je Markt
+  const per = PER_MARKET;
   const shortlist = names.length
     ? selectByMarket(ex.offers, names, { topic, boost, per: per + 2 }).offers
-    : selectOffers(ex.offers, { topic, count: Math.min(15, want + Math.max(4, Math.ceil(want / 2))), boost }).offers;
+    : selectOffers(ex.offers, { topic, count: want + Math.max(4, Math.ceil(want / 2)), boost }).offers;
   onProgress({ step: 'extract', message: `${ex.offers.length} Angebote erkannt – Preise der besten ${shortlist.length} werden gegengeprüft …`, fraction: 0.47 });
   ex.warnings.push(...(await checkPrices(shortlist, ex.pages, reader, join(jobDir, 'work'))));
   onProgress({ step: 'images', message: 'Auswahl und Produktbilder …', fraction: 0.5 });
@@ -168,7 +180,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   notes.push(...(await markBestPrices(story, usable, jobDir)));
   await writeFile(join(jobDir, 'story.json'), JSON.stringify(story, null, 2) + '\n');
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
-  await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes] }));
+  await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes, ...glossaryNotes] }));
   onProgress({ step: 'story', message: 'Fertig zum Prüfen', fraction: 1 });
   return { story, extraction: ex as Extraction, notes: [...sel.warnings, ...warnings, ...notes] };
 }

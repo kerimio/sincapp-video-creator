@@ -369,6 +369,68 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
   );
 }
 
+/**
+ * Seite eines Markts: oben zwei große Karten nebeneinander (frisches Fleisch), darunter bis zu drei kleine
+ * nebeneinander. Nutzt die Fläche zwischen Kopf und Laufband (bzw. Seitenende), in allen Formaten.
+ */
+function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers: Offer[]; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls; look: Look; bottom: number }) {
+  const { d: D, c, L } = look;
+  const P = L.page;
+  const gap = Math.round(P.rowGap);
+  const top = P.rowTop;
+  const zone = bottom - top;
+  const big = offers.slice(0, Math.min(2, offers.length));
+  const small = offers.slice(big.length);
+  // ohne kleine Reihe dürfen die großen Karten die ganze Fläche nehmen
+  const bigH = small.length ? Math.round((zone - gap) * 0.57) : zone;
+  const smallH = zone - bigH - gap;
+  const cells = [
+    ...big.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / big.length), y: top, w: (900 - gap * (big.length - 1)) / big.length, h: bigH, size: 'big' as const })),
+    ...small.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / small.length), y: top + bigH + gap, w: (900 - gap * (small.length - 1)) / small.length, h: smallH, size: 'small' as const })),
+  ];
+  return (
+    <>
+      {cells.map(({ o, x, y, w, h, size }, k) => {
+        const d = s + 0.35 + k * 0.16;
+        const ent = MOTION.enter;
+        const op = D.enter === 'wischen' ? 1 : tw(T, d, d + 0.6, 0, 1, ent);
+        const dx = D.enter === 'wischen' ? tw(T, d, d + 0.85, 1150, 0, ent) : 0;
+        const dy = D.enter === 'hoch' ? tw(T, d, d + 0.85, 260, 0, ent) : 0;
+        const sc = D.enter === 'pop' ? tw(T, d, d + 0.7, 0.4, 1, MOTION.pop) : 1;
+        const tagP = tw(T, d + 0.5, d + 1.0, 0, 1, MOTION.pop);
+        const kb = tw(T, d, d + 6.5, 1, 1.06, Easing.linear);
+        const name = o.name[lang];
+        const pad = size === 'big' ? 18 : 12;
+        const fs = fitSize(name, w - pad * 2 - 8, { weight: 900, tracking: -0.035, upper: true, lang, size: size === 'big' ? Math.min(54, P.bigName) : 30 }, 14);
+        const lines = name.length;
+        const tagK = (size === 'big' ? 0.62 : 0.4) * Math.min(1, h / (size === 'big' ? 680 : 500) + 0.25);
+        const nameH = lines * fs * 1.02;
+        return (
+          <div key={k} style={abs({ left: x, top: y, width: w, height: h, transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
+            <div style={{ position: 'absolute', inset: 0, background: '#fff', borderRadius: size === 'big' ? 36 : 28, border: '2px solid rgba(41,32,25,.08)', boxShadow: theme.shadow, boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: pad, gap: 8 }}>
+              <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', borderRadius: size === 'big' ? 24 : 18 }}>
+                <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', display: 'block', transform: `scale(${kb * o.imgZoom * (size === 'big' ? 1.15 : 1.05)})` }} />
+              </div>
+              <div style={{ height: nameH, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: 1.02, letterSpacing: '-0.035em', textTransform: 'uppercase', color: c.ink, whiteSpace: 'nowrap' }}>{l}</div>)}
+              </div>
+            </div>
+            {/* Preis sitzt unten links über dem Bild, damit der Name lesbar bleibt */}
+            <div style={abs({ left: pad + 4, top: h - pad - nameH - 8 - 130 * tagK, transform: `scale(${tagK})`, transformOrigin: '0 0' })}>
+              <PriceTag o={o} lang={lang} theme={theme} p={tagP} look={look} />
+            </div>
+            {o.badge && (
+              <div style={abs({ left: 10, top: -14 })}>
+                <BadgeSticker o={o} lang={lang} theme={theme} p={tagP} look={look} size={size === 'big' ? 26 : 20} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** QR-Code als SVG-Pfad (ein Quadrat je dunklem Modul). */
 function qrPath(url: string): { d: string; n: number } {
   const q = QRCode.create(url, { errorCorrectionLevel: 'M' });
@@ -561,8 +623,12 @@ export function StoryView({ story, lang, T, cues, logoSize, urls, format = 'stor
               ) : (
                 <MarketChip {...chipProps} style={{ left: 90, top: P.chipTop, transform: `translateX(${hd * -600}px) scale(${P.chipScale})`, border: theme.dark ? undefined : 'none' }} />
               )}
-              <MarketInfo theme={theme} dates={dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: undefined } } : story} lang={lang} hd={hd} urls={urls} look={look} />
-              {offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} />)}
+              <MarketInfo theme={theme} dates={pm?.dates ? formatDateRange(pm.dates.from, pm.dates.to) : dates} story={pm ? { ...story, market: { ...story.market, addresses: [pm.name, ...(pm.address ? [pm.address] : [])], instagram: undefined } } : story} lang={lang} hd={hd} urls={urls} look={look} />
+              {pm ? (
+                <MarketGrid offers={offers} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} bottom={(story.banner?.[lang] ? P.bannerTop : Lay.H) - Math.round(P.rowGap * 1.4)} />
+              ) : (
+                offers.map((o, k) => <OfferRow key={k} o={o} k={k} n={offers.length} s={s} T={T} lang={lang} theme={theme} urls={urls} look={look} />)
+              )}
               {story.banner?.[lang] && <Banner text={story.banner[lang]} T={T} look={look} theme={theme} hd={hd} />}
             </Shot>
           </div>

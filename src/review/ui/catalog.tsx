@@ -55,7 +55,7 @@ export function CatalogPage() {
   // Kampagne: gewählte Produkte (Reihenfolge = Reihenfolge im Video); null = normaler Katalog
   const [pick, setPick] = useState<string[] | null>(null);
   const [planning, setPlanning] = useState(false);
-  const toggle = (img: string) => setPick((p) => (p ? (p.includes(img) ? p.filter((x) => x !== img) : p.length >= 15 ? p : [...p, img]) : p));
+  const toggle = (img: string) => setPick((p) => (p ? (p.includes(img) ? p.filter((x) => x !== img) : [...p, img]) : p));
   const openOrPick = (img: string) => (pick ? toggle(img) : setOpen(img));
   const load = () => call<Entry[]>('GET', '/api/library').then(setEntries, (e) => setErr(e.message));
   useEffect(() => {
@@ -144,7 +144,7 @@ export function CatalogPage() {
           <div className="card cat-improve cat-pickhint">
             <div className="grow">
               <b>Kampagne aus dem Katalog</b>
-              <span className="muted small">Produkte antippen (2 bis 15, in der Reihenfolge fürs Video). Danach Preise und Zeitraum eintragen – ohne Prospekt und ohne KI.</span>
+              <span className="muted small">Produkte antippen (ab 2, in der Reihenfolge fürs Video). Danach Preise und Zeitraum eintragen – ohne Prospekt und ohne KI.</span>
             </div>
           </div>
         )}
