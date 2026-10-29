@@ -9,7 +9,7 @@ import { pagesToRead } from '../src/firestore/firestore';
 import { applyFirestoreDates, applyFirestoreMarkets, firestoreProductNames } from '../src/app/pipeline';
 import { caption } from '../src/core/captions';
 import { parseStory } from '../src/core/schema';
-import { offerToStory, selectByMarket } from '../src/select/select';
+import { dealScores, offerToStory, pageBoost, selectByMarket } from '../src/select/select';
 import { pagesFor } from '../src/core/pages';
 import { readFileSync } from 'node:fs';
 import { offerBoosts, selectOffers } from '../src/select/select';
@@ -163,16 +163,61 @@ describe('Eine Seite pro Markt', () => {
   it('jeder Markt bekommt seine besten Angebote, auch wenn ein anderer viel mehr hat', () => {
     const all = [o('a1', 'A'), o('a2', 'A'), o('a3', 'A'), o('a4', 'A'), o('a5', 'A'), o('b1', 'B', 'konserven'), o('b2', 'B', 'snacks'), o('c1', 'C')];
     const sel = selectByMarket(all, ['A', 'B', 'C']);
-    expect(sel.offers.map((x) => x.market)).toEqual(['A', 'A', 'A', 'B', 'B']);
+    expect(sel.offers.map((x) => x.market)).toEqual(['A', 'A', 'A', 'A', 'B', 'B']);
     expect(sel.warnings.join()).toMatch(/C: zu wenige/);
-    // ab 6 Märkten je 2
-    const many = ['A', 'B', 'C', 'D', 'E', 'F'].flatMap((m) => [o(`${m}1`, m), o(`${m}2`, m), o(`${m}3`, m)]);
-    expect(selectByMarket(many, ['A', 'B', 'C', 'D', 'E', 'F']).offers).toHaveLength(12);
+    // bis 7 Märkte je 4, ab 8 Märkten je 2
+    const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const many = names.flatMap((m) => [o(`${m}1`, m), o(`${m}2`, m), o(`${m}3`, m)]);
+    expect(selectByMarket(many, names).offers).toHaveLength(16);
+    expect(selectByMarket(many, names.slice(0, 7)).offers).toHaveLength(21);
   });
 
   it('Seiten folgen den Märkten', () => {
     const story = { offers: ['A', 'A', 'A', 'B', 'B', 'C', 'C', 'C', 'C'].map((market) => ({ market, img: 'x.png', price: '1,99', name: { de: ['X'], tr: ['X'] }, imgZoom: 1 })) };
     expect(pagesFor(story).map((p) => p.map((x) => x.market).join(''))).toEqual(['AAA', 'BB', 'CC', 'CC']);
     expect(pagesFor(story, 'quadrat').map((p) => p.length)).toEqual([2, 1, 2, 2, 2]);
+  });
+});
+
+describe('Konzept fürs Wochenvideo', () => {
+  const o = (id: string, name: string, cat: string, price: string, unit: string | null, market = 'A', pageFile = 'work/pages/p1-seite-05.png') =>
+    ({ ...offer(id, name, [0, 0, 100, 100], cat), price, unit, market, pageFile });
+
+  it('vordere Prospektseiten zählen am meisten, hintere kaum', () => {
+    expect(pageBoost(1, 20)).toBe(2.5);
+    expect(pageBoost(2, 20)).toBe(1.5);
+    expect(pageBoost(3, 20)).toBe(1);
+    expect(pageBoost(20, 20)).toBe(-1);
+    expect(pageBoost(11, 20)).toBeLessThan(0.1);
+  });
+
+  it('günstig im Vergleich: Grundpreis gegen den Median, teurer bei anderen Märkten', () => {
+    const all = [
+      o('reis', 'Reis', 'grundnahrung', '4,99', '5 kg'), o('r2', 'Bulgur', 'grundnahrung', '2,99', '1 kg', 'B'),
+      o('r3', 'Mehl', 'grundnahrung', '1,99', '1 kg', 'B'), o('r4', 'Linsen', 'grundnahrung', '3,49', '1 kg', 'B'),
+      o('tee', 'Schwarztee', 'getraenke', '2,99', '500 g'), o('teeB', 'Schwarztee', 'getraenke', '3,49', '500 g', 'B'),
+    ];
+    const d = dealScores(all);
+    expect(d.get('reis')).toBe(1.5); // 1 €/kg statt 2,99 €/kg Median
+    expect(d.get('r4')).toBeLessThan(0);
+    expect(d.get('tee')).toBe(1); // bei B teurer
+    expect(d.get('teeB')).toBe(0);
+  });
+
+  it('pro Markt 2 Fleisch (frisch vor Wurst) und 2 Knaller aus verschiedenen Gruppen, Oliven nur zur Not', () => {
+    const all = [
+      o('wurst1', 'Sucuk', 'wurst', '3,99', '400 g', 'A', 'work/pages/p1-seite-01.png'),
+      o('wurst2', 'Salami', 'wurst', '1,99', '200 g'),
+      o('fleisch', 'Hähnchenschenkel', 'fleisch', '4,99', '1 kg'),
+      o('oliven', 'Oliven', 'konserven', '1,49', '400 g', 'A', 'work/pages/p1-seite-02.png'),
+      o('reis', 'Reis', 'grundnahrung', '4,99', '5 kg'),
+      o('reis2', 'Bulgur', 'grundnahrung', '1,99', '1 kg'),
+      o('milch', 'Ayran', 'kaese_milch', '0,99', '1 l'),
+      o('grill', 'Kontaktgrill', 'sonstiges', '19,99', null, 'A', 'work/pages/p1-seite-01.png'),
+    ];
+    const ex = { pages: [], offers: all };
+    const boost = offerBoosts(ex);
+    const sel = selectByMarket(all, ['A'], { boost });
+    expect(sel.offers.map((x) => x.id)).toEqual(['wurst1', 'fleisch', 'reis', 'milch']);
   });
 });

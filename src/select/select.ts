@@ -1,4 +1,5 @@
 // Aus allen gelesenen Angeboten die besten für die Story wählen und Überschriften bauen.
+import { parseSize } from '../core/catalog';
 import { defaultEyebrow, priceValue } from '../core/format';
 import { Market, parseStory, type Story } from '../core/schema';
 import { offerKey } from '../extract/normalize';
@@ -44,17 +45,40 @@ export function offerScore(o: ExtractedOffer) {
 
 const norm = (s: string) => s.toLocaleLowerCase('de').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, ' ').trim();
 
+/** Seite im Original-Prospekt: "work/pages/p2-seite-03.png" → Prospekt "p2", Seite 3 (Seiten ohne Produkte fehlen in der Zählung nicht). */
+function prospectPage(o: Pick<ExtractedOffer, 'page' | 'pageFile'>): { prospect: string; n: number } {
+  const m = o.pageFile.match(/(?:^|\/)(p\d+-)?seite-(\d+)/);
+  return m ? { prospect: m[1] ?? '', n: Number(m[2]) } : { prospect: '', n: o.page };
+}
+
 /**
- * "Beste Angebote": Was im Prospekt groß abgebildet ist, ist meist ein Hauptangebot (bis +1,5);
- * was in Firestore als Produkt gepflegt ist, ist bewusst ausgewählt (+1).
+ * Märkte legen die wichtigsten Angebote nach vorn: Titelseite +2,5, Seite 2 +1,5, danach abnehmend,
+ * die hinteren Seiten (Restposten, Non-Food) bis −1.
+ */
+export function pageBoost(n: number, last: number) {
+  if (n <= 1) return 2.5;
+  if (n === 2) return 1.5;
+  const rel = last > 3 ? (n - 3) / (last - 3) : 0;
+  return Number((1 - 2 * rel).toFixed(2));
+}
+
+/**
+ * "Beste Angebote": Was vorn im Prospekt steht, ist dem Markt am wichtigsten (siehe pageBoost); was groß
+ * abgebildet ist, ist meist ein Hauptangebot (bis +1,5); was in Firestore als Produkt gepflegt ist, ist bewusst ausgewählt (+1).
  */
 export function offerBoosts(ex: Pick<Extraction, 'offers' | 'pages'>, firestoreNames: string[] = []): Map<string, number> {
   const names = firestoreNames.map(norm).filter((n) => n.length >= 3);
   const out = new Map<string, number>();
+  const last = new Map<string, number>();
+  for (const o of ex.offers) {
+    const { prospect, n } = prospectPage(o);
+    last.set(prospect, Math.max(last.get(prospect) ?? 1, n));
+  }
   for (const o of ex.offers) {
     const pg = ex.pages[o.page - 1];
     const area = pg ? ((o.bbox[2] - o.bbox[0]) * (o.bbox[3] - o.bbox[1])) / (pg.width * pg.height) : 0;
-    let b = Math.min(1.5, area * 10);
+    const { prospect, n } = prospectPage(o);
+    let b = Math.min(1.5, area * 10) + pageBoost(n, last.get(prospect)!);
     const mine = norm(`${o.brand ?? ''} ${o.name.de} ${o.name.tr}`);
     if (names.some((n) => mine.includes(n) || n.includes(norm(o.name.de)))) b += 1;
     out.set(o.id, b);
@@ -65,17 +89,63 @@ export function offerBoosts(ex: Pick<Extraction, 'offers' | 'pages'>, firestoreN
 /** Warengruppen, die bei der Auswahl immer Vorrang haben. */
 export const MEAT: string[] = ['fleisch', 'wurst'];
 
+/**
+ * Wie sehr eine Warengruppe im Wochenvideo zieht: Grundbedarf ja, Nischen kaum.
+ * 0 = nur, wenn sonst nichts da ist (z. B. ein Kontaktgrill).
+ */
+export const INTEREST: Record<Category, number> = {
+  fleisch: 3, wurst: 2, obst_gemuese: 2, kaese_milch: 2, grundnahrung: 2, getraenke: 1.5, backwaren: 1, tiefkuehl: 1,
+  suesses: 1, snacks: 1, konserven: 0.5, haushalt: 0.5, drogerie: 0.5, sonstiges: 0,
+};
+// Was fast jeder kauft, zieht mehr als ein Nischenprodukt derselben Gruppe ("Reis 5 kg" vor "Tahin")
+const STAPLE = /(hähnchen|haehnchen|hühner|huhn|tavuk|rind|dana|kalb|lamm|kuzu|hack|kıyma|kiyma|sucuk|reis|pirinç|pirinc|mehl|un |zucker|şeker|seker|öl|oel|yağ|yag|butter|eier|yumurta|milch|süt|sut|joghurt|yoğurt|yogurt|ayran|käse|kaese|peynir|tee|çay|cay|kaffee|brot|ekmek|tomate|domates|gurke|salatalık|kartoffel|patates|zwiebel|soğan|sogan|banane|muz|apfel|elma|orange|portakal|wasser|nudeln|makarna|bulgur|linsen|mercimek)/i;
+const NICHE = /(olive|zeytin|gewürz|gewuerz|baharat|soße|sosse|sauce|sos |essig|sirke|pul biber|sumak|nane|minze|duft|kerze|grill|maschine|topf|pfanne|deko)/i;
+
+/**
+ * Wie günstig ein Angebot ist, ohne KI: Grundpreis (€/kg, €/l) gegen den Median derselben Warengruppe in allen
+ * Prospekten der Woche (bis ±1,5), plus 1, wenn dasselbe Produkt bei einem anderen Markt teurer ist.
+ */
+export function dealScores(offers: ExtractedOffer[], reference: ExtractedOffer[] = offers): Map<string, number> {
+  const per = (o: ExtractedOffer) => {
+    const size = parseSize(o.unit);
+    const p = priceValue(o.price ?? '');
+    return size && p && size.total && size.base !== 'stk' ? { key: `${o.category}|${size.base}`, v: p / size.total } : null;
+  };
+  const groups = new Map<string, number[]>();
+  for (const o of reference) {
+    const u = per(o);
+    if (u) groups.set(u.key, [...(groups.get(u.key) ?? []), u.v]);
+  }
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const out = new Map<string, number>();
+  for (const o of offers) {
+    let d = 0;
+    const u = per(o);
+    const g = u && groups.get(u.key);
+    if (u && g && g.length >= 3) d += Math.max(-1.5, Math.min(1.5, (1 - u.v / median(g)) * 3));
+    if (o.market && o.price) {
+      const k = offerKey({ ...o, price: null });
+      if (reference.some((r) => r.market && r.market !== o.market && r.price && offerKey({ ...r, price: null }) === k && priceValue(r.price) > priceValue(o.price!))) d += 1;
+    }
+    out.set(o.id, Number(d.toFixed(2)));
+  }
+  return out;
+}
+
 export interface SelectOptions {
   topic?: Topic | null;
-  /** Zusatzpunkte je Angebot (id → Punkte), z. B. groß im Prospekt oder in Firestore gepflegt. */
+  /** Zusatzpunkte je Angebot (id → Punkte), z. B. vorn oder groß im Prospekt oder in Firestore gepflegt. */
   boost?: Map<string, number>;
   /** Standard: 8 (wenn so viele da sind), mindestens 2. */
   count?: number;
+  /** Vergleichsmenge für „günstig“ (Grundpreis-Median, andere Märkte); Standard: die Angebote selbst */
+  reference?: ExtractedOffer[];
 }
 
 /**
- * Wählt Angebote aus: ohne Preis fällt raus, Dubletten fallen raus, dann
- * reihum aus den Warengruppen (beste zuerst), damit die Seiten gemischt sind.
+ * Wählt Angebote nach festem Konzept: die Hälfte Fleisch (frisches Fleisch vor Wurst), die andere Hälfte
+ * „Preis-Knaller“ aus dem Grundbedarf – günstig im Vergleich, vorn im Prospekt, aus verschiedenen Warengruppen.
+ * Nischen (Oliven, Gewürze, Haushalt) nur, wenn nichts Besseres da ist. Mit Thema: die besten des Themas, gemischt.
  */
 export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {}) {
   const warnings: string[] = [];
@@ -100,38 +170,58 @@ export function selectOffers(offers: ExtractedOffer[], opts: SelectOptions = {})
   const want = Math.max(2, Math.min(opts.count ?? 8, 15, pool.length));
   if (want < 5 && pool.length < 5) warnings.push(`Nur ${pool.length} Angebote verfügbar – Story wird kürzer als üblich.`);
 
-  const score = (o: ExtractedOffer) => offerScore(o) + (opts.boost?.get(o.id) ?? 0);
-  const byCat = new Map<string, ExtractedOffer[]>();
-  for (const o of [...pool].sort((a, b) => score(b) - score(a))) {
-    const list = byCat.get(o.category) ?? [];
-    list.push(o);
-    byCat.set(o.category, list);
-  }
-  // Fleisch und Wurst kommen immer zuerst (das zieht im türkischen Supermarkt am meisten),
-  // der Rest danach reihum, die Warengruppen nach ihrem besten Angebot geordnet.
-  const picked = MEAT.flatMap((c) => byCat.get(c) ?? [])
-    .sort((a, b) => score(b) - score(a))
-    .slice(0, want);
-  const queues = [...byCat.entries()].filter(([c]) => !MEAT.includes(c)).map(([, q]) => q).sort((a, b) => score(b[0]) - score(a[0]));
-  while (picked.length < want && queues.some((q) => q.length)) {
-    for (const q of queues) {
-      const o = q.shift();
-      if (o) picked.push(o);
-      if (picked.length === want) break;
+  const deal = dealScores(pool, opts.reference ?? pool);
+  const base = (o: ExtractedOffer) => offerScore(o) + (opts.boost?.get(o.id) ?? 0) + (deal.get(o.id) ?? 0);
+  const text = (o: ExtractedOffer) => `${o.brand ?? ''} ${o.name.de} ${o.name.tr}`;
+  const picked: ExtractedOffer[] = [];
+  const take = (list: ExtractedOffer[], n: number, score: (o: ExtractedOffer) => number, ok: (o: ExtractedOffer) => boolean = () => true) => {
+    for (const o of [...list].sort((a, b) => score(b) - score(a))) {
+      if (picked.length >= want || n <= 0) break;
+      if (picked.includes(o) || !ok(o)) continue;
+      picked.push(o);
+      n--;
     }
+  };
+
+  if (opts.topic) {
+    // Thema: reihum aus den Warengruppen des Themas, beste zuerst
+    const byCat = new Map<string, ExtractedOffer[]>();
+    for (const o of [...pool].sort((a, b) => base(b) - base(a))) byCat.set(o.category, [...(byCat.get(o.category) ?? []), o]);
+    const queues = [...byCat.values()].sort((a, b) => base(b[0]) - base(a[0]));
+    while (picked.length < want && queues.some((q) => q.length)) for (const q of queues) if (q.length && picked.length < want) picked.push(q.shift()!);
+  } else {
+    // 1. Hälfte Fleisch: frisches Fleisch vor Wurst, Grundbedarf (Hähnchen, Hack …) vor Spezialitäten
+    const meat = pool.filter((o) => MEAT.includes(o.category));
+    const meatScore = (o: ExtractedOffer) => base(o) + (o.category === 'fleisch' ? 0.5 : 0) + (STAPLE.test(text(o)) ? 0.5 : 0);
+    const meatN = Math.min(Math.max(1, Math.floor(want / 2)), meat.length);
+    take(meat, Math.ceil(meatN / 2), meatScore);
+    // höchstens die Hälfte der Fleisch-Plätze Wurst, solange frisches Fleisch da ist
+    const wurstCap = Math.floor(meatN / 2);
+    take(meat, meatN - picked.length, meatScore, (o) => o.category === 'fleisch' || picked.filter((p) => p.category === 'wurst').length < wurstCap);
+    take(meat, meatN - picked.length, meatScore);
+    // 2. Preis-Knaller: günstig zählt doppelt, Grundbedarf vor Nische, jede Warengruppe erst einmal
+    const rest = pool.filter((o) => !MEAT.includes(o.category));
+    const dealScore = (o: ExtractedOffer) => base(o) + (deal.get(o.id) ?? 0) + INTEREST[o.category] + (STAPLE.test(text(o)) ? 1 : 0) - (NICHE.test(text(o)) ? 2 : 0);
+    const cats = () => new Set(picked.map((p) => p.category));
+    take(rest, want, dealScore, (o) => INTEREST[o.category] > 0 && !NICHE.test(text(o)) && !cats().has(o.category));
+    take(rest, want, dealScore, (o) => INTEREST[o.category] > 0);
+    take([...rest, ...meat], want, dealScore);
   }
   const unsure = picked.filter((o) => o.priceConfidence < 0.9);
   if (unsure.length) warnings.push(`Preis unsicher bei ${unsure.map((o) => o.id).join(', ')} – im Review prüfen.`);
   return { offers: picked, warnings };
 }
 
+/** Angebote je Markt im Video: bis 7 Märkte je 4 (2 Fleisch + 2 Preis-Knaller, eine Seite für jedes Paar), darüber je 2. */
+export const perMarket = (markets: number) => (markets <= 7 ? 4 : 2);
+
 /**
- * Video aus mehreren Märkten: pro Markt die besten 2–3 Angebote (eine Seite je Markt), in der
- * Reihenfolge der Märkte. Bis 5 Märkte je 3 Angebote, darüber je 2; höchstens 30 Angebote.
+ * Video aus mehreren Märkten: pro Markt dasselbe Konzept (siehe selectOffers), in der Reihenfolge der Märkte.
+ * Anzahl je Markt laut perMarket; höchstens 30 Angebote. „Günstig“ wird über alle Märkte verglichen.
  * Ein Markt mit weniger als 2 Angeboten (mit Preis) fällt raus und steht in den Hinweisen.
  */
 export function selectByMarket(offers: ExtractedOffer[], markets: string[], opts: Omit<SelectOptions, 'count'> & { per?: number } = {}) {
-  const per = opts.per ?? (markets.length <= 5 ? 3 : 2);
+  const per = opts.per ?? perMarket(markets.length);
   const offersOut: ExtractedOffer[] = [];
   const warnings: string[] = [];
   // Gleiches Produkt in mehreren Märkten: nur beim günstigsten (Dubletten-Regel aus selectOffers über alle Märkte)
@@ -149,7 +239,7 @@ export function selectByMarket(offers: ExtractedOffer[], markets: string[], opts
     }
     const mine = pool.filter((o) => o.market === m && cheapest.get(offerKey({ ...o, price: null })) === o);
     try {
-      const sel = selectOffers(mine, { ...opts, count: Math.min(per, 30 - offersOut.length) });
+      const sel = selectOffers(mine, { ...opts, reference: pool, count: Math.min(per, 30 - offersOut.length) });
       offersOut.push(...sel.offers);
       warnings.push(...sel.warnings.filter((w) => !/Story wird kürzer/.test(w)));
     } catch {
