@@ -32,6 +32,7 @@ Ein Video entsteht in vier Schritten: **Angebote** prüfen → **Design** wähle
 - **Formate:** Story 9:16, Feed 4:5, Quadrat 1:1, jedes Angebot einzeln als Bild. Die Vorschau rechts schaltet zwischen allen um.
 - **Export:** Pakete („Wochenpaket“, „Nur Story“, „Feed-Beitrag“, „Nur Bilder“) oder frei wählbar; Instagram-Texte mit Hashtags (DE/TR); alles als ZIP. Der Export kostet keine KI-Tokens.
 - **Glossar** (eigene Seite in der App): feste Produktnamen DE/TR, egal wie der Prospekt schreibt – „Rinderhackfleisch-Mischung (Gemischtes Hackfleisch)“ wird „Gemischtes Hack“ / „Karışık Kıyma“. Grundbestand für frisches Fleisch ist eingebaut, eigene Einträge liegen in `library/glossar.json`.
+- **Einheitliche Namen für alle Produkte** (MARKE + PRODUKTART): Marken werden zusammengeführt („Mevlâna Çay“, „Mevlana“, „Goran-Tee“ → „Mevlana“), steht ein Produkt im Katalog, heißt es wie dort. Jede neue Schreibweise geht einmal an die KI (nur Text, günstiges Modell, bekannte Namen als Vorlage) und wird in `library/namen.json` gemerkt – „Ceylon Tee“ und „Sade Yaprak Çay“ heißen danach immer „Schwarztee“. Das Glossar gewinnt immer; im Glossar heißt `tee+cay` „beide Wörter“, `-grüner` „nicht, wenn das Wort vorkommt“.
 - **Bild aus dem Prospekt:** Rechteck ziehen oder mit dem Pen umranden – der Ausschnitt wird so übernommen, wie er ist. Hintergrund nur auf Wunsch entfernen.
 
 **Teilen auf Instagram** (Schritt 4, Business- oder Creator-Konto):

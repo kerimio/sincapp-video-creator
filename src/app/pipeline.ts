@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { RecordedReader, type PageReader } from '../extract/claude';
-import { makeMatcher, makeReader } from '../ai/provider';
+import { makeMatcher, makeNamer, makeReader } from '../ai/provider';
 import { checkPrices, extractJob } from '../extract/extract';
 import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
@@ -14,6 +14,7 @@ import { readMarket, readMarketDesign } from '../firestore/firestore';
 import { Design } from '../core/design';
 import { extractionReport } from '../report';
 import { applyCatalogNames, applyGlossary, glossary } from '../library/glossar';
+import { normalizeNames } from '../library/names';
 import { buildStory, findTopic, offerBoosts, PER_MARKET, selectByMarket, selectOffers } from '../select/select';
 
 export interface JobSettings {
@@ -128,7 +129,8 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   applyFirestoreMarkets(ex, jobDir);
   // feste Namen, bevor ausgewählt wird: erst wie im Katalog, dann das Glossar (Hack bleibt Hack, egal wie der Prospekt es nennt)
   const library = await Library.open();
-  const glossaryNotes = [...applyCatalogNames(ex.offers, library), ...applyGlossary(ex.offers, await glossary())];
+  const gloss = await glossary();
+  const glossaryNotes = [...applyCatalogNames(ex.offers, library), ...(await normalizeNames(ex.offers, { namer: null })), ...applyGlossary(ex.offers, gloss)];
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));
@@ -145,6 +147,8 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const shortlist = names.length
     ? selectByMarket(ex.offers, names, { topic, boost, per: per + 2 }).offers
     : selectOffers(ex.offers, { topic, count: want + Math.max(4, Math.ceil(want / 2)), boost }).offers;
+  // neue Schreibweisen der Vorauswahl einmal vereinheitlichen lassen (nur Text, günstig, gemerkt) – danach gilt wieder das Glossar
+  glossaryNotes.push(...(await normalizeNames(shortlist, { namer: s.recorded ? null : makeNamer(), library, glossary: gloss })), ...applyGlossary(shortlist, gloss));
   onProgress({ step: 'extract', message: `${ex.offers.length} Angebote erkannt – Preise der besten ${shortlist.length} werden gegengeprüft …`, fraction: 0.47 });
   ex.warnings.push(...(await checkPrices(shortlist, ex.pages, reader, join(jobDir, 'work'))));
   onProgress({ step: 'images', message: 'Auswahl und Produktbilder …', fraction: 0.5 });

@@ -282,6 +282,77 @@ describe('Einheitliche Namen', () => {
   });
 });
 
+describe('Eine Marke, ein Name', () => {
+  it('Mevlana-Tee aus vier Märkten heißt überall MEVLANA SCHWARZTEE', async () => {
+    const { DEFAULT_GLOSSARY } = await import('../src/core/glossary');
+    const { applyGlossary, applyCatalogNames } = await import('../src/library/glossar');
+    const { Library } = await import('../src/library/library');
+    const lib = await Library.open(mkdtempSync(join(tmpdir(), 'lib-')));
+    const t = (id: string, brand: string | null, de: string, tr: string) => ({ ...offer(id, de, [0, 0, 1, 1], 'getraenke'), brand, name: { de, tr } });
+    const all = [
+      t('a', 'Mevlâna Çay', 'Sade Yaprak Çay', 'Sade Yaprak Çay'),
+      t('b', 'Mevlana', 'Ceylon Tee', 'Seylan Çayı'),
+      t('c', 'Mevlana', 'Schwarztee', 'Siyah Çay'),
+      t('d', 'Goran-Tee', 'Mevlana Cay', 'Mevlana Çay'),
+      t('e', 'Çaykur', 'Rize Turist Çayı', 'Rize Turist Çayı'),
+      t('f', 'Doğadan', 'Grüner Tee', 'Yeşil Çay'),
+      t('g', 'Doğadan', 'Kräutertee Minze', 'Nane Çayı'),
+    ];
+    applyCatalogNames(all, lib);
+    applyGlossary(all, DEFAULT_GLOSSARY);
+    expect(all.slice(0, 4).map((o) => `${o.brand} ${o.name.de}`)).toEqual(Array(4).fill('Mevlana Schwarztee'));
+    expect(all[3].lines.de.join(' ')).toBe('Mevlana Schwarztee');
+    expect(all.slice(0, 4).map((o) => o.name.tr)).toEqual(Array(4).fill('Siyah Çay'));
+    expect(all[4].name.de).toBe('Schwarztee');
+    expect(all[5].name.de).toBe('Grüner Tee');
+    expect(all[6].name.de).toBe('Kräutertee Minze');
+  });
+});
+
+describe('Namen für alle Produkte', () => {
+  it('jede neue Schreibweise einmal an die KI, danach gemerkt; bekannte Namen gehen als Vorlage mit', async () => {
+    const { normalizeNames } = await import('../src/library/names');
+    const old = process.env.SINCAPP_LIBRARY;
+    process.env.SINCAPP_LIBRARY = mkdtempSync(join(tmpdir(), 'namen-'));
+    try {
+      const calls: { items: string[]; known: string[] }[] = [];
+      const namer = {
+        normalize: async (items: { id: string; brand: string | null; de: string }[], known: string[]) => {
+          calls.push({ items: items.map((i) => i.de), known });
+          return items.map((i) => (i.de.includes('Salça') || i.de.includes('Tomaten') ? { id: i.id, brand: 'Tat', de: 'Tomatenmark', tr: 'Domates Salçası' } : { id: i.id, brand: 'Ülker', de: 'Haselnusswaffeln', tr: 'Fındıklı Gofret' }));
+        },
+      };
+      const mk = (id: string, brand: string, de: string) => ({ ...offer(id, de, [0, 0, 1, 1], 'konserven'), brand, name: { de, tr: de } });
+      const week1 = [mk('a', 'TAT', 'Tomaten Salça'), mk('b', 'Tat Gıda', 'Tomatenmark 3-fach'), mk('c', 'Ülker', 'Gofret Fındıklı'), mk('d', 'TAT', 'Tomaten Salça')];
+      const notes = await normalizeNames(week1, { namer });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].items).toEqual(['Tomaten Salça', 'Tomatenmark 3-fach', 'Gofret Fındıklı']); // doppelte Schreibweise nur einmal
+      expect(week1.map((o) => `${o.brand} ${o.name.de}`)).toEqual(['Tat Tomatenmark', 'Tat Tomatenmark', 'Ülker Haselnusswaffeln', 'Tat Tomatenmark']);
+      expect(week1[0].lines.de.join(' ')).toBe('Tat Tomatenmark');
+      expect(notes.some((n) => n.startsWith('Name:'))).toBe(true);
+      // nächste Woche: gleiche Schreibweise ohne KI, neue mit den festen Namen als Vorlage
+      const week2 = [mk('e', 'Tat', 'Tomaten Salça'), mk('f', 'Tat', 'Domates Salçası')];
+      await normalizeNames(week2, { namer });
+      expect(calls).toHaveLength(2);
+      expect(calls[1].items).toEqual(['Domates Salçası']);
+      expect(calls[1].known).toContain('Tat | Tomatenmark | Domates Salçası');
+      expect(week2.map((o) => o.name.de)).toEqual(['Tomatenmark', 'Tomatenmark']);
+      // ohne KI-Key: gemerkte Namen greifen trotzdem, neue bleiben, wie sie sind
+      const week3 = [mk('g', 'TAT', 'Tomaten Salça'), mk('h', 'Pınar', 'Labne')];
+      await normalizeNames(week3, { namer: null });
+      expect(week3.map((o) => o.name.de)).toEqual(['Tomatenmark', 'Labne']);
+      // KI-Fehler bricht nichts ab
+      const broken = { normalize: async () => { throw new Error('Überlast'); } };
+      const w4 = [mk('i', 'Sek', 'Ayran')];
+      expect((await normalizeNames(w4, { namer: broken }))[0]).toMatch(/Überlast/);
+      expect(w4[0].name.de).toBe('Ayran');
+    } finally {
+      if (old === undefined) delete process.env.SINCAPP_LIBRARY;
+      else process.env.SINCAPP_LIBRARY = old;
+    }
+  });
+});
+
 describe('Glossar', () => {
   it('setzt feste Namen ein, egal wie der Prospekt schreibt; die längste Schreibweise gewinnt', async () => {
     const { findGlossary, mergeGlossary, DEFAULT_GLOSSARY } = await import('../src/core/glossary');

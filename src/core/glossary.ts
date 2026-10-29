@@ -8,6 +8,7 @@ export interface GlossaryEntry {
   /**
    * weitere Schreibweisen aus Prospekten (DE oder TR); der feste Name selbst zählt immer mit.
    * "tee+cay" = beide Wörter irgendwo im Namen ("Goran Tee Mevlana Çay").
+   * "-grüner" = Ausnahme: steht das Wort im Namen, passt der Eintrag nicht ("Grüner Tee" ist kein Schwarztee).
    */
   match: string[];
   /** Warengruppe erzwingen, z. B. "fleisch" für Hack */
@@ -29,7 +30,11 @@ export const DEFAULT_GLOSSARY: GlossaryEntry[] = [
   { de: 'Lammkeule', tr: 'Kuzu But', category: 'fleisch', match: ['lammkeule', 'kuzu but'] },
   // Grundbedarf: die Marke bleibt davor stehen ("Mevlana" + "Schwarztee"). Nur eindeutige Namen –
   // ein einzelnes "Butter" träfe auch "Butter Kekse".
-  { de: 'Schwarztee', tr: 'Siyah Çay', category: 'getraenke', match: ['schwarzer tee', 'siyah cay', 'turkischer tee', 'turk cayi', 'rize cayi', 'tee+cay', 'cay+tee'] },
+  {
+    de: 'Schwarztee', tr: 'Siyah Çay', category: 'getraenke',
+    // jeder Tee/Çay ohne Sorte ist Schwarztee ("Ceylon Tee", "Sade Yaprak Çay", "Mevlana Çay") – außer Kräuter, Früchte, Grün, Eistee
+    match: ['schwarzer tee', 'siyah cay', 'tee', 'cay', 'cayi', 'chai', 'ceylon', ...['grun', 'gruner', 'grune', 'yesil', 'fruchte', 'fruchtetee', 'meyve', 'krauter', 'krautertee', 'bitki', 'minze', 'pfefferminz', 'nane', 'apfel', 'elma', 'ihlamur', 'kamille', 'papatya', 'salbei', 'ada', 'adacayi', 'fenchel', 'rezene', 'hagebutte', 'kusburnu', 'hibiskus', 'rooibos', 'zitrone', 'limon', 'ingwer', 'zencefil', 'eistee', 'ice', 'soguk', 'instant', 'granul', 'kaffee', 'kahve', 'glas', 'bardak', 'kanne', 'demlik', 'kocher', 'tasse', 'filter', 'bardagi', 'demligi', 'kasigi', 'zimt', 'tarcin', 'keks', 'kekse', 'geback', 'biskuvi'].map((w) => `-${w}`)],
+  },
   { de: 'Grüner Tee', tr: 'Yeşil Çay', category: 'getraenke', match: ['gruntee', 'yesil cay'] },
   { de: 'Tomatenmark', tr: 'Domates Salçası', category: 'konserven', match: ['tomatenpaste', 'tomaten paste', 'domates salcasi', 'tomatenmark+salca'] },
   { de: 'Paprikamark', tr: 'Biber Salçası', category: 'konserven', match: ['paprikapaste', 'paprika paste', 'biber salcasi', 'paprikamark+salca'] },
@@ -62,7 +67,9 @@ export function findGlossary(name: { de: string; tr: string }, entries: Glossary
   const hay = [glossaryKey(name.de), glossaryKey(name.tr)].map((s) => ` ${s} `);
   let best: { e: GlossaryEntry; len: number } | null = null;
   for (const e of entries) {
-    for (const raw of [e.de, e.tr, ...e.match]) {
+    const not = e.match.filter((m) => m.trim().startsWith('-')).map((m) => glossaryKey(m.replace(/^\s*-/, ''))).filter(Boolean);
+    if (not.some((w) => hay.some((h) => h.includes(` ${w} `)))) continue;
+    for (const raw of [e.de, e.tr, ...e.match.filter((m) => !m.trim().startsWith('-'))]) {
       const parts = raw.split('+').map(glossaryKey).filter(Boolean);
       if (!parts.length) continue;
       const len = parts.join(' ').length;

@@ -6,6 +6,7 @@ import { PAGE_PROMPT, PRICE_PROMPT, type PageReader } from '../extract/claude';
 import { PageOffer, PageResult, PriceCheck } from '../extract/schema';
 import { MATCH_PROMPT, MatchResult, type ProductMatcher } from '../images/match';
 import { logUsage } from './usage';
+import { NAME_PROMPT, NameResult, type NameItem, type ProductNamer } from './namer';
 
 /**
  * Modell fürs Lesen der Seiten. Standard ist das günstige Flash-Modell (der Preis-Gegencheck
@@ -138,5 +139,18 @@ export class GeminiMatcher implements ProductMatcher {
     const out = await this.client.json(MatchResult, parts, geminiCheckModel(), { task: 'bilder', thinking: ThinkingLevel.MINIMAL });
     const byId = new Map(out.candidates.map((c) => [c.id, c]));
     return candidates.map((_, i) => byId.get(i + 1) ?? { id: i + 1, same_product: false, same_variant: false, clean_shot: false, note: 'keine Bewertung' });
+  }
+}
+
+export class GeminiNamer implements ProductNamer {
+  private client: GeminiClient;
+  constructor(apiKey?: string, baseUrl?: string) {
+    this.client = new GeminiClient(apiKey, baseUrl);
+  }
+
+  async normalize(items: NameItem[], known: string[]) {
+    if (!items.length) return [];
+    const out = await this.client.json(NameResult, [{ text: NAME_PROMPT(items, known) }], geminiCheckModel(), { task: 'namen', thinking: ThinkingLevel.MINIMAL });
+    return out.items;
   }
 }
