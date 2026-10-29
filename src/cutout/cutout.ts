@@ -67,6 +67,24 @@ export async function cutoutOffers(jobDir: string, offers: ExtractedOffer[], log
     }
     o.warnings.push(...r.warnings.map((w) => `Bild: ${w}`));
   }
+
+  // Freistellen ging gar nicht (z. B. Modell fehlt, Prozess abgestürzt): lieber der Ausschnitt mit Hintergrund
+  // als ein Angebot, das ohne Bild aus dem Video fällt. crops.py braucht nur PIL und klappt praktisch immer.
+  const failed = offers.filter((o) => !o.img && results.has(o.id));
+  if (failed.length) {
+    try {
+      const lines = await runPython('crops.py', [], failed.map((o) => ({ image: join(jobDir, o.pageFile), box: o.bbox, out: join(jobDir, 'images', `${o.id}.png`), pad: 0.03, maxSide: 1200 })));
+      lines.forEach((l, i) => {
+        if (!JSON.parse(l).ok) return;
+        const o = failed[i];
+        o.img = `images/${o.id}.png`;
+        o.imgSource = 'prospekt';
+        o.warnings.push('Bild: nicht freigestellt – Prospekt-Ausschnitt mit Hintergrund, bitte prüfen oder ein anderes Bild wählen');
+      });
+    } catch {
+      /* dann bleibt das Angebot ohne Bild und steht im Bericht */
+    }
+  }
   return results;
 }
 

@@ -110,3 +110,16 @@ describe.skipIf(!hasPython)('Bildquelle: Bibliothek → Internet → Prospekt', 
     expect(c.imgSource).toBe('library');
   }, 120000);
 });
+
+describe.skipIf(!hasPython)('Freisteller schlägt fehl', () => {
+  it('nimmt den Prospekt-Ausschnitt mit Hintergrund, statt das Angebot ohne Bild fallen zu lassen', async () => {
+    const { cutoutOffers } = await import('../src/cutout/cutout');
+    const { dir, offers } = job();
+    const o = { ...offers[0], bbox: [100, 100, 110, 110] as typeof offers[0]['bbox'], priceTagBbox: null }; // zu klein zum Freistellen
+    await cutoutOffers(dir, [o]);
+    expect(o.img).toBe(`images/${o.id}.png`);
+    expect(o.imgSource).toBe('prospekt');
+    expect(existsSync(join(dir, o.img!))).toBe(true);
+    expect(o.warnings.join(' ')).toMatch(/Prospekt-Ausschnitt mit Hintergrund/);
+  }, 120000);
+});
