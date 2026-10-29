@@ -66,34 +66,66 @@ export function applyGlossary(offers: ExtractedOffer[], entries: GlossaryEntry[]
 
 const words = (s: string | null | undefined) => glossaryKey(s ?? '').split(' ').filter(Boolean);
 
+/** Wörter, die zur Ware gehören, nicht zur Marke: "Mevlâna Çay" und "Goran-Tee" sind die Marken "Mevlâna" und "Goran". */
+const GENERIC = new Set(['cay', 'tee', 'gida', 'food', 'foods', 'gmbh', 'ltd', 'sti', 'sut', 'et', 'urunleri', 'market', 'markt']);
+
+/** Markenschlüssel ohne Akzente und Warenwörter: "Mevlâna Çay" → "mevlana" */
+export const brandKey = (b: string | null | undefined) => words(b).filter((w) => !GENERIC.has(w)).join(' ');
+
+/** Anzeigeform einer Marke ohne Warenwörter: "Mevlâna Çay" → "Mevlâna", "Goran-Tee" → "Goran" */
+const brandShown = (b: string) => b.split(/[\s-]+/).filter((w) => w && !GENERIC.has(glossaryKey(w))).join(' ') || b;
+
 /**
- * Namen aus dem Katalog übernehmen: Ein Produkt, das schon im Katalog steht, heißt jede Woche gleich
- * (Marke und Name wie dort, auch nach eigener Korrektur). Außerdem: Steht eine bekannte Marke im Namen,
- * aber eine unbekannte als Marke ("Goran" + "Tee Mevlana Çay"), wird die bekannte zur Marke.
- * Läuft vor dem Glossar – feste Glossar-Namen gewinnen.
+ * Namen vereinheitlichen, bevor ausgewählt wird (läuft vor dem Glossar – feste Glossar-Namen gewinnen):
+ * 1. Eine Marke, eine Schreibweise: "Mevlâna Çay", "Mevlana", "MEVLANA" → die häufigste Form ohne Warenwort,
+ *    bei Gleichstand die ohne Sonderzeichen; steht die Marke im Katalog, dessen Form.
+ * 2. Steht eine bekannte Marke (Katalog oder ein anderes Angebot) im Namen, aber eine unbekannte als Marke
+ *    ("Goran-Tee" + "Mevlana Çay"), wird die bekannte zur Marke und verschwindet aus dem Namen.
+ * 3. Steht das Produkt im Katalog, heißt es wie dort (auch nach eigener Korrektur) – jede Woche gleich.
  */
 export function applyCatalogNames(offers: ExtractedOffer[], lib: Library): string[] {
   const notes: string[] = [];
-  const known = new Map<string, string>();
-  for (const e of lib.entries) if (e.brand && glossaryKey(e.brand).length >= 4) known.set(glossaryKey(e.brand), e.brand);
-  const set = (o: ExtractedOffer, brand: string | null, name: { de: string; tr: string }) => {
-    notes.push(`Katalog: „${[o.brand, o.name.de].filter(Boolean).join(' ')}“ → „${[brand, name.de].filter(Boolean).join(' ')}“`);
+  const fromLib = new Map<string, string>();
+  for (const e of lib.entries) if (e.brand && brandKey(e.brand).length >= 3 && !fromLib.has(brandKey(e.brand))) fromLib.set(brandKey(e.brand), brandShown(e.brand));
+  const seen = new Map<string, Map<string, number>>();
+  for (const o of offers) {
+    const k = brandKey(o.brand);
+    if (k.length < 3) continue;
+    const forms = seen.get(k) ?? new Map<string, number>();
+    forms.set(brandShown(o.brand!), (forms.get(brandShown(o.brand!)) ?? 0) + 1);
+    seen.set(k, forms);
+  }
+  const ascii = (s: string) => [...s].filter((c) => c.charCodeAt(0) > 127).length;
+  const canonical = new Map(fromLib);
+  for (const [k, forms] of seen) if (!canonical.has(k)) canonical.set(k, [...forms].sort((a, b) => b[1] - a[1] || ascii(a[0]) - ascii(b[0]) || a[0].length - b[0].length)[0][0]);
+  const count = (k: string) => [...(seen.get(k)?.values() ?? [])].reduce((a, b) => a + b, 0);
+
+  const set = (o: ExtractedOffer, brand: string | null, name: { de: string; tr: string }, why: string) => {
+    if (brand === o.brand && name.de === o.name.de && name.tr === o.name.tr) return;
+    notes.push(`${why}: „${[o.brand, o.name.de].filter(Boolean).join(' ')}“ → „${[brand, name.de].filter(Boolean).join(' ')}“`);
     o.brand = brand;
     o.name = name;
     o.lines = { de: nameLines(brand, name.de, DE_SOFT_CHARS, false).lines, tr: nameLines(brand, name.tr, TR_MAX_CHARS).lines };
   };
+  // Marken-Wörter aus dem Namen nehmen ("Mevlana Çay" → "Çay"); bliebe nichts übrig, den Namen lassen
+  const strip = (n: string, key: string) => n.split(/\s+/).filter((w) => !key.split(' ').includes(glossaryKey(w))).join(' ') || n;
   for (const o of offers) {
-    if (!known.has(glossaryKey(o.brand ?? ''))) {
-      const de = ` ${glossaryKey(o.name.de)} `;
-      const hit = [...known.keys()].filter((b) => de.includes(` ${b} `)).sort((a, b) => b.length - a.length)[0];
+    const own = brandKey(o.brand);
+    // bekannte Marke im Namen schlägt eine unbekannte (nur in diesem Angebot gesehene) Marke
+    const trusted = fromLib.has(own) || count(own) > 1;
+    if (!trusted) {
+      const hay = ` ${words(o.name.de).join(' ')} ${words(o.name.tr).join(' ')} `;
+      const hit = [...canonical.keys()].filter((k) => k !== own && (fromLib.has(k) || count(k) > 0) && hay.includes(` ${k} `)).sort((a, b) => b.length - a.length)[0];
       if (hit) {
-        const bw = new Set(words(hit));
-        const strip = (n: string) => n.split(/\s+/).filter((w) => !bw.has(glossaryKey(w))).join(' ') || n;
-        set(o, known.get(hit)!, { de: strip(o.name.de), tr: strip(o.name.tr) });
+        set(o, canonical.get(hit)!, { de: strip(o.name.de, hit), tr: strip(o.name.tr, hit) }, 'Marke');
+        continue;
       }
     }
+    if (own.length >= 3 && canonical.get(own) !== o.brand) set(o, canonical.get(own)!, o.name, 'Marke');
+  }
+  for (const o of offers) {
     const e = lib.find({ brand: o.brand, name: o.name, unit: o.category === 'fleisch' ? null : o.unit });
-    if (e && (e.brand !== o.brand || e.name.de !== o.name.de || e.name.tr !== o.name.tr)) set(o, e.brand, e.name);
+    if (e) set(o, e.brand ? (canonical.get(brandKey(e.brand)) ?? e.brand) : null, e.name, 'Katalog');
   }
   return notes;
 }

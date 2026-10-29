@@ -2,7 +2,8 @@
 import { CachingMatcher, CachingReader } from './cache';
 import { ClaudeReader, type PageReader } from '../extract/claude';
 import { ClaudeMatcher, type ProductMatcher } from '../images/match';
-import { GeminiMatcher, GeminiReader, geminiCheckModel, geminiModel } from './gemini';
+import { GeminiMatcher, GeminiNamer, GeminiReader, geminiCheckModel, geminiModel } from './gemini';
+import { ClaudeNamer, type ProductNamer } from './namer';
 import { CHECK_MODEL, MODEL } from '../extract/claude';
 
 export type AiProvider = 'claude' | 'gemini';
@@ -34,6 +35,12 @@ export function makeMatcher(): ProductMatcher | null {
   const p = aiProvider();
   const m = p === 'gemini' ? new GeminiMatcher() : p === 'claude' ? new ClaudeMatcher() : null;
   return m && new CachingMatcher(m);
+}
+
+/** Produktnamen vereinheitlichen; null ohne Key (dann nur Katalog und Glossar). Gemerkt wird in library/namen.json. */
+export function makeNamer(): ProductNamer | null {
+  const p = aiProvider();
+  return p === 'gemini' ? new GeminiNamer() : p === 'claude' ? new ClaudeNamer() : null;
 }
 
 /** Welche Modelle gerade benutzt würden (für die Einstellungen). */

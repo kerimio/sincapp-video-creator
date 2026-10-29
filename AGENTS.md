@@ -36,7 +36,7 @@ Prospekt (PDF/Bilder, Firestore)
 | `src/extract/` | Prospekt lesen: `extract.ts` (Ablauf), `claude.ts`/`../ai/gemini.ts` (Anbieter), `normalize.ts` (Preise, Einheiten, Zeilenumbruch) |
 | `src/ai/` | KI-Anbieter wählen (`provider.ts`), Antwort-Cache (`cache.ts`), Verbrauch (`usage.ts`) |
 | `src/images/` | Bildersuche (Brave, Open Food Facts), KI-Abgleich (`match.ts`), Ablauf `resolve.ts` |
-| `src/library/` | Produkt-Katalog: `library.ts` (index.json + PNGs), `catalog-api.ts` (HTTP), `bestprice.ts` |
+| `src/library/` | Produkt-Katalog: `library.ts` (index.json + PNGs), `catalog-api.ts` (HTTP), `bestprice.ts`, `glossar.ts` (Glossar, Marken vereinheitlichen), `names.ts` (gemerkte Namen, `namen.json`) |
 | `src/app/` | Web-App-Server: Jobs, `pipeline.ts` (Prospekt → Story), `campaign.ts` (Katalog → Story) |
 | `src/review/` | Review-/Studio-Server (`server.ts`) und die React-App (`ui/`: `pages.tsx`, `App.tsx` Prüfen, `studio.tsx` Design/Export, `catalog.tsx`) |
 | `src/template/` | Das Video-Template (`Story.tsx`), gerendert von Vite + Playwright |

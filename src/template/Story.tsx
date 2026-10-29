@@ -437,7 +437,6 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
         const dy = D.enter === 'hoch' ? tw(T, d, d + 0.85, 260, 0, ent) : 0;
         const sc = D.enter === 'pop' ? tw(T, d, d + 0.7, 0.4, 1, MOTION.pop) : 1;
         const tagP = tw(T, d + 0.5, d + 1.0, 0, 1, MOTION.pop);
-        const kb = tw(T, d, d + 6.5, 1, 1.06, Easing.linear);
         const name = o.name[lang];
         const pad = size === 'big' ? 18 : 12;
         const fs = fitSize(name, w - pad * 2 - 8, { weight: 900, tracking: -0.035, upper: true, lang, size: size === 'big' ? Math.min(54, P.bigName) : 30 }, 14);
@@ -449,7 +448,8 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
           <div key={k} style={abs({ left: x, top: y, width: w, height: h, transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>
             <div style={{ position: 'absolute', inset: 0, background: '#fff', borderRadius: size === 'big' ? 36 : 28, border: '2px solid rgba(41,32,25,.08)', boxShadow: theme.shadow, boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: pad, gap: 8 }}>
               <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', borderRadius: size === 'big' ? 24 : 18 }}>
-                <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', display: 'block', transform: `scale(${kb * o.imgZoom * (size === 'big' ? 1.15 : 1.05)})` }} />
+                <img src={urls.job(o.img)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'multiply', display: 'block', transform: `scale(${o.imgZoom * (size === 'big' ? 1.15 : 1.05)})` }} />
+                {/* kein langsamer Zoom: feine Fotos (Hack, Brustfilet) flimmern sonst beim Verkleinern von Frame zu Frame */}
               </div>
               <div style={{ height: nameH, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
                 {name.map((l, j) => <div key={j} style={{ fontSize: fs, fontWeight: 900, lineHeight: 1.02, letterSpacing: '-0.035em', textTransform: 'uppercase', color: c.ink, whiteSpace: 'nowrap' }}>{l}</div>)}
