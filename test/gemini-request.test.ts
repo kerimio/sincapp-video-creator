@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GeminiMatcher, GeminiReader } from '../src/ai/gemini';
+import { GeminiMatcher, GeminiReader, QUOTA_DAY, retryAfter } from '../src/ai/gemini';
 import { aiProvider } from '../src/ai/provider';
 
 // Fake-API im Format von generateContent
@@ -10,12 +10,20 @@ let reply: unknown = {};
 let finish = 'STOP';
 /** Simuliert ein Modell, das keine Denk-Einstellung kennt */
 let rejectThinking = false;
+/** So oft mit 429 antworten (Überlast), mit dieser Fehlermeldung */
+let overload = 0;
+let overloadError: unknown = null;
 const server = createServer((req, res) => {
   let data = '';
   req.on('data', (d) => (data += d));
   req.on('end', () => {
     const body = JSON.parse(data);
     seen.push({ url: req.url ?? '', headers: req.headers, body });
+    if (overload > 0) {
+      overload--;
+      res.writeHead(429, { 'content-type': 'application/json' }).end(JSON.stringify(overloadError));
+      return;
+    }
     if (rejectThinking && body.generationConfig?.thinkingConfig) {
       res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'thinking_level is not supported by this model' } }));
       return;
@@ -86,6 +94,41 @@ describe('Gemini-Anfrage', () => {
     } finally {
       rejectThinking = false;
     }
+  });
+});
+
+describe('Überlast (Kontingent des API-Keys)', () => {
+  const quota = (quotaId: string, delay: string) => ({
+    error: {
+      code: 429, status: 'RESOURCE_EXHAUSTED', message: `You exceeded your current quota. Please retry in ${delay}.`,
+      details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId }] }, { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: delay }],
+    },
+  });
+
+  it('liest die Wartezeit, die Gemini nennt', () => {
+    expect(retryAfter('{"retryDelay":"37s"}')).toBe(37000);
+    expect(retryAfter('Please retry in 2.5s.')).toBe(2500);
+    expect(retryAfter('kaputt')).toBeNull();
+  });
+
+  it('Minutenlimit: wartet so lange wie verlangt und liest die Seite dann doch', async () => {
+    finish = 'STOP';
+    reply = { prices: [{ id: 1, price: '7.99' }] };
+    overload = 2;
+    overloadError = quota('GenerateRequestsPerMinutePerProjectPerModel-FreeTier', '3s');
+    const t = Date.now();
+    expect(await new GeminiReader('k', base).readPrices([PAGE], PAGE)).toEqual(['7.99']);
+    // zweimal ≥ 3 s gewartet statt nach 2 + 4 s aufzugeben
+    expect(Date.now() - t).toBeGreaterThanOrEqual(6000);
+  }, 30_000);
+
+  it('Tageslimit: sofort eine verständliche Meldung statt minutenlang zu warten', async () => {
+    overload = 1;
+    overloadError = quota('GenerateRequestsPerDayPerProjectPerModel-FreeTier', '50s');
+    const t = Date.now();
+    await expect(new GeminiReader('k', base).readPrices([PAGE], PAGE)).rejects.toThrow(QUOTA_DAY);
+    expect(Date.now() - t).toBeLessThan(3000);
+    overload = 0;
   });
 });
 

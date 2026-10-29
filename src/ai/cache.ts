@@ -30,9 +30,9 @@ export class CachingReader implements PageReader {
     this.name = inner.name;
   }
 
-  private async cached<T>(key: string, make: () => Promise<T>, parse: (x: unknown) => T): Promise<T> {
+  private async cached<T>(key: string, make: () => Promise<T>, parse: (x: unknown) => T, fresh = false): Promise<T> {
     const f = join(this.dir, `${key}.json`);
-    if (existsSync(f)) {
+    if (!fresh && existsSync(f)) {
       try {
         const v = parse(JSON.parse(await readFile(f, 'utf8')));
         this.hits++;
@@ -48,10 +48,10 @@ export class CachingReader implements PageReader {
     return v;
   }
 
-  async readPage(file: string, size: { width: number; height: number }) {
+  async readPage(file: string, size: { width: number; height: number }, opts: { fresh?: boolean } = {}) {
     // ohne Modellnamen: eine einmal gelesene Seite wird nie wieder bezahlt, auch nach einem Modellwechsel
     const key = await hashFiles([file], `page|${size.width}x${size.height}`);
-    return this.cached(key, () => this.inner.readPage(file, size), (x) => PageResult.parse(x));
+    return this.cached(key, () => this.inner.readPage(file, size), (x) => PageResult.parse(x), opts.fresh);
   }
 
   async readPrices(crops: string[], pageFile: string) {

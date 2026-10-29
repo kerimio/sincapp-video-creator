@@ -6,7 +6,7 @@ import { pythonBin } from '../src/python';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pagesToRead } from '../src/firestore/firestore';
-import { applyFirestoreDates, applyFirestoreMarkets, firestoreProductNames } from '../src/app/pipeline';
+import { applyFirestoreDates, applyFirestoreMarkets, firestorePageProducts, firestoreProductNames, unreadPages } from '../src/app/pipeline';
 import { caption } from '../src/core/captions';
 import { parseStory } from '../src/core/schema';
 import { dealScores, offerToStory, pageBoost, selectByMarket } from '../src/select/select';
@@ -377,4 +377,50 @@ describe('Glossar', () => {
     expect(checkGlossary([{ de: ' Sucuk ', tr: 'Sucuk', match: 'Knoblauchwurst, Parmak Sucuk' }])).toEqual([{ de: 'Sucuk', tr: 'Sucuk', match: ['Knoblauchwurst', 'Parmak Sucuk'] }]);
     expect(() => checkGlossary([{ de: 'X', tr: '' }])).toThrow(/Zeile 1/);
   });
+});
+
+describe.skipIf(!existsSync(pythonBin()))('Gleicher Großhändler-Prospekt bei zwei Märkten', () => {
+  // Saray und Bizim verteilen denselben Prospekt (Kavak Reis 7,99 …) – nur Logo und Adresse sind anders
+  const reis = { brand: 'Kavak', name_de: 'Reis', name_tr: 'Pirinç', unit: '5 kg', price: '7.99', note_de: null, note_tr: null, category: 'grundnahrung', bbox: [10, 10, 300, 300], price_tag_bbox: null, confidence: 0.9 };
+  const tee = { ...reis, brand: 'Tanay', name_de: 'Schwarztee', name_tr: 'Siyah Çay', unit: '800 g', price: '2.99', category: 'getraenke' };
+  const page = (offers: unknown[]) => PageResult.parse({ market: null, validFrom: null, validTo: null, addresses: [], phone: null, offers });
+
+  it('jeder Markt behält seine Angebote; nicht gelesene oder leere Seiten werden erneut gelesen und gemeldet', async () => {
+    const job = mkdtempSync(join(tmpdir(), 'grosshandel-'));
+    mkdirSync(join(job, 'input'));
+    for (const n of ['p1-seite-01', 'p1-seite-02', 'p1-seite-03', 'p2-seite-01', 'p2-seite-02', 'p2-seite-03']) copyFileSync(join(__dirname, '../reference/samples/saray-2026-10-28/seite-3.png'), join(job, 'input', `${n}.png`));
+    writeFileSync(join(job, 'firestore-prospekt.json'), JSON.stringify([
+      { title: 'Wochenangebote', marketName: 'Bizim Market', products: [] },
+      { title: 'Wochenangebote', marketName: 'Saray Market', products: [{ name_de: 'Schwarztee', locations: [{ page: 2, box: [] }, { page: 2, box: [] }] }] },
+    ]));
+    const calls: string[] = [];
+    let saray2 = 0;
+    const reader = {
+      name: 'fake',
+      async readPage(file: string, _size: unknown, opts?: { fresh?: boolean }) {
+        const stem = file.match(/(p\d-seite-\d+)/)![1];
+        calls.push(`${stem}${opts?.fresh ? ' frisch' : ''}`);
+        if (stem === 'p1-seite-02' && calls.filter((c) => c.startsWith(stem)).length === 1) throw new Error('429 RESOURCE_EXHAUSTED');
+        if (stem === 'p1-seite-03') throw new Error('Gemini: zu viele Anfragen');
+        // gemerkte leere Antwort für eine Seite, auf der laut Firestore Tee steht
+        if (stem === 'p2-seite-02') return page(saray2++ ? [tee] : []);
+        return page(stem.endsWith('01') ? [reis] : [tee]);
+      },
+      async readPrices(c: string[]) {
+        return c.map(() => null);
+      },
+    };
+    const onPage = firestorePageProducts(job);
+    expect([...onPage]).toEqual([['p2-seite-02', 1]]);
+    const ex = await extractJob({ jobDir: job, reader, priceCheck: false, expected: (p) => onPage.get(p.file.match(/(p\d-seite-\d+)/)![1]) ?? 0 });
+    applyFirestoreMarkets(ex, job);
+    // Reis und Tee bei beiden Märkten (früher fiel Sarays Kopie als „doppelt“ weg); doppelt innerhalb eines Prospekts nur einmal
+    expect(ex.offers.map((o) => `${o.market} ${o.name.de}`)).toEqual(['Bizim Market Reis', 'Bizim Market Schwarztee', 'Saray Market Reis', 'Saray Market Schwarztee']);
+    expect(calls).toContain('p2-seite-02 frisch');
+    // Überlast beim ersten Mal: am Ende noch einmal gelesen; dauerhaft kaputt: in der App sichtbar
+    expect(ex.pages.map((p) => p.error ?? null)).toEqual([null, null, 'Gemini: zu viele Anfragen', null, null, null]);
+    expect(unreadPages(ex, job)).toEqual(['Bizim Market – Wochenangebote, Seite 3 nicht gelesen, ihre Angebote fehlen: Gemini: zu viele Anfragen']);
+    const sel = selectByMarket(ex.offers, ['Bizim Market', 'Saray Market']);
+    expect(sel.offers.filter((o) => o.market === 'Saray Market')).toHaveLength(2);
+  }, 120000);
 });

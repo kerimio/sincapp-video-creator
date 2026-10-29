@@ -33,13 +33,14 @@ export class GeminiClient {
 
   /**
    * Kosten sparen: wenig "Nachdenken" (Denk-Tokens kosten wie Ausgabe), und bei kaputter Antwort
-   * nur einmal neu fragen. Überlast (429/503, wird nicht berechnet) darf öfter wiederholt werden.
+   * nur einmal neu fragen. Überlast (429/503, wird nicht berechnet) darf öfter wiederholt werden –
+   * so lange, wie Gemini selbst zu warten bittet (Minutenlimit: "retry in 37s"), sonst fehlen ganze Seiten.
    */
   async json<S extends z.ZodType>(schema: S, parts: Part[], model = geminiModel(), opts: { task?: string; thinking?: ThinkingLevel } = {}): Promise<z.infer<S>> {
     let last: Error | null = null;
     let thinking: ThinkingLevel | undefined = opts.thinking ?? ThinkingLevel.LOW;
     let paidRetries = 0;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 6; attempt++) {
       try {
         const res = await this.ai.models.generateContent({
           model,
@@ -67,14 +68,27 @@ export class GeminiClient {
           thinking = undefined;
           continue;
         }
+        // Tageskontingent aufgebraucht: Warten hilft heute nicht mehr – verständlich melden statt still Seiten zu verlieren
+        if (/429|RESOURCE_EXHAUSTED/.test(msg) && /PerDay/i.test(msg)) throw new Error(QUOTA_DAY);
         const transient = /429|500|503|UNAVAILABLE|RESOURCE_EXHAUSTED|fetch failed/i.test(msg);
         const broken = /JSON|Expected|Invalid|abgeschnitten|keine Antwort/i.test(msg);
         if (!transient && !(broken && paidRetries++ < 1)) break;
-        await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+        if (attempt === 5) break;
+        await new Promise((r) => setTimeout(r, Math.min(65000, Math.max(2000 * 2 ** attempt, (retryAfter(msg) ?? 0) + 500))));
       }
     }
+    if (last && /429|RESOURCE_EXHAUSTED/.test(last.message)) throw new Error(QUOTA_MINUTE);
     throw last!;
   }
+}
+
+export const QUOTA_DAY = 'Gemini: Das Tageskontingent des API-Keys ist aufgebraucht. Ab morgen geht es weiter – oder in Google AI Studio die Abrechnung aktivieren.';
+export const QUOTA_MINUTE = 'Gemini: zu viele Anfragen pro Minute (Kontingent des API-Keys). Bitte in ein paar Minuten noch einmal versuchen.';
+
+/** Wartezeit, die Gemini bei Überlast selbst nennt ("retryDelay":"37s" oder "Please retry in 37.2s"), in ms. */
+export function retryAfter(msg: string): number | null {
+  const m = msg.match(/retryDelay"?\s*:\s*"(\d+(?:\.\d+)?)s"/) ?? msg.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+  return m ? Math.round(Number(m[1]) * 1000) : null;
 }
 
 /**

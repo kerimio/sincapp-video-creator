@@ -101,6 +101,42 @@ export function firestoreProductNames(jobDir: string): string[] {
 }
 
 /**
+ * Wie viele Produkte laut Firestore auf jeder Seite stehen, nach Dateiname ("p2-seite-03" bzw. "seite-03").
+ * Liest die KI auf so einer Seite nichts, stimmt etwas nicht (siehe `expected` in extractJob).
+ */
+export function firestorePageProducts(jobDir: string): Map<string, number> {
+  const out = new Map<string, number>();
+  const f = join(jobDir, 'firestore-prospekt.json');
+  if (!existsSync(f)) return out;
+  const raw = JSON.parse(readFileSync(f, 'utf8'));
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { products?: { locations?: { page?: number }[] }[] }[];
+  prs.forEach((p, k) => {
+    for (const prod of p.products ?? []) {
+      // ein Produkt mit zwei Fundstellen auf derselben Seite zählt einmal
+      for (const n of new Set((prod.locations ?? []).map((l) => l.page).filter((n): n is number => Number.isInteger(n)))) {
+        const stem = `${prs.length > 1 ? `p${k + 1}-` : ''}seite-${String(n).padStart(2, '0')}`;
+        out.set(stem, (out.get(stem) ?? 0) + 1);
+      }
+    }
+  });
+  return out;
+}
+
+/** Seiten, die nicht gelesen werden konnten, als Hinweis für die App: "Saray Market – Wochenangebote, Seite 3: …" */
+export function unreadPages(ex: Pick<Extraction, 'pages'>, jobDir: string): string[] {
+  const f = join(jobDir, 'firestore-prospekt.json');
+  const raw = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : [];
+  const prs = (Array.isArray(raw) ? raw : [raw]) as { title?: string; marketName?: string }[];
+  const failed = ex.pages.filter((p) => p.error);
+  return failed.map((p) => {
+    const m = basename(p.file).match(/^(?:p(\d+)-)?seite-(\d+)/);
+    const pr = m ? prs[Number(m[1] ?? 1) - 1] : undefined;
+    const where = pr && m ? `${[pr.marketName, pr.title].filter(Boolean).join(' – ')}, Seite ${Number(m[2])}` : basename(p.source);
+    return `${where} nicht gelesen, ihre Angebote fehlen: ${p.error}`;
+  });
+}
+
+/**
  * Prospekt → story.json: Seiten lesen, Angebote auswählen, Bilder holen, Story bauen.
  * Fehler einzelner Seiten/Bilder landen in report.md; nur ohne verwertbare Angebote wird abgebrochen.
  */
@@ -113,16 +149,18 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   let pagesTotal = 1;
   // Preise werden erst nach der Vorauswahl gegengeprüft (siehe unten) – nicht alle 180 Angebote eines dicken Prospekts
   let pagesRead = 0;
+  const onPage = firestorePageProducts(jobDir);
   const ex = await extractJob({
     jobDir,
     reader,
     priceCheck: false,
+    expected: (p) => onPage.get(basename(p.file).replace(/\.[^.]+$/, '')) ?? 0,
     log: (m) => {
       const n = m.match(/^(\d+) Seite\(n\) vorbereitet/);
       if (n) pagesTotal = Number(n[1]);
       // Seiten laufen parallel: Fortschritt nach Anzahl fertiger Seiten
       const page = m.match(/^Seite (\d+): (\d+) Angebot/);
-      if (page) onProgress({ step: 'extract', message: `${++pagesRead} von ${pagesTotal} Seiten gelesen (Seite ${page[1]}: ${page[2]} Angebote)`, fraction: 0.05 + 0.4 * (pagesRead / pagesTotal) });
+      if (page) onProgress({ step: 'extract', message: `${(pagesRead = Math.min(pagesTotal, pagesRead + 1))} von ${pagesTotal} Seiten gelesen (Seite ${page[1]}: ${page[2]} Angebote)`, fraction: 0.05 + 0.4 * (pagesRead / pagesTotal) });
     },
   });
   applyFirestoreDates(ex, jobDir);
@@ -132,6 +170,7 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const gloss = await glossary();
   const glossaryNotes = [...applyCatalogNames(ex.offers, library), ...(await normalizeNames(ex.offers, { namer: null })), ...applyGlossary(ex.offers, gloss)];
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
+  const unread = unreadPages(ex, jobDir);
   if (!ex.offers.length) {
     await writeFile(join(jobDir, 'report.md'), extractionReport(ex));
     throw new Error(`Keine Angebote erkannt. ${ex.warnings.join(' ')}`.trim());
@@ -187,5 +226,6 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   await writeFile(join(jobDir, 'extraction.json'), JSON.stringify(ex, null, 2) + '\n');
   await writeFile(join(jobDir, 'report.md'), extractionReport(ex, { notes: [...sel.warnings, ...warnings, ...notes, ...glossaryNotes] }));
   onProgress({ step: 'story', message: 'Fertig zum Prüfen', fraction: 1 });
-  return { story, extraction: ex as Extraction, notes: [...sel.warnings, ...warnings, ...notes] };
+  // nicht gelesene Seiten zuerst: Sonst wundert man sich über fehlende Angebote, ohne den Grund zu sehen
+  return { story, extraction: ex as Extraction, notes: [...unread, ...sel.warnings, ...warnings, ...notes] };
 }

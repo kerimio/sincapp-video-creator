@@ -17,7 +17,8 @@ export const fallbackParams = (model: string) => (model.startsWith('claude-opus'
 /** Liest Prospektseiten. Echte Implementierung: Claude; für Tests: aufgezeichnete Antworten. */
 export interface PageReader {
   name: string;
-  readPage(file: string, size: { width: number; height: number }): Promise<PageResult>;
+  /** `fresh`: nicht aus dem Speicher, sondern neu lesen (z. B. wenn eine gemerkte Antwort leer war) */
+  readPage(file: string, size: { width: number; height: number }, opts?: { fresh?: boolean }): Promise<PageResult>;
   /** Preise einzeln von Schild-Ausschnitten lesen (Reihenfolge wie `crops`). */
   readPrices(crops: string[], pageFile: string): Promise<(string | null)[]>;
 }

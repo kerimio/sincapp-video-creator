@@ -97,7 +97,8 @@ export interface Extraction {
   validTo: string | null;
   addresses: string[];
   phone: string | null;
-  pages: { file: string; source: string; width: number; height: number; offers: number }[];
+  /** `error`: Seite konnte nicht gelesen werden (Grund) – ihre Angebote fehlen */
+  pages: { file: string; source: string; width: number; height: number; offers: number; error?: string }[];
   offers: ExtractedOffer[];
   warnings: string[];
 }
