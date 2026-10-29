@@ -380,6 +380,12 @@ function OfferRow({ o, k, n, s, T, lang, theme, urls, look }: { o: Offer; k: num
  * Seite eines Markts: oben zwei große Karten nebeneinander (frisches Fleisch), darunter bis zu drei kleine
  * nebeneinander. Nutzt die Fläche zwischen Kopf und Laufband (bzw. Seitenende), in allen Formaten.
  */
+/** Überschriften der Reihen auf einer Markt-Seite (ohne Imperativ, siehe Design System). */
+const ROW_LABELS = {
+  big: { de: 'Angebote der Woche', tr: 'Haftanın fırsatları' },
+  small: { de: 'Außerdem günstig', tr: 'Ayrıca uygun' },
+} as const;
+
 function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers: Offer[]; s: number; T: number; lang: Lang; theme: PageTheme; urls: Urls; look: Look; bottom: number }) {
   const { d: D, c, L } = look;
   const P = L.page;
@@ -390,21 +396,38 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   const small = offers.slice(big.length);
   const bigW = (900 - gap * (big.length - 1)) / big.length;
   const smallW = small.length ? (900 - gap * (small.length - 1)) / small.length : 0;
-  // Große Karten etwa quadratisch, kleine etwas höher als breit; reicht der Platz nicht, werden beide flacher.
-  // Übriger Platz verteilt sich um den Block (mehr nach unten), statt die Karten in die Länge zu ziehen.
-  const wantBig = Math.min(bigW * (big.length === 1 ? 0.8 : 1.05), 620);
-  const wantSmall = small.length ? Math.min(smallW * 1.4, 470) : 0;
-  const need = wantBig + (small.length ? gap + wantSmall : 0);
-  const fit = Math.min(1, (zone - (small.length ? gap : 0)) / (need - (small.length ? gap : 0)));
-  const bigH = Math.round(wantBig * fit);
-  const smallH = Math.round(wantSmall * fit);
-  const y0 = top + Math.max(0, Math.round((zone - bigH - (small.length ? gap + smallH : 0)) * 0.25));
+  const rows = small.length ? 2 : 1;
+  // Große Karten etwa quadratisch, kleine etwas höher als breit. Im hohen 9:16-Format bleibt viel Platz:
+  // dann bekommen die Reihen eine Überschrift und die Karten wachsen bis zu einer Obergrenze mit,
+  // der Rest verteilt sich über und unter dem Block (unten etwas mehr, dort liegt in Storys die Antwortleiste).
+  const base = { big: bigW * (big.length === 1 ? 0.8 : 1.05), small: small.length ? smallW * 1.4 : 0 };
+  const most = { big: bigW * (big.length === 1 ? 0.95 : 1.28), small: small.length ? smallW * 1.7 : 0 };
+  const labelH = Math.round(P.bigName * 1.1);
+  const labels = zone - (rows - 1) * gap - base.big - base.small >= rows * labelH * 1.6;
+  const avail = zone - (rows - 1) * gap - (labels ? rows * labelH : 0);
+  const grow = Math.max(0, Math.min(1, (avail - base.big - base.small) / (most.big + most.small - base.big - base.small || 1)));
+  const fit = Math.min(1, avail / (base.big + base.small));
+  const bigH = Math.round((base.big + (most.big - base.big) * grow) * fit);
+  const smallH = Math.round((base.small + (most.small - base.small) * grow) * fit);
+  const y0 = top + Math.max(0, Math.round((avail - bigH - smallH) * 0.4));
+  const bigY = y0 + (labels ? labelH : 0);
+  const smallY = bigY + bigH + gap + (labels ? labelH : 0);
   const cells = [
-    ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: y0, w: bigW, h: bigH, size: 'big' as const })),
-    ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: y0 + bigH + gap, w: smallW, h: smallH, size: 'small' as const })),
+    ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: bigY, w: bigW, h: bigH, size: 'big' as const })),
+    ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: smallY, w: smallW, h: smallH, size: 'small' as const })),
   ];
+  const heads = labels ? [{ y: bigY - labelH, text: ROW_LABELS.big[lang], d: s + 0.2 }, ...(small.length ? [{ y: smallY - labelH, text: ROW_LABELS.small[lang], d: s + 0.55 }] : [])] : [];
   return (
     <>
+      {heads.map(({ y, text, d }, k) => {
+        const p = tw(T, d, d + 0.6, 0, 1, MOTION.enter);
+        return (
+          <div key={`h${k}`} style={abs({ left: 90, top: y, width: 900, height: labelH - 14, display: 'flex', alignItems: 'center', gap: 22, opacity: p })}>
+            <div style={{ fontSize: Math.round(labelH * 0.5), fontWeight: 900, letterSpacing: '0.04em', textTransform: 'uppercase', color: theme.dark ? c.accent2 : c.accent, whiteSpace: 'nowrap', transform: `translateX(${(1 - p) * -30}px)` }}>{text}</div>
+            <div style={{ flex: 1, height: 3, borderRadius: 2, background: theme.dark ? 'rgba(255,255,255,.18)' : 'rgba(41,32,25,.14)', transform: `scaleX(${p})`, transformOrigin: '0 50%' }} />
+          </div>
+        );
+      })}
       {cells.map(({ o, x, y, w, h, size }, k) => {
         const d = s + 0.35 + k * 0.16;
         const ent = MOTION.enter;
