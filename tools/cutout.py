@@ -9,7 +9,8 @@ Auftrag:
    "erase": [[x0, y0, x1, y1], ...],  # Preisschilder u. ä., werden transparent
    "pad": 0.06,
    "keep": true,                      # Hintergrund behalten: nur ausschneiden
-   "polygon": [[x, y], ...]}          # optional mit keep: Form statt Rechteck (Pixel im Seitenbild)
+   "polygon": [[x, y], ...],          # optional mit keep: Form statt Rechteck (Pixel im Seitenbild)
+   "photo": true}                     # ganzes Bild ohne einfarbigen Hintergrund: als Foto behalten (frisches Fleisch)
 
 Ergebnis:
   {"out": ..., "ok": true, "width": .., "height": .., "edgeTransparent": 0.97,
@@ -194,6 +195,24 @@ def save_trimmed(rgba, out, extra):
     return dict(extra, out=out, width=img.width, height=img.height, coverage=round(float((rgba[..., 3] > 128).mean()), 4))
 
 
+def save_photo(img, out):
+    """Foto mit Hintergrund behalten statt freistellen: Frisches Fleisch mit Kräutern, Zitrone, Brett
+    schneidet das Modell zackig und mit Löchern aus – als Foto sieht es besser aus. Zuschnitt auf
+    1:1 bis 4:3 (passt in die Karten), gespeichert ohne Alphakanal – daran erkennt man später ein Foto."""
+    w, h = img.size
+    if w > h * 4 / 3:
+        cw = round(h * 4 / 3)
+        img = img.crop(((w - cw) // 2, 0, (w - cw) // 2 + cw, h))
+    elif h > w:
+        img = img.crop((0, (h - w) // 2, w, (h - w) // 2 + w))
+    if max(img.size) > MAX_SIDE:
+        s = MAX_SIDE / max(img.size)
+        img = img.resize((round(img.width * s), round(img.height * s)), Image.LANCZOS)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    img.save(out, optimize=True)
+    return {"out": out, "ok": True, "model": "foto", "photo": True, "width": img.width, "height": img.height, "warnings": []}
+
+
 def keep_cutout(job):
     """Vom Nutzer gewählter Ausschnitt, Hintergrund bleibt. Rechteck mit leicht runden
     Ecken oder – mit "polygon" – genau die umrandete Form (kantengeglättet)."""
@@ -253,6 +272,8 @@ def process(job, sessions, cache):
             res = save_trimmed(np.dstack([rgb, a]), job["out"], {"ok": True, "model": "hintergrund", "edgeTransparent": round(border_transparency(a), 4), "warnings": warnings})
             if res:
                 return res
+        if job.get("photo"):
+            return save_photo(src.convert("RGB"), job["out"])
         w, h = src.size
         job = dict(job, bbox=[0, 0, w, h], pad=0)
     if path not in cache:

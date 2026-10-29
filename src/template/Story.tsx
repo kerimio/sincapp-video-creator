@@ -240,6 +240,13 @@ function PriceTag({ o, lang, theme, p, look }: { o: Offer; lang: Lang; theme: Pa
   );
 }
 
+/** Breite des Preisschilds bei Maßstab 1 (ohne Animation), damit es in schmale Karten passt. */
+function tagWidth(o: Offer, lang: Lang, k: number) {
+  const unit = unitOf(o, lang);
+  const w = 48 + textWidth(o.price, { weight: 900, size: 80, tracking: -0.05, lang }) + 6 + textWidth('€', { weight: 900, size: 40, lang }) + (unit ? 14 + textWidth(unit, { weight: 800, size: 28, lang }) : 0);
+  return Math.max(1, w * k);
+}
+
 /** Runder Preis-Sticker, sitzt auf der Kartenecke. */
 function PriceCircle({ o, lang, theme, p, size }: { o: Offer; lang: Lang; theme: PageTheme; p: number; size: number }) {
   const unit = unitOf(o, lang);
@@ -381,12 +388,20 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
   const zone = bottom - top;
   const big = offers.slice(0, Math.min(2, offers.length));
   const small = offers.slice(big.length);
-  // ohne kleine Reihe dürfen die großen Karten die ganze Fläche nehmen
-  const bigH = small.length ? Math.round((zone - gap) * 0.57) : zone;
-  const smallH = zone - bigH - gap;
+  const bigW = (900 - gap * (big.length - 1)) / big.length;
+  const smallW = small.length ? (900 - gap * (small.length - 1)) / small.length : 0;
+  // Große Karten etwa quadratisch, kleine etwas höher als breit; reicht der Platz nicht, werden beide flacher.
+  // Übriger Platz verteilt sich um den Block (mehr nach unten), statt die Karten in die Länge zu ziehen.
+  const wantBig = Math.min(bigW * (big.length === 1 ? 0.8 : 1.05), 620);
+  const wantSmall = small.length ? Math.min(smallW * 1.4, 470) : 0;
+  const need = wantBig + (small.length ? gap + wantSmall : 0);
+  const fit = Math.min(1, (zone - (small.length ? gap : 0)) / (need - (small.length ? gap : 0)));
+  const bigH = Math.round(wantBig * fit);
+  const smallH = Math.round(wantSmall * fit);
+  const y0 = top + Math.max(0, Math.round((zone - bigH - (small.length ? gap + smallH : 0)) * 0.25));
   const cells = [
-    ...big.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / big.length), y: top, w: (900 - gap * (big.length - 1)) / big.length, h: bigH, size: 'big' as const })),
-    ...small.map((o, i) => ({ o, x: 90 + i * ((900 + gap) / small.length), y: top + bigH + gap, w: (900 - gap * (small.length - 1)) / small.length, h: smallH, size: 'small' as const })),
+    ...big.map((o, i) => ({ o, x: 90 + i * (bigW + gap), y: y0, w: bigW, h: bigH, size: 'big' as const })),
+    ...small.map((o, i) => ({ o, x: 90 + i * (smallW + gap), y: y0 + bigH + gap, w: smallW, h: smallH, size: 'small' as const })),
   ];
   return (
     <>
@@ -403,7 +418,8 @@ function MarketGrid({ offers, s, T, lang, theme, urls, look, bottom }: { offers:
         const pad = size === 'big' ? 18 : 12;
         const fs = fitSize(name, w - pad * 2 - 8, { weight: 900, tracking: -0.035, upper: true, lang, size: size === 'big' ? Math.min(54, P.bigName) : 30 }, 14);
         const lines = name.length;
-        const tagK = (size === 'big' ? 0.62 : 0.4) * Math.min(1, h / (size === 'big' ? 680 : 500) + 0.25);
+        // Preis groß genug, dass man ihn im Vorbeiwischen liest; bei schmalen Karten nur so groß, wie er hineinpasst
+        const tagK = Math.min(size === 'big' ? 0.82 : 0.6, (w - pad * 2 - 8) / tagWidth(o, lang, P.tagScale));
         const nameH = lines * fs * 1.02;
         return (
           <div key={k} style={abs({ left: x, top: y, width: w, height: h, transform: `translate(${dx}px, ${dy}px) scale(${sc})`, transformOrigin: '50% 50%', ...(op < 1 ? { opacity: op } : {}) })}>

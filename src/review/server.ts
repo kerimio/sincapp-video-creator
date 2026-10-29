@@ -7,7 +7,7 @@ import { join, relative } from 'node:path';
 import { parseStory } from '../core/schema';
 import { Design } from '../core/design';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
-import { adoptImage, resolveImages } from '../images/resolve';
+import { adoptImage, keepAsPhoto, resolveImages } from '../images/resolve';
 import { downloadImage, providersFromEnv, searchAll, searchQuery } from '../images/search';
 import { aiProvider, makeMatcher } from '../ai/provider';
 import { Library } from '../library/library';
@@ -66,7 +66,7 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
   /** Freistellen einer Datei (ganzes Bild) oder eines Prospekt-Ausschnitts nach images/<id>.png */
   async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = [], extra: { keep?: boolean; polygon?: number[][] } = {}) {
     const out = join(jobDir, 'images', `${o.id}.png`);
-    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase, ...extra }]);
+    const [line] = await runPython('cutout.py', [], [{ image, out, bbox, erase, ...(bbox ? {} : { photo: keepAsPhoto(o.category) }), ...extra }]);
     const r = JSON.parse(line) as { ok: boolean; width?: number; warnings: string[] };
     if (!r.width) throw new Error(`Freistellen fehlgeschlagen: ${r.warnings.join('; ')}`);
     return { out, warnings: r.warnings };

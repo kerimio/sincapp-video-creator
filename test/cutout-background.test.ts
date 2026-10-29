@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 import { pythonBin, runPython } from '../src/python';
+import { hasAlpha } from '../src/images/resolve';
 
 const hasPython = existsSync(pythonBin()) || pythonBin() === 'python3';
 
@@ -35,5 +36,24 @@ describe.skipIf(!hasPython)('Freisteller für Internet-Fotos', () => {
     // weißes Innen-Etikett bleibt deckend
     expect(alphaAt(Math.round(out.width / 2), Math.round(out.height * 0.72))).toBe(255);
     expect(r.coverage).toBeGreaterThan(0.8);
+  }, 60_000);
+
+  it('behält frisches Fleisch als Foto: kein Freisteller, Zuschnitt auf höchstens 4:3, ohne Alphakanal', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'foto-'));
+    // Fleisch auf einem gemaserten Brett – kein einfarbiger Hintergrund
+    const png = new PNG({ width: 800, height: 400 });
+    for (let y = 0; y < 400; y++)
+      for (let x = 0; x < 800; x++) {
+        const meat = (x - 400) ** 2 + (y - 200) ** 2 < 120 ** 2;
+        const wood = 140 + Math.round(30 * Math.sin(x / 9 + y / 31));
+        png.data.set(meat ? [190, 50, 60, 255] : [wood, Math.round(wood * 0.7), Math.round(wood * 0.4), 255], (y * 800 + x) * 4);
+      }
+    writeFileSync(join(dir, 'web.png'), PNG.sync.write(png));
+    const out = join(dir, 'out.png');
+    const [line] = await runPython('cutout.py', [], [{ image: join(dir, 'web.png'), bbox: null, out, photo: true }]);
+    const r = JSON.parse(line);
+    expect(r).toMatchObject({ ok: true, model: 'foto', width: 533, height: 400 });
+    expect(await hasAlpha(out)).toBe(false);
+    expect(await hasAlpha(join(dir, 'web.png'))).toBe(true);
   }, 60_000);
 });

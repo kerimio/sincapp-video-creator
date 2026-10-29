@@ -8,7 +8,7 @@ import { jobsDir, validJobId } from '../app/jobs';
 import { runPython } from '../python';
 import { readBody, sendJson } from '../review/server';
 import { Library, type EntryPatch, type LibraryEntry } from './library';
-import { cutoutWeb, findWebImage, singleCopies } from '../images/resolve';
+import { cutoutWeb, findWebImage, keepAsPhoto, singleCopies } from '../images/resolve';
 import { providersFromEnv } from '../images/search';
 import { makeMatcher } from '../ai/provider';
 
@@ -68,7 +68,7 @@ async function tryWeb(lib: Library, e: LibraryEntry, opts: { force?: boolean; ma
     const r = await findWebImage({ id: 'p', brand: e.brand, name: e.name, unit: e.unit }, { image: lib.path(e), box: null }, work, { providers, matcher: opts.matcher });
     if (r.best) {
       const out = join(work, 'web.png');
-      const c = (await cutoutWeb([{ image: r.best.file, out }])).get(out);
+      const c = (await cutoutWeb([{ image: r.best.file, out, photo: keepAsPhoto(e.category) }])).get(out);
       if (c?.ok && !c.warnings.length) {
         await lib.put({ brand: e.brand, name: e.name, unit: e.unit }, out, { type: r.best.provider === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: r.best.url }, true);
         return { found: true };
@@ -191,7 +191,7 @@ export async function catalogApi(method: string, p: string, req: IncomingMessage
     const tmp = `${lib.path(e)}.upload${png ? '.png' : jpg ? '.jpg' : '.webp'}`;
     await writeFile(tmp, buf);
     try {
-      const cut = await cutoutWeb([{ image: tmp, out: lib.path(e) }]).catch(() => null);
+      const cut = await cutoutWeb([{ image: tmp, out: lib.path(e), photo: keepAsPhoto(e.category) }]).catch(() => null);
       if (!cut?.get(lib.path(e))?.ok) {
         const [line] = await runPython('crops.py', [], [{ image: tmp, box: null, out: lib.path(e), pad: 0, maxSide: 1600 }]);
         if (!JSON.parse(line).ok) return sendJson(res, { error: 'Bild ließ sich nicht lesen' }, 400);
