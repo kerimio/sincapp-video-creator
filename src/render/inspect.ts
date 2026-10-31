@@ -1,4 +1,4 @@
-// Fertiges Video prüfen: erst kostenlose Regeln auf story.json, dann ein KI-Blick auf die Standbilder jeder Seite.
+// Fertiges Video prüfen: erst kostenlose Regeln (story.json, Produktbilder), dann ein KI-Blick auf jede Seite und jedes Produktbild.
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import { parseStory, type Story } from '../core/schema';
 import { priceValue } from '../core/format';
 import { TR_MAX_CHARS } from '../extract/normalize';
 import { todayBerlin } from '../firestore/firestore';
+import { runPython } from '../python';
 import { startStaticServer } from '../server/static';
 import { stillTimes } from './export';
 import { launchBrowser, openStoryPage, templateMounts } from './render';
@@ -85,11 +86,14 @@ export async function inspectStory(jobDir: string, inspector: StoryInspector | n
   const story = parseStory(JSON.parse(await readFile(join(jobDir, 'story.json'), 'utf8')));
   const findings = ruleChecks(story, jobDir);
   const result: Inspection = { at: new Date().toISOString(), model: null, findings };
+  log('Produktbilder werden geprüft …');
+  const products = await productChecks(jobDir, story, !!inspector);
+  findings.push(...products.findings);
   if (!inspector) result.skipped = 'Kein KI-Key – nur nach Regeln geprüft';
   else {
     try {
       log('KI prüft das Video …');
-      const stills = await captureStills(jobDir, story);
+      const stills = [...(await captureStills(jobDir, story)), ...products.previews];
       const ai = await inspector.inspect(stills, storyFacts(story), await fingerprint(jobDir, story));
       result.model = inspector.name;
       for (const f of ai) findings.push({ severity: f.severity, where: stills[f.image - 1]?.label ?? 'Video', text: f.offer && !f.text.includes(f.offer) ? `${f.offer}: ${f.text}` : f.text });
@@ -102,6 +106,39 @@ export async function inspectStory(jobDir: string, inspector: StoryInspector | n
   await mkdir(join(jobDir, 'output'), { recursive: true });
   await writeFile(join(jobDir, 'output', 'pruefung.json'), JSON.stringify(result, null, 2) + '\n');
   return result;
+}
+
+/**
+ * Jedes Produktbild einzeln (ohne KI, tools/artifacts.py): lose Flecken, Schnittkanten, Löcher, ausgefranster Rand.
+ * Mit `previews` zusätzlich 256-px-Vorschauen auf grauem Grund für die KI – dort fallen Preisschild-, Schrift- und Brett-Reste auf.
+ */
+export async function productChecks(jobDir: string, story: Story, previews: boolean): Promise<{ findings: Inspection['findings']; previews: Still[] }> {
+  const labels = pageLabels(story);
+  const pages = pagesFor(story, 'story');
+  // jedes Bild nur einmal (dasselbe Katalogbild kann bei zwei Märkten stehen)
+  const byImg = new Map<string, Story['offers'][number]>();
+  for (const o of story.offers) {
+    const img = o.img.replace(/\?.*$/, '');
+    if (!byImg.has(img) && existsSync(join(jobDir, img))) byImg.set(img, o);
+  }
+  const list = [...byImg];
+  const jobs = list.map(([img], i) => ({ id: String(i), image: join(jobDir, img), ...(previews ? { preview: join(jobDir, 'work', 'pruefung', `produkt-${String(i + 1).padStart(2, '0')}.jpg`) } : {}) }));
+  const out = { findings: [] as Inspection['findings'], previews: [] as Still[] };
+  if (!jobs.length) return out;
+  try {
+    const lines = await runPython('artifacts.py', [], jobs);
+    for (const line of lines) {
+      const r = JSON.parse(line) as { id: string; warnings: string[] };
+      const o = list[Number(r.id)][1];
+      const where = labels[pages.findIndex((p) => p.includes(o))] ?? 'Video';
+      for (const w of r.warnings) out.findings.push({ severity: 'hinweis', where, text: `Bild „${offerName(o)}“: ${w}` });
+      const job = jobs[Number(r.id)];
+      if (job.preview && existsSync(job.preview)) out.previews.push({ label: `Produktbild „${offerName(o)}“ (${where})`, file: job.preview });
+    }
+  } catch (e) {
+    out.findings.push({ severity: 'hinweis', where: 'Video', text: `Produktbilder konnten nicht geprüft werden: ${(e as Error).message.split('\n')[0]}` });
+  }
+  return out;
 }
 
 /** Inhalt des Videos: story.json und alle Produktbilder – gleich → gleiches Video, die KI-Antwort darf wiederverwendet werden. */
@@ -117,8 +154,8 @@ async function fingerprint(jobDir: string, story: Story) {
 /** Standbilder (Titel, jede Seite, Schluss) in allen Sprachen der Story, 512 px breit, nach work/pruefung/. */
 async function captureStills(jobDir: string, story: Story): Promise<Still[]> {
   const dir = join(jobDir, 'work', 'pruefung');
-  await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
+  for (const lang of story.lang) for (let i = 1; i < 100; i++) await rm(join(dir, `${lang}-${String(i).padStart(2, '0')}.jpg`), { force: true });
   const labels = pageLabels(story);
   const stills: Still[] = [];
   const server = await startStaticServer(templateMounts(jobDir));

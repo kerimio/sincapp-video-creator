@@ -40,10 +40,10 @@ Prospekt (PDF/Bilder, Firestore)
 | `src/app/` | Web-App-Server: Jobs, `pipeline.ts` (Prospekt → Story), `campaign.ts` (Katalog → Story) |
 | `src/review/` | Review-/Studio-Server (`server.ts`) und die React-App (`ui/`: `pages.tsx`, `App.tsx` Prüfen, `studio.tsx` Design/Export, `catalog.tsx`) |
 | `src/template/` | Das Video-Template (`Story.tsx`), gerendert von Vite + Playwright |
-| `src/render/` | Frames rendern, MP4 bauen, Export-Pakete, ZIP |
+| `src/render/` | Frames rendern, MP4 bauen, Export-Pakete, ZIP, Prüfung des fertigen Videos (`inspect.ts`: Regeln + ein KI-Aufruf) |
 | `src/firestore/` | Lesender Zugriff auf Firestore (REST, öffentlich): Märkte und Prospekte |
 | `src/instagram/` | Teilen auf Instagram: `graph.ts` (API), `post.ts` (Beitrag prüfen und veröffentlichen), `host.ts` (Dateien per Cloudflare-Tunnel öffentlich), `schedule.ts` (geplante Beiträge in `jobs/<id>/instagram.json`, Taktgeber), `drafts.ts` (Vorschläge für die UI) |
-| `tools/*.py` | Bildverarbeitung in Python: `cutout.py` (Freisteller), `single.py` (eine Packung aus Mehrfachabbildung), `crops.py`, `prep.py` |
+| `tools/*.py` | Bildverarbeitung in Python: `cutout.py` (Freisteller), `single.py` (eine Packung aus Mehrfachabbildung), `crops.py`, `prep.py`, `artifacts.py` (Produktbilder im fertigen Video auf Artefakte prüfen) |
 
 **Python-Werkzeuge** sprechen immer dasselbe Protokoll: JSON-Liste von Aufträgen auf stdin, pro Auftrag eine JSON-Zeile auf stdout. Aufruf aus TypeScript nur über `runPython(script, args, jobs, onLine)` (`src/python.ts`). Das Modell wird einmal pro Prozess geladen – Aufträge bündeln statt pro Bild einen Prozess starten.
 
