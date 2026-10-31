@@ -35,9 +35,16 @@ export interface StoryInspector {
   inspect(stills: Still[], data: string, fingerprint?: string): Promise<Finding[]>;
 }
 
-export const INSPECT_PROMPT = (data: string) => `Du prüfst ein fertiges Instagram-Video eines türkischen Supermarkts in Deutschland, bevor es veröffentlicht wird. Die Bilder oben sind Standbilder jeder Seite (deutsche und türkische Fassung). Unten steht, was im Video stehen soll.
+export const INSPECT_PROMPT = (data: string) => `Du prüfst ein fertiges Instagram-Video eines türkischen Supermarkts in Deutschland, bevor es veröffentlicht wird. Die Bilder oben sind Standbilder jeder Seite (deutsche und türkische Fassung) und danach jedes Produktbild einzeln auf grauem Grund. Unten steht, was im Video stehen soll.
 
-Melde nur echte Unstimmigkeiten, zum Beispiel:
+Prüfe jedes Produktbild auf Artefakte vom Ausschneiden aus dem Prospekt:
+- Reste von Preisschild, Preis, Schrift, Logo oder Sticker im Bild
+- Reste vom Hintergrund, vom Holzbrett/Podest oder von einem Nachbarprodukt
+- Packung oder Produkt abgeschnitten, Löcher, zackige oder ausgefranste Kanten, Flecken, doppelte Ränder
+- Bild zeigt ein anderes Produkt als der Name
+Ein Foto mit natürlichem Hintergrund (frisches Fleisch auf Brett mit Kräutern) ist gewollt, solange kein Preis oder Text darin steht.
+
+Melde außerdem nur echte Unstimmigkeiten im Video, zum Beispiel:
 - Produktfoto passt nicht zum Namen (Name „Reis“, Foto zeigt Nudeln; Name „Hähnchenbrust“, Foto zeigt Hack)
 - Preis oder Menge im Bild weicht von den Daten ab, oder ein Preis ist für das Produkt unplausibel (Hähnchenbrust 5 kg für 0,29 €, Tee 800 g für 29,90 €)
 - dasselbe Produkt zweimal auf einer Seite
