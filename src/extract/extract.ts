@@ -62,6 +62,7 @@ export function normalizePage(raw: PageResult, page: PreparedPage, pageNo: numbe
       bbox: bbox ?? [0, 0, page.width, page.height],
       priceTagBbox: box(o.price_tag_bbox, page.width, page.height),
       confidence,
+      ...(o.variants && o.variants >= 1 ? { variants: Math.round(o.variants) } : {}),
       // wird im Gegencheck gesetzt; ohne Gegencheck bleibt der Preis zu prüfen
       priceConfidence: price ? Math.min(confidence, 0.85) : 0,
       warnings,

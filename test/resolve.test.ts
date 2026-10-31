@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import { describe, expect, it } from 'vitest';
 import { normalizePage } from '../src/extract/extract';
 import { PageResult } from '../src/extract/schema';
-import { resolveImages } from '../src/images/resolve';
+import { multiVariant, resolveImages } from '../src/images/resolve';
 import type { ImageSearchProvider } from '../src/images/search';
 import { Library } from '../src/library/library';
 import { pythonBin } from '../src/python';
@@ -121,5 +121,37 @@ describe.skipIf(!hasPython)('Freisteller schlägt fehl', () => {
     expect(o.imgSource).toBe('prospekt');
     expect(existsSync(join(dir, o.img!))).toBe(true);
     expect(o.warnings.join(' ')).toMatch(/Prospekt-Ausschnitt mit Hintergrund/);
+  }, 120000);
+});
+
+describe('Mehrere Sorten in einem Angebot', () => {
+  it('erkennt Sorten an der Zahl im Bild oder am Zusatz, nicht bei frischem Fleisch', () => {
+    expect(multiVariant({ variants: 3, note: null, category: 'getraenke' })).toBe(true);
+    expect(multiVariant({ variants: 1, note: null, category: 'getraenke' })).toBe(false);
+    expect(multiVariant({ note: { de: 'diverse Sorten', tr: 'çeşitli' }, category: 'snacks' })).toBe(true);
+    expect(multiVariant({ note: { de: 'Karamell oder Erdbeere', tr: 'Karamel veya Çilek' }, category: 'suesses' })).toBe(true);
+    expect(multiVariant({ note: { de: 'gekühlt', tr: 'soğuk' }, category: 'getraenke' })).toBe(false);
+    expect(multiVariant({ variants: 2, note: null, category: 'fleisch' })).toBe(false);
+  });
+});
+
+describe.skipIf(!hasPython)('Mehrere Sorten: Bild aus dem Prospekt', () => {
+  it('nimmt nicht das Einzelfoto aus Katalog oder Internet, sucht nicht und legt den Ausschnitt nicht als Einzelprodukt ab', async () => {
+    const { dir, offers } = job();
+    const tee = offers.find((o) => o.id === 's4-1')!;
+    // wie „Red Bull blau, grün und normal“: drei Sorten im Prospekt, im Katalog nur eine Dose
+    tee.variants = 3;
+    const lib = await Library.open(mkdtempSync(join(tmpdir(), 'lib-')));
+    const src = join(dir, 'eine-sorte.png');
+    writeFileSync(src, transparentProduct());
+    await lib.put({ brand: tee.brand, name: tee.name, unit: tee.unit }, src, { type: 'web', url: 'https://img/eine.png' }, true);
+    let searches = 0;
+    const provider: ImageSearchProvider = { name: 'brave', search: async () => (searches++, []) };
+    await resolveImages([tee], { jobDir: dir, library: lib, providers: [provider], matcher: null });
+    expect(searches).toBe(0);
+    expect(tee.imgSource).toBe('prospekt');
+    expect(existsSync(join(dir, 'images/s4-1.png'))).toBe(true);
+    // der Katalog behält sein Internet-Foto
+    expect(lib.find({ brand: tee.brand, name: tee.name, unit: tee.unit })?.source.type).toBe('web');
   }, 120000);
 });

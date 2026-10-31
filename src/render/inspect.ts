@@ -1,6 +1,6 @@
 // Fertiges Video prüfen: erst kostenlose Regeln (story.json, Produktbilder), dann ein KI-Blick auf jede Seite und jedes Produktbild.
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { StoryInspector, Still } from '../ai/inspect';
@@ -9,6 +9,7 @@ import { LAYOUTS } from '../core/layout';
 import { parseStory, type Story } from '../core/schema';
 import { priceValue } from '../core/format';
 import { TR_MAX_CHARS } from '../extract/normalize';
+import { glossaryKey } from '../core/glossary';
 import { todayBerlin } from '../firestore/firestore';
 import { runPython } from '../python';
 import { startStaticServer } from '../server/static';
@@ -55,10 +56,48 @@ export function ruleChecks(story: Story, jobDir: string, today = todayBerlin()):
     if (!existsSync(join(jobDir, o.img.replace(/\?.*$/, '')))) out.push({ severity: 'fehler', where: where(o), text: `Bild für „${offerName(o)}“ fehlt` });
     if (o.name.tr.some((l) => l.length > TR_MAX_CHARS + 2)) out.push({ severity: 'hinweis', where: where(o), text: `Türkischer Name „${o.name.tr.join(' ')}“ ist sehr lang und wird evtl. abgeschnitten` });
   }
+  out.push(...nameChecks(story, jobDir, where));
   const markets = [...new Set(story.offers.map((o) => o.market).filter((m): m is string => !!m))];
   for (const m of markets) {
     const n = story.offers.filter((o) => o.market === m).length;
     if (n < 3) out.push({ severity: 'hinweis', where: m, text: `${m} hat nur ${n} Angebot${n === 1 ? '' : 'e'} im Video` });
+  }
+  return out;
+}
+
+/**
+ * Namen einheitlich? Dasselbe Produkt soll überall gleich heißen:
+ * - gleiche Schreibweise bis auf Akzente/Großschreibung ("Mevlâna Schwarztee" / "Mevlana Schwarztee")
+ * - gleicher deutscher Name, aber anderer türkischer ("Hähnchenbrustfilet": "Tavuk Göğüs" / "Tavuk Göğsü")
+ * - gleiches Produktbild (Katalog) unter verschiedenen Namen ("Schwarztee" / "Ceylon Tee")
+ */
+export function nameChecks(story: Story, jobDir: string, where: (o: Story['offers'][number]) => string = () => 'Video'): Inspection['findings'] {
+  const out: Inspection['findings'] = [];
+  const de = (o: Story['offers'][number]) => offerName(o);
+  const tr = (o: Story['offers'][number]) => o.name.tr.join(' ').replace(/- /g, '');
+  const said = new Set<string>();
+  const say = (o: Story['offers'][number], text: string) => {
+    if (said.has(text)) return;
+    said.add(text);
+    out.push({ severity: 'hinweis', where: where(o), text });
+  };
+  const byKey = new Map<string, Story['offers'][number]>();
+  const byDe = new Map<string, Story['offers'][number]>();
+  const byImg = new Map<string, Story['offers'][number]>();
+  for (const o of story.offers) {
+    const k = glossaryKey(de(o));
+    const a = byKey.get(k);
+    if (a && de(a) !== de(o)) say(o, `„${de(a)}“ und „${de(o)}“ sind unterschiedlich geschrieben`);
+    byKey.set(k, o);
+    const b = byDe.get(de(o));
+    if (b && glossaryKey(tr(b)) !== glossaryKey(tr(o))) say(o, `„${de(o)}“ heißt auf Türkisch einmal „${tr(b)}“ und einmal „${tr(o)}“`);
+    byDe.set(de(o), o);
+    const f = join(jobDir, o.img.replace(/\?.*$/, ''));
+    if (!existsSync(f)) continue;
+    const h = createHash('sha1').update(readFileSync(f)).digest('hex');
+    const c = byImg.get(h);
+    if (c && glossaryKey(de(c)) !== glossaryKey(de(o))) say(o, `Dasselbe Produktbild heißt einmal „${de(c)}“ und einmal „${de(o)}“`);
+    byImg.set(h, o);
   }
   return out;
 }

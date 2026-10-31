@@ -37,6 +37,7 @@ Je Angebot:
 - category: passende Warengruppe.
 - bbox: Rechteck nur um das Produktfoto (alle Packungen dieses Angebots), ohne Preisschild, ohne Text, ohne Holzbrett/Podest darunter. Ist dasselbe Angebot in zwei getrennten Gruppen abgebildet, nimm die größere Gruppe.
 - price_tag_bbox: Rechteck um das zugehörige Preisschild.
+- variants: wie viele verschiedene Sorten dieses Angebots im Bild zu sehen sind (Red Bull blau, grün und normal = 3; zweimal dieselbe Packung = 1).
 - confidence: 0–1.
 
 Außerdem für die Seite: Marktname, Gültigkeitszeitraum (validFrom/validTo als YYYY-MM-DD; fehlt das Jahr beim Startdatum, nimm das Jahr des Enddatums), alle Filialadressen ("Straße Nr, PLZ Ort") und die Telefonnummer – jeweils null bzw. leer, wenn nicht auf dieser Seite.
