@@ -7,6 +7,7 @@ import { makeMatcher, makeNamer, makeReader } from '../ai/provider';
 import { checkPrices, extractJob } from '../extract/extract';
 import type { Extraction } from '../extract/schema';
 import { resolveImages } from '../images/resolve';
+import { imageArtifacts } from '../images/artifacts';
 import { providersFromEnv } from '../images/search';
 import { Library } from '../library/library';
 import { markBestPrices } from '../library/bestprice';
@@ -209,6 +210,13 @@ export async function prepareStory(jobDir: string, s: JobSettings, onProgress: (
   const usable = sel.offers.filter((o) => o.img);
   if (usable.length < 2) throw new Error(`Für zu wenige Angebote gab es ein Bild (${usable.length}).`);
   if (missing.length) notes.push(`Ohne Bild weggelassen: ${missing.map((o) => `${o.id} ${o.name.de}`).join(', ')}`);
+  // Artefakte (lose Flecken, Schnittkanten, Löcher) schon jetzt melden: im Prüfen-Schritt steht die Warnung am Angebot
+  const artifacts = await imageArtifacts(usable.map((o) => join(jobDir, o.img!)));
+  usable.forEach((o, i) => {
+    for (const w of artifacts[i] ?? []) if (!o.warnings.includes(`Bild: ${w}`)) o.warnings.push(`Bild: ${w}`);
+  });
+  const flagged = usable.filter((_, i) => artifacts[i]?.length);
+  if (flagged.length) notes.push(`Bild bitte ansehen (Artefakte): ${flagged.map((o) => `${o.id} ${o.name.de}`).join(', ')}`);
 
   onProgress({ step: 'story', message: 'Story wird zusammengestellt …', fraction: 0.97 });
   const { story, warnings } = buildStory(ex, marketRaw, usable, topic);
