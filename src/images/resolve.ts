@@ -22,6 +22,16 @@ export interface ResolveOptions {
 
 
 /**
+ * Angebot über mehrere Sorten (Red Bull blau, grün und normal für 0,81 €): Ein Internet- oder Katalogfoto zeigt nur eine Sorte –
+ * dann lieber der Prospekt-Ausschnitt mit allen. Erkannt an der Zahl der Sorten im Bild oder am Zusatz ("diverse Sorten", "Karamell oder Erdbeere").
+ */
+export function multiVariant(o: Pick<ExtractedOffer, 'variants' | 'note' | 'category'>) {
+  if (keepAsPhoto(o.category)) return false;
+  if ((o.variants ?? 0) >= 2) return true;
+  return !!o.note && /sorten|sorte\b|versch|geschmack|\boder\b|çeşit|cesit|\bveya\b/i.test(`${o.note.de} ${o.note.tr}`);
+}
+
+/**
  * Bild für jedes Angebot finden:
  * 1. Katalog (eigenes Bild, dann Internet-Foto), 2. Internet (von der KI mit dem Prospekt abgeglichen),
  * 3. Notfall: Prospekt-Ausschnitt. Bestätigte Internet-Bilder und bereinigte Ausschnitte wandern in den Katalog.
@@ -37,6 +47,16 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
   //    Nur ein Prospekt-Ausschnitt wird einmal gegen das Internet getauscht (Internet zuerst).
   const fallback = new Map<string, LibraryEntry>();
   for (const o of offers) {
+    // mehrere Sorten: alle aus dem Prospekt zeigen (ein eigenes Bild aus dem Katalog gewinnt trotzdem); keine Suche, keine KI
+    if (multiVariant(o)) {
+      const own = opts.library.find({ brand: o.brand, name: o.name, unit: o.unit });
+      if (own?.source.type === 'manual' && own.variant && multiVariant({ note: own.variant, category: o.category })) {
+        await opts.library.use(own, join(imagesDir, `${o.id}.png`));
+        o.img = `images/${o.id}.png`;
+        o.imgSource = 'library';
+      }
+      continue;
+    }
     // frisches Fleisch: ein Bild je Produkt, egal ob 500 g oder 1 kg (Gemischtes Hack sieht überall gleich aus)
     const hit = opts.library.find({ brand: o.brand, name: o.name, unit: keepAsPhoto(o.category) ? null : o.unit });
     if (hit && (hit.source.type !== 'prospekt' || hit.webTried || !opts.providers.length)) {
@@ -126,7 +146,10 @@ export async function resolveImages(offers: ExtractedOffer[], opts: ResolveOptio
   if (rest.length) {
     log(`${rest.length} Bild(er) aus dem Prospekt freistellen …`);
     await cutoutOffers(opts.jobDir, rest, log);
-    const fromPage = rest.filter((o) => o.img && o.imgSource === 'prospekt');
+    // in den Katalog nur Einzelsorten: eine herausgeschnittene Dose stünde sonst für „alle Sorten“
+    const fromPage = rest.filter((o) => o.img && o.imgSource === 'prospekt' && !multiVariant(o));
+    const groups = rest.filter((o) => o.img && multiVariant(o));
+    if (groups.length) log(`${groups.length} Angebot(e) mit mehreren Sorten: alle Sorten aus dem Prospekt`);
     const singles = await singleCopies(fromPage.map((o) => ({ image: join(opts.jobDir, o.img!), out: join(opts.jobDir, 'work/katalog', `${o.id}.png`) })));
     for (const o of fromPage) {
       const r = singles.get(join(opts.jobDir, 'work/katalog', `${o.id}.png`));

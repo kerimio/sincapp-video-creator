@@ -35,6 +35,8 @@ export const PageOffer = z.object({
   bbox: Box.describe('Nur das Produktfoto (alle Packungen des Angebots), ohne Preisschild, Text und Podest/Brett'),
   price_tag_bbox: Box.nullable().describe('Das Preisschild dieses Angebots; null wenn keins zu sehen ist'),
   confidence: z.number().describe('0–1: wie sicher die Angaben zu diesem Angebot stimmen'),
+  // optional: ältere gemerkte Antworten haben das Feld nicht und bleiben gültig (sonst würde jede Seite neu bezahlt)
+  variants: z.number().nullable().optional().describe('Wie viele verschiedene Sorten dieses Angebots abgebildet sind (Red Bull blau, grün und normal = 3; zweimal dieselbe Packung = 1)'),
 });
 export type PageOffer = z.infer<typeof PageOffer>;
 
@@ -78,6 +80,8 @@ export interface ExtractedOffer {
   confidence: number;
   /** < 0.9 heißt: Preis von Hand prüfen. */
   priceConfidence: number;
+  /** so viele verschiedene Sorten zeigt der Prospekt (Red Bull blau/grün/normal = 3); fehlt bei älteren Lesungen */
+  variants?: number;
   /** Freigestelltes Bild relativ zum Job-Ordner. */
   img?: string;
   imgSource?: 'library' | 'web' | 'prospekt' | 'removebg' | 'manual';

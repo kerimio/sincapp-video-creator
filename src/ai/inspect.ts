@@ -51,6 +51,8 @@ Melde außerdem nur echte Unstimmigkeiten im Video, zum Beispiel:
 - Text abgeschnitten, überlappend oder unlesbar
 - falsche Sprache: türkische Fassung mit deutschen Produktnamen oder umgekehrt (Marken zählen nicht)
 - türkischer Name ist eine falsche Übersetzung
+- Namen uneinheitlich: dasselbe Produkt heißt auf zwei Seiten oder bei zwei Märkten verschieden, eine Marke ist unterschiedlich geschrieben, deutscher und türkischer Name meinen nicht dasselbe
+- Angebot über mehrere Sorten ("diverse Sorten", "blau, grün oder normal"), das Bild zeigt aber nur eine Sorte
 - Markt, Adresse oder Datum passen nicht zusammen
 
 Nicht melden: Geschmack, Design, Bildausschnitt oder Bildqualität ohne echten Fehler. Ist alles stimmig, gib eine leere Liste zurück.

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { CachingInspector, type Still, type StoryInspector } from '../src/ai/inspect';
 import { parseStory } from '../src/core/schema';
 import { pagesFor } from '../src/core/pages';
-import { inspectStory, productChecks, ruleChecks, storyFacts } from '../src/render/inspect';
+import { inspectStory, nameChecks, productChecks, ruleChecks, storyFacts } from '../src/render/inspect';
 import { pythonBin } from '../src/python';
 import { imageArtifacts } from '../src/images/artifacts';
 import { PNG } from 'pngjs';
@@ -27,6 +27,19 @@ describe('Prüfung nach Regeln', () => {
     const m = story();
     m.offers = m.offers.map((o, i) => ({ ...o, market: i < 2 ? 'Saray Market' : 'Bizim Market' }));
     expect(ruleChecks(m, fixture, m.dates.from).map((x) => x.text)).toContain('Saray Market hat nur 2 Angebote im Video');
+  });
+
+  it('Namen: gleiches Produkt soll überall gleich heißen', () => {
+    const s = story();
+    const a = s.offers[0];
+    s.offers.push({ ...a, name: { de: a.name.de.map((l) => l.toUpperCase()), tr: a.name.tr }, market: 'B' });
+    s.offers.push({ ...a, name: { de: a.name.de, tr: ['Ganz anders'] }, market: 'C' });
+    s.offers.push({ ...a, name: { de: ['Anderer Name'], tr: ['Başka'] }, market: 'D' });
+    const t = nameChecks(s, fixture).map((f) => f.text).join('\n');
+    expect(t).toMatch(/unterschiedlich geschrieben/);
+    expect(t).toMatch(/auf Türkisch einmal .+ und einmal „Ganz anders“/);
+    expect(t).toMatch(/Dasselbe Produktbild heißt einmal .+ und einmal „Anderer Name“/);
+    expect(nameChecks(story(), fixture)).toEqual([]);
   });
 
   it('Daten für die KI: je Seite Name DE/TR, Preis und Menge', () => {
