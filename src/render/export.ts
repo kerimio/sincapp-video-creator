@@ -48,6 +48,8 @@ export interface ExportResult {
   checks: (VideoCheck & { rel: string })[];
   zip: string | null;
   poster: string | null;
+  /** Prüfung des fertigen Videos (Regeln + KI), siehe render/inspect.ts */
+  inspection?: import('./inspect').Inspection;
 }
 
 const FORMAT_LABEL: Record<Format, string> = { story: 'Story 9:16', feed: 'Feed 4:5', quadrat: 'Quadrat 1:1' };

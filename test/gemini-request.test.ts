@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GeminiMatcher, GeminiReader, QUOTA_DAY, retryAfter } from '../src/ai/gemini';
+import { GeminiInspector, GeminiMatcher, GeminiReader, QUOTA_DAY, retryAfter } from '../src/ai/gemini';
 import { aiProvider } from '../src/ai/provider';
 
 // Fake-API im Format von generateContent
@@ -94,6 +94,17 @@ describe('Gemini-Anfrage', () => {
     } finally {
       rejectThinking = false;
     }
+  });
+});
+
+describe('Prüfung des fertigen Videos', () => {
+  it('alle Standbilder nummeriert in einem Aufruf, Daten im Text', async () => {
+    finish = 'STOP';
+    reply = { findings: [{ image: 1, offer: 'Reis', severity: 'fehler', text: 'Foto zeigt Nudeln' }] };
+    const r = await new GeminiInspector('k', base).inspect([{ label: 'Seite 1 DE', file: PAGE }, { label: 'Seite 1 TR', file: PAGE }], 'Seite 1:\n- Kavak Reis | TR: Pirinç | 7,99 €');
+    expect(r).toEqual([{ image: 1, offer: 'Reis', severity: 'fehler', text: 'Foto zeigt Nudeln' }]);
+    const parts = seen.at(-1)!.body.contents[0].parts;
+    expect(parts.map((p: { text?: string }) => p.text ?? 'bild')).toEqual(['Bild 1: Seite 1 DE', 'bild', 'Bild 2: Seite 1 TR', 'bild', expect.stringContaining('Kavak Reis')]);
   });
 });
 

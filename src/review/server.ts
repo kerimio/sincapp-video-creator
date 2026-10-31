@@ -9,7 +9,8 @@ import { Design } from '../core/design';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
 import { adoptImage, keepAsPhoto, resolveImages } from '../images/resolve';
 import { downloadImage, providersFromEnv, searchAll, searchQuery } from '../images/search';
-import { aiProvider, makeMatcher } from '../ai/provider';
+import { aiProvider, makeInspector, makeMatcher } from '../ai/provider';
+import { inspectStory } from '../render/inspect';
 import { Library } from '../library/library';
 import { ROOT } from '../paths';
 import { runPython } from '../python';
@@ -86,6 +87,11 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
           Object.assign(render, { fraction, message });
           onProgress(fraction, message);
         });
+        // zum Schluss das fertige Video auf Unstimmigkeiten prüfen (Regeln + ein gemerkter KI-Aufruf); bricht nie den Export ab
+        r.inspection = await inspectStory(jobDir, makeInspector(), (message) => {
+          Object.assign(render, { fraction: 0.995, message });
+          onProgress(0.995, message);
+        }).catch((e) => ({ at: new Date().toISOString(), model: null, findings: [], skipped: (e as Error).message }));
         await writeFile(exportFile, JSON.stringify(r, null, 2) + '\n');
         render.result = { ...r, urlBase };
         Object.assign(render, { fraction: 1, message: 'Fertig' });

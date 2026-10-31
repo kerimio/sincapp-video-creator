@@ -16,7 +16,7 @@ export function aiCacheDir() {
   return process.env.SINCAPP_AI_CACHE || join(ROOT, '.cache', 'ki');
 }
 
-async function hashFiles(files: string[], salt: string) {
+export async function hashFiles(files: string[], salt: string) {
   const h = createHash('sha256').update(salt);
   for (const f of files) h.update(await readFile(f));
   return h.digest('hex').slice(0, 32);

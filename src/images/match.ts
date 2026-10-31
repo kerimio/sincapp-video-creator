@@ -30,7 +30,7 @@ Die Bilder 1 bis ${n} wurden im Internet gefunden.
 
 Prüfe für jedes Fundstück, ob es genau dieses Produkt zeigt (gleiche Marke, gleiches Produkt, gleiche Sorte und Verpackung – die Packungsgröße darf leicht abweichen, im Prospekt können mehrere Packungen nebeneinander stehen) und ob es sich als freigestelltes Produktfoto für eine Werbe-Story eignet.`;
 
-async function image(file: string) {
+export async function image(file: string) {
   const ext = extname(file).toLowerCase();
   const media = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : 'image/png';
   return { type: 'image' as const, source: { type: 'base64' as const, media_type: media as 'image/png', data: (await readFile(file)).toString('base64') } };

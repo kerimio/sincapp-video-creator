@@ -2,7 +2,8 @@
 import { CachingMatcher, CachingReader } from './cache';
 import { ClaudeReader, type PageReader } from '../extract/claude';
 import { ClaudeMatcher, type ProductMatcher } from '../images/match';
-import { GeminiMatcher, GeminiNamer, GeminiReader, geminiCheckModel, geminiModel } from './gemini';
+import { GeminiInspector, GeminiMatcher, GeminiNamer, GeminiReader, geminiCheckModel, geminiModel } from './gemini';
+import { CachingInspector, ClaudeInspector, type StoryInspector } from './inspect';
 import { ClaudeNamer, type ProductNamer } from './namer';
 import { CHECK_MODEL, MODEL } from '../extract/claude';
 
@@ -41,6 +42,13 @@ export function makeMatcher(): ProductMatcher | null {
 export function makeNamer(): ProductNamer | null {
   const p = aiProvider();
   return p === 'gemini' ? new GeminiNamer() : p === 'claude' ? new ClaudeNamer() : null;
+}
+
+/** KI-Prüfung des fertigen Videos; null ohne Key (dann nur die Prüfung nach Regeln). */
+export function makeInspector(): StoryInspector | null {
+  const p = aiProvider();
+  const i = p === 'gemini' ? new GeminiInspector() : p === 'claude' ? new ClaudeInspector() : null;
+  return i && new CachingInspector(i);
 }
 
 /** Welche Modelle gerade benutzt würden (für die Einstellungen). */
