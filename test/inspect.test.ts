@@ -7,6 +7,7 @@ import { parseStory } from '../src/core/schema';
 import { pagesFor } from '../src/core/pages';
 import { inspectStory, productChecks, ruleChecks, storyFacts } from '../src/render/inspect';
 import { pythonBin } from '../src/python';
+import { imageArtifacts } from '../src/images/artifacts';
 import { PNG } from 'pngjs';
 import { ROOT } from '../src/paths';
 
@@ -103,6 +104,10 @@ describe.skipIf(!existsSync(pythonBin()))('Artefakte in Produktbildern', () => {
     expect(texts).toMatch(/Schnittkante links/);
     expect(texts).toMatch(/1 Loch/);
     expect(r.findings.every((f) => f.text.startsWith(`Bild „${s.offers[0].name.de.join(' ').replace(/- /g, '')}“`))).toBe(true);
+    // dieselbe Prüfung läuft schon beim Erstellen und nach jedem Bildwechsel im Prüfen-Schritt
+    const early = await imageArtifacts([join(job, 'images/kaputt.png'), join(job, s.offers[1].img)]);
+    expect(early[0].join('\n')).toMatch(/loser Fleck/);
+    expect(early[1]).toEqual([]);
     // die Fleisch-Fotos der Fixture (mit Hintergrund) sind unauffällig, Vorschauen für die KI gibt es für alle
     expect(r.previews).toHaveLength(new Set(s.offers.map((o) => o.img)).size);
   }, 60000);

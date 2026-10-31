@@ -8,6 +8,7 @@ import { parseStory } from '../core/schema';
 import { Design } from '../core/design';
 import type { ExtractedOffer, Extraction } from '../extract/schema';
 import { adoptImage, keepAsPhoto, resolveImages } from '../images/resolve';
+import { imageArtifacts } from '../images/artifacts';
 import { downloadImage, providersFromEnv, searchAll, searchQuery } from '../images/search';
 import { aiProvider, makeInspector, makeMatcher } from '../ai/provider';
 import { inspectStory } from '../render/inspect';
@@ -63,6 +64,8 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
     return o;
   };
   const clearImgWarnings = (o: ExtractedOffer, w: string[]) => (o.warnings = o.warnings.filter((x) => !x.startsWith('Bild:')).concat(w.map((x) => `Bild: ${x}`)));
+  /** Warnungen des Freistellers plus Artefakt-Prüfung des neuen Bildes (ohne KI) */
+  const imageWarnings = async (r: { out: string; warnings: string[] }) => [...r.warnings, ...((await imageArtifacts([r.out]))[0] ?? [])];
 
   /** Freistellen einer Datei (ganzes Bild) oder eines Prospekt-Ausschnitts nach images/<id>.png */
   async function cutout(o: ExtractedOffer, image: string, bbox: number[] | null, erase: number[][] = [], extra: { keep?: boolean; polygon?: number[][] } = {}) {
@@ -179,9 +182,10 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
           : await cutout(o, join(jobDir, o.pageFile), bbox, [], { keep: true, polygon });
         o.bbox = bbox.map(Math.round) as ExtractedOffer['bbox'];
         await adoptImage(o, jobDir, r.out, await library(), { type: 'prospekt' });
-        clearImgWarnings(o, r.warnings);
+        const warnings = await imageWarnings(r);
+        clearImgWarnings(o, warnings);
         await saveEx(ex!);
-        return sendJson(res, { offer: o, warnings: r.warnings });
+        return sendJson(res, { offer: o, warnings });
       }
 
       if (action === 'alternative') {
@@ -198,9 +202,10 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
         }
         const r = await cutout(o, join(jobDir, alt.file), null);
         await adoptImage(o, jobDir, r.out, await library(), { type: alt.source === 'openfoodfacts' ? 'openfoodfacts' : 'web', url: alt.url });
-        clearImgWarnings(o, r.warnings);
+        const warnings = await imageWarnings(r);
+        clearImgWarnings(o, warnings);
         await saveEx(ex!);
-        return sendJson(res, { offer: o, warnings: r.warnings });
+        return sendJson(res, { offer: o, warnings });
       }
 
       if (action === 'search') {
@@ -231,9 +236,10 @@ export function jobApi(jobDir: string, urlBase: string, log: (m: string) => void
         await writeFile(file, buf);
         const r = await cutout(o, file, null);
         await adoptImage(o, jobDir, r.out, await library(), { type: 'manual' });
-        clearImgWarnings(o, r.warnings);
+        const warnings = await imageWarnings(r);
+        clearImgWarnings(o, warnings);
         await saveEx(ex!);
-        return sendJson(res, { offer: o, warnings: r.warnings });
+        return sendJson(res, { offer: o, warnings });
       }
     }
 
