@@ -352,3 +352,13 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 14
 .gl-row input { width: 100%; }
 .gl-head { font-size: 12px; font-weight: 700; color: var(--ink2); }
 @media (max-width: 640px) { .gl-row { grid-template-columns: 1fr 1fr; } .gl-row > :nth-child(3) { grid-column: 1 / -1; } .gl-head { display: none; } }
+
+/* Prüfung nach dem Export */
+.inspection { border: 1px solid #e3dccf; border-radius: 12px; padding: 10px 14px; margin: 10px 0; background: #fff; }
+.inspection.bad { border-color: #C24A18; }
+.inspection.warn { border-color: #E9A02A; }
+.inspection.good b { color: #2f7d32; }
+.inspection ul { margin: 6px 0; padding-left: 18px; }
+.inspection li { margin: 3px 0; overflow-wrap: anywhere; }
+.inspection li.fehler { color: #C24A18; }
+.inspection .where { font-weight: 600; }

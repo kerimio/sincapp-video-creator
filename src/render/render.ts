@@ -59,9 +59,10 @@ export async function launchBrowser(): Promise<Browser> {
   });
 }
 
-export async function openStoryPage(browser: Browser, baseUrl: string, lang: Lang, format: Format = 'story', extra = '') {
+/** `scale` < 1 liefert kleinere Screenshots (z. B. 512 px breit für die KI) bei gleichem Layout. */
+export async function openStoryPage(browser: Browser, baseUrl: string, lang: Lang, format: Format = 'story', extra = '', scale = 1) {
   const { W, H } = LAYOUTS[format];
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: scale });
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${baseUrl}/?lang=${lang}${format === 'story' ? '' : `&format=${format}`}${extra}`);

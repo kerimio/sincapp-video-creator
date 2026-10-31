@@ -7,6 +7,7 @@ import { PageOffer, PageResult, PriceCheck } from '../extract/schema';
 import { MATCH_PROMPT, MatchResult, type ProductMatcher } from '../images/match';
 import { logUsage } from './usage';
 import { NAME_PROMPT, NameResult, type NameItem, type ProductNamer } from './namer';
+import { INSPECT_PROMPT, InspectResult, type Still, type StoryInspector } from './inspect';
 
 /**
  * Modell fürs Lesen der Seiten. Standard ist das günstige Flash-Modell (der Preis-Gegencheck
@@ -166,5 +167,21 @@ export class GeminiNamer implements ProductNamer {
     if (!items.length) return [];
     const out = await this.client.json(NameResult, [{ text: NAME_PROMPT(items, known) }], geminiCheckModel(), { task: 'namen', thinking: ThinkingLevel.MINIMAL });
     return out.items;
+  }
+}
+
+export class GeminiInspector implements StoryInspector {
+  name = geminiCheckModel();
+  private client: GeminiClient;
+  constructor(apiKey?: string, baseUrl?: string) {
+    this.client = new GeminiClient(apiKey, baseUrl);
+  }
+
+  async inspect(stills: Still[], data: string) {
+    const parts: Part[] = [];
+    for (const [i, s] of stills.entries()) parts.push({ text: `Bild ${i + 1}: ${s.label}` }, await imagePart(s.file));
+    parts.push({ text: INSPECT_PROMPT(data) });
+    const out = await this.client.json(InspectResult, parts, geminiCheckModel(), { task: 'pruefung', thinking: ThinkingLevel.LOW });
+    return out.findings;
   }
 }

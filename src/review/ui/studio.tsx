@@ -512,6 +512,7 @@ function ExportResult({ r }: { r: NonNullable<RenderState['result']> }) {
         <div className="spacer" />
         {r.zip && <a className="download big" href={url(r.zip)} download>⬇ Alles als ZIP</a>}
       </div>
+      {r.inspection && <Inspection i={r.inspection} />}
       {videos.map((f) => {
         const c = r.checks.find((x) => x.rel === f.path);
         return (
@@ -548,6 +549,28 @@ function ExportResult({ r }: { r: NonNullable<RenderState['result']> }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Ergebnis der Prüfung nach dem Export: Fehler und Hinweise je Seite, sonst ein Häkchen. */
+function Inspection({ i }: { i: NonNullable<NonNullable<RenderState['result']>['inspection']> }) {
+  const errors = i.findings.filter((f) => f.severity === 'fehler').length;
+  return (
+    <div className={`inspection ${errors ? 'bad' : i.findings.length ? 'warn' : 'good'}`}>
+      <b>
+        {errors ? `⚠ Prüfung: ${errors} Fehler${i.findings.length > errors ? `, ${i.findings.length - errors} Hinweis(e)` : ''}` : i.findings.length ? `Prüfung: ${i.findings.length} Hinweis(e)` : '✓ Prüfung: keine Unstimmigkeiten gefunden'}
+      </b>
+      {i.findings.length > 0 && (
+        <ul>
+          {i.findings.map((f, k) => (
+            <li key={k} className={f.severity}>
+              <span className="where">{f.where}:</span> {f.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="muted small">{i.model ? `Von der KI (${i.model}) und nach festen Regeln geprüft.` : i.skipped ?? 'Nach festen Regeln geprüft.'}</div>
     </div>
   );
 }
